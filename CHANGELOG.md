@@ -48,6 +48,9 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### PAS Callback Retry
+- **Automatic retry with backoff**: `callback_result` now retries up to 3 times on failure (5s, 15s, 30s intervals). Handles network blips and temporary PAS outages without losing callbacks. After all retries exhausted, returns None (caller leaves `callback_sent_at` as NULL for manual reconciliation).
+
 ### Audit Fixes (Round 5)
 - **Resume restores arms.status**: `resume_arm` now writes `status='idle'` alongside `active=1`. Fixes regression where stall set `status='offline'` but resume only set `active=1`, causing new withdrawal requests to be rejected with "arm offline".
 - **_fail_queued_tasks callback check**: Queued task batch rejection now checks `callback_result` return value before writing `callback_sent_at`, consistent with main flow paths.

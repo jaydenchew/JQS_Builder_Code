@@ -2,8 +2,10 @@
 
 Receipt photos are sent as multipart/form-data files (not base64 JSON).
 DB still stores base64 — only the PAS HTTP call converts to file bytes.
+Retry: on failure, retries up to 3 times with 5s/15s/30s backoff.
 """
 import io
+import asyncio
 import base64
 import httpx
 import logging
@@ -38,12 +40,31 @@ async def close_client():
         _client = None
 
 
+RETRY_DELAYS = [5, 15, 30]
+
+
 async def callback_result(process_id: int, status: int, transaction_datetime: str, receipt: str = None):
-    """Report withdrawal result to PAS.
+    """Report withdrawal result to PAS with retry.
 
     When receipt (base64 JPEG) is provided, sends as multipart/form-data file.
     Otherwise sends JSON without receipt.
+    Retries up to 3 times on failure with 5s/15s/30s backoff.
     """
+    for attempt in range(1 + len(RETRY_DELAYS)):
+        result = await _send_callback(process_id, status, transaction_datetime, receipt)
+        if result is not None:
+            return result
+        if attempt < len(RETRY_DELAYS):
+            delay = RETRY_DELAYS[attempt]
+            logger.warning("PAS callback retry %d/%d for process_id=%d in %ds",
+                           attempt + 1, len(RETRY_DELAYS), process_id, delay)
+            await asyncio.sleep(delay)
+
+    logger.error("PAS callback FAILED after %d retries: process_id=%d", len(RETRY_DELAYS), process_id)
+    return None
+
+
+async def _send_callback(process_id: int, status: int, transaction_datetime: str, receipt: str = None):
     data_fields = {
         "process_id": str(process_id),
         "status": str(status),
