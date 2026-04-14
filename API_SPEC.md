@@ -187,11 +187,13 @@ GET /health
 
 Banks with apps installed and configured on WA machines:
 
-| Bank Code | Bank Name |
-|-----------|-----------|
-| `ABA` | ABA Bank |
-| `ACLEDA` | ACLEDA Bank |
-| `WINGBANK` | WING Bank |
+| Bank Code | Bank Name | Region |
+|-----------|-----------|--------|
+| `ABA` | ABA Bank | Cambodia |
+| `ACLEDA` | ACLEDA Bank | Cambodia |
+| `WINGBANK` | WING Bank | Cambodia |
+| `CIMB` | CIMB Bank | Malaysia |
+| `MBB` | Maybank | Malaysia |
 
 ### Destination Banks (pay_to)
 
@@ -263,7 +265,7 @@ For **interbank transfers**: destination can be any bank listed below per source
 | `WINGBANK` | WING BANK |
 | `WOORI` | Woori Bank (Cambodia) Plc. |
 
-#### CIMB Interbank Destinations (20 banks — Malaysia)
+#### CIMB Interbank Destinations (21 banks — Malaysia)
 
 | Bank Code | Display Name |
 |-----------|-------------|
