@@ -16,28 +16,6 @@ class WithdrawalRequest(BaseModel):
     pay_to_account_name: str
 
 
-# === WA -> PAS ===
-
-class WithdrawalCallback(BaseModel):
-    process_id: int
-    status: int  # 1=Success, 2=Fail
-    transaction_datetime: str
-    receipt: Optional[str] = None  # base64
-
-
-class AccountStatusUpdate(BaseModel):
-    currency_code: str
-    bank_code: str
-    account_no: str
-    bte_status: str  # "Enable" or "Disable"
-
-
-class AlertMessage(BaseModel):
-    currency_code: str
-    title: str
-    message: str
-
-
 # === WA Internal ===
 
 class HealthResponse(BaseModel):

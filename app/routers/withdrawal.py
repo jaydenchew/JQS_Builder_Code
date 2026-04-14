@@ -4,6 +4,7 @@ Task assignment: bank_apps.station_id → stations.arm_id → route to correct w
 """
 import logging
 from fastapi import APIRouter, Depends
+from pymysql.err import IntegrityError
 from app.models import WithdrawalRequest, StandardResponse, HealthResponse, StatusResponse
 from app.auth import verify_api_key
 from app import database
@@ -31,42 +32,57 @@ async def process_withdrawal(req: WithdrawalRequest):
     )
 
     if not bank_app:
-        await database.execute(
-            """INSERT INTO transactions 
-            (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
-             pay_to_bank_code, pay_to_account_no, pay_to_account_name, status, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'failed', 'Bank app not found')""",
-            (req.process_id, req.currency_code, req.amount, req.pay_from_bank_code,
-             req.pay_from_account_no, req.pay_to_bank_code, req.pay_to_account_no, req.pay_to_account_name),
-        )
+        try:
+            await database.execute(
+                """INSERT INTO transactions 
+                (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
+                 pay_to_bank_code, pay_to_account_no, pay_to_account_name, status, error_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'failed', 'Bank app not found')""",
+                (req.process_id, req.currency_code, req.amount, req.pay_from_bank_code,
+                 req.pay_from_account_no, req.pay_to_bank_code, req.pay_to_account_no, req.pay_to_account_name),
+            )
+        except IntegrityError as e:
+            if e.args[0] == 1062:
+                return StandardResponse(status=False, message="Duplicate process_id")
+            raise
         return StandardResponse(status=False, message="Bank app not found for given bank_code + account_no")
 
     arm = await database.fetchone(
         "SELECT id, active, status FROM arms WHERE id = %s", (bank_app["arm_id"],)
     )
     if not arm or not arm["active"] or arm["status"] == "offline":
+        try:
+            await database.execute(
+                """INSERT INTO transactions 
+                (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
+                 pay_to_bank_code, pay_to_account_no, pay_to_account_name,
+                 bank_app_id, station_id, status, error_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'failed', 'Arm offline or inactive')""",
+                (req.process_id, req.currency_code, req.amount, req.pay_from_bank_code,
+                 req.pay_from_account_no, req.pay_to_bank_code, req.pay_to_account_no, req.pay_to_account_name,
+                 bank_app["id"], bank_app["station_id"]),
+            )
+        except IntegrityError as e:
+            if e.args[0] == 1062:
+                return StandardResponse(status=False, message="Duplicate process_id")
+            raise
+        return StandardResponse(status=False, message="Assigned arm is offline or inactive")
+
+    try:
         await database.execute(
             """INSERT INTO transactions 
             (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
              pay_to_bank_code, pay_to_account_no, pay_to_account_name,
-             bank_app_id, station_id, status, error_message)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'failed', 'Arm offline or inactive')""",
+             bank_app_id, station_id, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'queued')""",
             (req.process_id, req.currency_code, req.amount, req.pay_from_bank_code,
              req.pay_from_account_no, req.pay_to_bank_code, req.pay_to_account_no, req.pay_to_account_name,
              bank_app["id"], bank_app["station_id"]),
         )
-        return StandardResponse(status=False, message="Assigned arm is offline or inactive")
-
-    await database.execute(
-        """INSERT INTO transactions 
-        (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
-         pay_to_bank_code, pay_to_account_no, pay_to_account_name,
-         bank_app_id, station_id, status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'queued')""",
-        (req.process_id, req.currency_code, req.amount, req.pay_from_bank_code,
-         req.pay_from_account_no, req.pay_to_bank_code, req.pay_to_account_no, req.pay_to_account_name,
-         bank_app["id"], bank_app["station_id"]),
-    )
+    except IntegrityError as e:
+        if e.args[0] == 1062:
+            return StandardResponse(status=False, message="Duplicate process_id")
+        raise
 
     logger.info("Withdrawal queued: process_id=%d bank=%s station=%d arm=%d",
                 req.process_id, req.pay_from_bank_code, bank_app["station_id"], bank_app["arm_id"])

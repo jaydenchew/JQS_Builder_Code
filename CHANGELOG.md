@@ -42,11 +42,16 @@
 - **Unique key fix**: `uk_bank_account` changed to `(station_id, bank_code, account_no)` to allow same bank account on different stations.
 - **Phone column**: Bank Apps table in Settings now shows which phone each app belongs to.
 
-### Audit Fixes
+### Audit Fixes (Round 1)
 - **auth.py**: Empty WA_API_KEY/WA_TENANT_ID now returns 503 instead of silently allowing all requests. Prevents accidental unauthenticated access when `.env` is misconfigured.
 - **Pause status fix**: `pause_arm` no longer force-writes `arms.status='idle'` while a task may still be running. Worker naturally updates status when task completes, avoiding false "idle" state.
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
+
+### Audit Fixes (Round 2)
+- **process_id race condition**: All 3 INSERT paths in `/process-withdrawal` now catch `IntegrityError(1062)` and return `"Duplicate process_id"` instead of 500. SELECT pre-check retained as fast path; IntegrityError is the concurrency safety net.
+- **reorder_steps validation**: Added 3 guards before updating: step count match, no duplicate IDs, all IDs belong to template. Prevents corrupted step ordering from malformed requests.
+- **Dead models removed**: `WithdrawalCallback`, `AccountStatusUpdate`, `AlertMessage` deleted from `models.py` — no references in codebase (corresponding `pas_client` functions already removed).
 
 ### Withdrawal Validation
 - **Self-transfer rejected**: `/process-withdrawal` now rejects requests where `pay_from_bank_code == pay_to_bank_code` and `pay_from_account_no == pay_to_account_no`. Returns error without entering queue.

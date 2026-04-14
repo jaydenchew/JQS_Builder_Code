@@ -83,6 +83,17 @@ async def delete_step(step_id: int):
 async def reorder_steps(template_id: int, data: dict):
     """Reorder steps: data = {"order": [step_id_1, step_id_2, ...]}"""
     order = data.get("order", [])
+    existing = await database.fetchall(
+        "SELECT id FROM flow_steps WHERE flow_template_id=%s", (template_id,))
+    existing_ids = {r["id"] for r in existing}
+
+    if len(order) != len(existing_ids):
+        return {"error": "Order list length (%d) does not match step count (%d)" % (len(order), len(existing_ids))}
+    if len(set(order)) != len(order):
+        return {"error": "Duplicate step IDs in order list"}
+    if set(order) != existing_ids:
+        return {"error": "Order list contains IDs not belonging to this template"}
+
     for idx, step_id in enumerate(order):
         await database.execute(
             "UPDATE flow_steps SET step_number = %s WHERE id = %s AND flow_template_id = %s",
