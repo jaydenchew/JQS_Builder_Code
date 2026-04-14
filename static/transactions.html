@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions — WA System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .filters { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+        .filters select, .filters input { width: auto; min-width: 120px; }
+        .tx-row { cursor: pointer; }
+        .tx-row:hover td { background: rgba(233,69,96,0.08) !important; }
+        .status-success { color: var(--success); }
+        .status-failed { color: var(--danger); }
+        .status-stall { color: #ff9800; font-weight: bold; }
+        .status-running { color: var(--warning); }
+        .status-queued { color: var(--text2); }
+        .log-item { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .log-item.fail { background: rgba(244,67,54,0.08); }
+        .log-item .step-info { display: flex; justify-content: space-between; }
+        .screenshot-btn { cursor: pointer; color: var(--accent); text-decoration: underline; font-size: 12px; }
+        .modal-img { max-width: 100%; border-radius: 8px; }
+        #detail-modal .modal { max-width: 700px; max-height: 85vh; overflow-y: auto; }
+        #detail-modal .modal h3 { margin-top: 0; }
+        #detail-logs-container { max-height: 45vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div id="nav"></div>
+    <div class="container">
+        <h2>Transactions</h2>
+
+        <div class="filters">
+            <select id="filter-status">
+                <option value="">All Status</option>
+                <option value="queued">Queued</option>
+                <option value="running">Running</option>
+                <option value="success">Success</option>
+                <option value="failed">Failed</option>
+                <option value="stall">Stall</option>
+            </select>
+            <select id="filter-bank"><option value="">From Bank</option></select>
+            <select id="filter-to-bank"><option value="">To Bank</option></select>
+            <select id="filter-arm"><option value="">All Arms</option></select>
+            <input type="date" id="filter-date-from" title="From date">
+            <input type="date" id="filter-date-to" title="To date">
+            <button class="btn btn-primary" onclick="loadTransactions()">Filter</button>
+            <button class="btn btn-secondary" onclick="clearFilters()" style="font-size:12px;">Clear</button>
+            <span id="tx-count" style="color:var(--text2);font-size:13px;"></span>
+        </div>
+
+        <div id="tx-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Process ID</th><th>Arm</th><th>From</th><th>To</th><th>Amount</th>
+                        <th>Status</th><th>Created</th><th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="tx-body"></tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3 id="detail-title">Transaction Detail</h3>
+                <button class="btn btn-sm btn-secondary" onclick="closeDetail()">Close</button>
+            </div>
+            <div id="detail-info" style="margin:12px 0;font-size:13px;"></div>
+            <h4 style="margin:12px 0 4px;">Step Logs</h4>
+            <div id="detail-logs-container">
+                <div id="detail-logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="screenshot-modal">
+        <div class="modal" style="max-width:500px;text-align:center;">
+            <img id="screenshot-img" class="modal-img" />
+            <div style="margin-top:12px;">
+                <button class="btn btn-secondary" onclick="document.getElementById('screenshot-modal').classList.remove('active')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+    async function loadFilters() {
+        const [apps, arms] = await Promise.all([
+            API.get('/api/banks/apps'),
+            API.get('/api/stations/arms'),
+        ]);
+        const banks = [...new Set((Array.isArray(apps) ? apps : []).map(a => a.bank_code))].sort();
+        document.getElementById('filter-bank').innerHTML = '<option value="">From Bank</option>' +
+            banks.map(b => `<option value="${b}">${b}</option>`).join('');
+        const mappings = await API.get('/api/banks/mappings');
+        const toBanks = [...new Set((Array.isArray(mappings) ? mappings : []).map(m => m.to_bank_code))].sort();
+        document.getElementById('filter-to-bank').innerHTML = '<option value="">To Bank</option>' +
+            toBanks.map(b => `<option value="${b}">${b}</option>`).join('');
+        document.getElementById('filter-arm').innerHTML = '<option value="">All Arms</option>' +
+            (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
+    function toGMT8(utcStr) {
+        if (!utcStr) return '-';
+        const d = new Date(utcStr + (utcStr.includes('Z') || utcStr.includes('+') ? '' : 'Z'));
+        const gmt8 = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+        return gmt8.toISOString().replace('T', ' ').substring(0, 19);
+    }
+
+    function clearFilters() {
+        document.getElementById('filter-status').value = '';
+        document.getElementById('filter-bank').value = '';
+        document.getElementById('filter-to-bank').value = '';
+        document.getElementById('filter-arm').value = '';
+        document.getElementById('filter-date-from').value = '';
+        document.getElementById('filter-date-to').value = '';
+        loadTransactions();
+    }
+
+    async function loadTransactions() {
+        const status = document.getElementById('filter-status').value;
+        const bank = document.getElementById('filter-bank').value;
+        const toBank = document.getElementById('filter-to-bank').value;
+        const arm = document.getElementById('filter-arm').value;
+        const dateFrom = document.getElementById('filter-date-from').value;
+        const dateTo = document.getElementById('filter-date-to').value;
+        const params = ['limit=100'];
+        if (status) params.push('status=' + status);
+        if (bank) params.push('bank=' + bank);
+        if (toBank) params.push('to_bank=' + toBank);
+        if (arm) params.push('arm_id=' + arm);
+        if (dateFrom) params.push('date_from=' + dateFrom);
+        if (dateTo) params.push('date_to=' + dateTo);
+        const url = '/api/monitor/transactions?' + params.join('&');
+        const rows = await API.get(url);
+        const tbody = document.getElementById('tx-body');
+        document.getElementById('tx-count').textContent = (Array.isArray(rows) ? rows.length : 0) + ' transactions';
+
+        tbody.innerHTML = (Array.isArray(rows) ? rows : []).map(tx => {
+            const dur = tx.started_at && tx.finished_at
+                ? Math.round((new Date(tx.finished_at) - new Date(tx.started_at)) / 1000) + 's'
+                : '-';
+            return `<tr class="tx-row" onclick="showDetail(${tx.id})">
+                <td>${tx.id}</td>
+                <td>${tx.process_id}</td>
+                <td>${tx.arm_name || '-'}</td>
+                <td><strong>${tx.pay_from_bank_code}</strong></td>
+                <td>${tx.pay_to_bank_code || '-'}</td>
+                <td>$${tx.amount}</td>
+                <td><span class="status-${tx.status}">${tx.status}</span></td>
+                <td>${toGMT8(tx.created_at)}</td>
+                <td>${dur}</td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="8" style="color:var(--text2)">No transactions</td></tr>';
+    }
+
+    async function showDetail(id) {
+        const [tx, logs] = await Promise.all([
+            API.get(`/api/monitor/transactions/${id}`),
+            API.get(`/api/monitor/transactions/${id}/logs`)
+        ]);
+        document.getElementById('detail-title').textContent = `Transaction #${tx.id} — Process ${tx.process_id}`;
+        document.getElementById('detail-info').innerHTML = `
+            <div class="grid grid-4" style="gap:8px;">
+                <div><label>From</label><div>${tx.pay_from_bank_code}</div></div>
+                <div><label>To</label><div>${tx.pay_to_bank_code || '-'}</div></div>
+                <div><label>Amount</label><div>$${tx.amount}</div></div>
+                <div><label>Status</label><div class="status-${tx.status}">${tx.status}</div></div>
+                <div><label>To Account</label><div>${tx.pay_to_account_no}</div></div>
+                <div><label>Created</label><div>${toGMT8(tx.created_at)}</div></div>
+                <div><label>Started</label><div>${toGMT8(tx.started_at)}</div></div>
+                <div><label>Finished</label><div>${toGMT8(tx.finished_at)}</div></div>
+                <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
+            </div>
+            ${tx.error_message ? '<div style="margin-top:8px;color:var(--danger);">Error: ' + tx.error_message + '</div>' : ''}
+        `;
+        document.getElementById('detail-logs').innerHTML = logs.map(l => `
+            <div class="log-item ${l.result === 'fail' ? 'fail' : ''}">
+                <div class="step-info">
+                    <span><strong>${l.step_number}.</strong> ${l.step_name} (${l.action_type})</span>
+                    <span>${l.result === 'ok' ? '✓' : '✗'} ${l.duration_ms ? l.duration_ms + 'ms' : ''}</span>
+                </div>
+                ${l.ocr_text ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">OCR: ' + l.ocr_text.substring(0,100) + '</div>' : ''}
+                ${l.message ? '<div style="font-size:12px;color:var(--danger);margin-top:4px;">' + l.message.substring(0,200) + '</div>' : ''}
+                ${l.has_screenshot ? '<span class="screenshot-btn" onclick="showScreenshot(' + tx.id + ',' + l.id + ')">Screenshot</span>' : ''}
+            </div>
+        `).join('') || '<div style="color:var(--text2);padding:12px;">No logs</div>';
+
+        document.getElementById('detail-modal').classList.add('active');
+    }
+
+    function closeDetail() {
+        document.getElementById('detail-modal').classList.remove('active');
+    }
+
+    async function showScreenshot(txId, logId) {
+        const data = await API.get(`/api/monitor/transactions/${txId}/logs/${logId}/screenshot`);
+        if (data.screenshot) {
+            document.getElementById('screenshot-img').src = 'data:image/jpeg;base64,' + data.screenshot;
+            document.getElementById('screenshot-modal').classList.add('active');
+        } else {
+            toast('No screenshot available', 'error');
+        }
+    }
+
+    loadFilters();
+    loadTransactions();
+    </script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WA Unified System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .arm-card { padding: 16px; min-height: 140px; position: relative; }
+        .arm-card .arm-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+        .arm-card .arm-meta { font-size: 11px; color: var(--text2); margin-bottom: 8px; }
+        .arm-card .arm-status { font-size: 14px; margin-bottom: 6px; }
+        .arm-card .arm-task { font-size: 12px; color: var(--text2); min-height: 32px; }
+        .arm-card .arm-controls { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+        .dot-idle { background: var(--success); }
+        .dot-busy { background: var(--warning); animation: pulse 1.5s infinite; }
+        .dot-offline, .dot-paused, .dot-no_worker { background: var(--danger); }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+        .btn-warning { background: var(--warning); color: #000; }
+        .btn-warning:hover { background: #e68a00; }
+    </style>
+</head>
+<body>
+    <div id="nav"></div>
+    <div class="container">
+        <h2 style="margin-bottom: 20px;">Dashboard</h2>
+
+        <div class="grid grid-5" id="stats"></div>
+
+        <h3 style="margin-top:24px;margin-bottom:12px;">Machine Status</h3>
+        <div class="grid grid-4" id="arm-cards">
+            <div class="card" style="grid-column:1/-1;text-align:center;color:var(--text2)">Connecting...</div>
+        </div>
+
+        <!-- Live Log Terminal -->
+        <div class="card" style="margin-top:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <h3 style="margin:0;">Live Logs</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="log-arm-select" onchange="switchLogArm()" style="width:auto;min-width:120px;">
+                        <option value="">All Arms</option>
+                    </select>
+                    <button class="btn btn-sm btn-secondary" onclick="clearLogs()">Clear</button>
+                </div>
+            </div>
+            <div id="log-terminal" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;height:300px;overflow-y:auto;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12px;line-height:1.6;"></div>
+        </div>
+
+        <div style="margin-top:24px;display:flex;gap:12px;">
+            <a href="/recorder" class="btn btn-primary" style="text-decoration:none;">Flow Builder</a>
+            <a href="/transactions" class="btn btn-secondary" style="text-decoration:none;">Transactions</a>
+            <a href="/settings" class="btn btn-secondary" style="text-decoration:none;">Settings</a>
+        </div>
+
+
+
+    </div>
+    <script src="/static/js/api.js"></script>
+    <script>
+    let ws = null;
+
+    async function load() {
+        const todayStats = await API.get('/api/monitor/stats/today');
+
+        document.getElementById('stats').innerHTML = `
+            <div class="card card-stat"><div class="num">${todayStats.total || 0}</div><div class="label">Today Total</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--success)">${todayStats.success || 0}</div><div class="label">Success</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--danger)">${todayStats.failed || 0}</div><div class="label">Failed</div></div>
+            <div class="card card-stat"><div class="num" style="color:#ff9800">${todayStats.stall || 0}</div><div class="label">Stall</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--warning)">${todayStats.queued || 0}</div><div class="label">In Queue</div></div>
+        `;
+
+        connectWS();
+    }
+
+    function connectWS() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${proto}//${location.host}/api/monitor/ws`);
+        ws.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            renderArmCards(data.arms, data.queued);
+        };
+        ws.onclose = () => { setTimeout(connectWS, 3000); };
+        ws.onerror = () => { ws.close(); };
+    }
+
+    function getEffectiveStatus(arm) {
+        if (!arm.active) return 'offline';
+        if (arm.worker_status === 'no_worker') return 'no_worker';
+        return arm.worker_status;
+    }
+
+    function renderArmCards(arms, queued) {
+        if (arms && arms.length > 0) updateLogArmSelect(arms);
+        const cards = document.getElementById('arm-cards');
+        if (!arms || arms.length === 0) {
+            cards.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--text2)">No machines configured. <a href="/settings">Add one in Settings</a>.</div>';
+            return;
+        }
+        cards.innerHTML = arms.map(a => {
+            const st = getEffectiveStatus(a);
+            const stLabel = {idle:'IDLE', busy:'BUSY', paused:'PAUSED', offline:'OFFLINE', no_worker:'NO WORKER'}[st] || st.toUpperCase();
+            let btns = '';
+            if (st === 'idle' || st === 'busy') {
+                btns += `<button class="btn btn-sm btn-secondary" onclick="armAction('pause',${a.arm_id})">Pause</button>`;
+                btns += `<button class="btn btn-sm btn-warning" onclick="armAction('offline',${a.arm_id})">Set Offline</button>`;
+            }
+            if (st === 'paused') {
+                btns += `<button class="btn btn-sm btn-success" onclick="armAction('resume',${a.arm_id})">Resume</button>`;
+                btns += `<button class="btn btn-sm btn-warning" onclick="armAction('offline',${a.arm_id})">Set Offline</button>`;
+            }
+            if (st === 'offline' || st === 'no_worker') {
+                btns += `<button class="btn btn-sm btn-success" onclick="armAction('resume',${a.arm_id})">Resume</button>`;
+            }
+            btns += `<button class="btn btn-sm btn-danger" onclick="armAction('reset',${a.arm_id})">Reset</button>`;
+
+            return `<div class="card arm-card">
+                <div class="arm-name">${a.name}</div>
+                <div class="arm-meta">${a.com_port} | Camera ${a.camera_id}</div>
+                <div class="arm-status">
+                    <span class="status-dot dot-${st}"></span>
+                    <strong>${stLabel}</strong>
+                </div>
+                <div class="arm-task">
+                    ${a.current_task ? 'Task: ' + a.current_task : 'No active task'}
+                    ${a.current_step ? '<br>Step: ' + a.current_step : ''}
+                </div>
+                <div style="font-size:11px;color:var(--text2);margin-top:4px;">Completed: ${a.task_count}</div>
+                ${a.last_error ? '<div style="font-size:11px;color:var(--danger);margin-top:4px;">' + a.last_error.substring(0,80) + '</div>' : ''}
+                <div class="arm-controls">${btns}</div>
+            </div>`;
+        }).join('');
+    }
+
+    async function armAction(action, armId) {
+        if (action === 'offline' && !confirm('Set this arm offline?')) return;
+        if (action === 'reset' && !confirm('Reset arm to origin and close port?')) return;
+        const r = await API.post(`/api/monitor/${action}/${armId}`);
+        if (r.success) toast(action.charAt(0).toUpperCase() + action.slice(1) + ' done');
+        else toast(r.error || 'Failed', 'error');
+    }
+
+    // === Live Log Terminal ===
+    let logWs = null;
+    let currentLogArm = '';
+    const logColors = { INFO: '#58a6ff', WARNING: '#d29922', ERROR: '#f85149', DEBUG: '#8b949e' };
+
+    function connectLogWS() {
+        if (logWs) { try { logWs.close(); } catch(e) {} }
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const armParam = currentLogArm ? `?arm_id=${currentLogArm}` : '';
+        logWs = new WebSocket(`${proto}//${location.host}/api/monitor/logs/ws${armParam}`);
+        logWs.onmessage = (e) => {
+            const logs = JSON.parse(e.data);
+            const term = document.getElementById('log-terminal');
+            logs.forEach(l => {
+                const color = logColors[l.level] || '#c9d1d9';
+                const prefix = l.arm_name ? `<span style="color:#8b949e">[${l.arm_name}]</span> ` : '';
+                const ts = `<span style="color:#484f58">${l.ts}</span>`;
+                const lvl = `<span style="color:${color};font-weight:600">${l.level.padEnd(7)}</span>`;
+                term.innerHTML += `<div>${ts} ${lvl} ${prefix}${escHtml(l.msg)}</div>`;
+            });
+            if (logs.length > 0) term.scrollTop = term.scrollHeight;
+        };
+        logWs.onclose = () => { setTimeout(connectLogWS, 3000); };
+        logWs.onerror = () => { logWs.close(); };
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function switchLogArm() {
+        currentLogArm = document.getElementById('log-arm-select').value;
+        document.getElementById('log-terminal').innerHTML = '';
+        connectLogWS();
+    }
+
+    function clearLogs() {
+        document.getElementById('log-terminal').innerHTML = '';
+    }
+
+    function updateLogArmSelect(arms) {
+        const sel = document.getElementById('log-arm-select');
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All Arms</option>' +
+            arms.map(a => `<option value="${a.arm_id}">${a.name}</option>`).join('');
+        sel.value = cur;
+    }
+
+    load();
+    connectLogWS();
+    </script>
+</body>
+</html>

@@ -1,0 +1,3364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flow Builder</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body { overflow: hidden; }
+
+        /* === NAV BAR === */
+        .builder-nav {
+            background: var(--bg2);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            z-index: 100;
+        }
+        .builder-nav .logo { font-size: 17px; font-weight: 700; color: var(--accent); margin-right: 4px; }
+        .ctx-group { display: flex; align-items: center; gap: 6px; }
+        .ctx-group label { font-size: 11px; color: var(--text2); margin: 0; white-space: nowrap; }
+        .ctx-group select, .ctx-group input { width: auto; padding: 4px 8px; font-size: 12px; }
+        .nav-spacer { flex: 1; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .status-dot.on { background: var(--success); }
+        .status-dot.off { background: var(--danger); }
+
+        /* === MAIN LAYOUT === */
+        .builder-main {
+            display: grid;
+            grid-template-columns: minmax(360px, 480px) 1fr;
+            height: calc(100vh - 86px);
+        }
+        .panel-left {
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .panel-right {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .step-list-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .step-form-area {
+            padding: 10px;
+            background: var(--bg2);
+            max-height: 50%;
+            overflow-y: auto;
+        }
+
+        /* === CAMERA === */
+        .camera-container {
+            position: relative;
+            background: #000;
+            border-radius: var(--radius);
+            overflow: hidden;
+            line-height: 0;
+        }
+        .camera-container img { display: block; width: 100%; cursor: crosshair; }
+        .camera-container canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        .camera-info { display: flex; gap: 14px; margin-top: 5px; font-size: 11px; color: var(--text2); }
+        .camera-info strong { color: var(--accent); }
+
+        /* === MODE BAR === */
+        .mode-bar { display: flex; gap: 3px; margin-bottom: 5px; }
+        .mode-btn {
+            padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+            cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text2);
+        }
+        .mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        /* === ARM PANEL === */
+        .arm-panel {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 10px;
+        }
+        .arm-row { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
+        .arm-row:last-child { margin-bottom: 0; }
+        .arm-pos {
+            font-family: 'Consolas', monospace;
+            font-size: 13px; color: var(--accent);
+            background: var(--bg); padding: 3px 8px; border-radius: 4px;
+        }
+
+        /* === STEP LIST === */
+        .step-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .step-list-header h3 { margin: 0; font-size: 15px; }
+        .step-item {
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 8px; background: var(--bg); border: 1px solid var(--border);
+            border-radius: var(--radius); margin-bottom: 3px; cursor: pointer; font-size: 12px;
+        }
+        .step-item:hover { border-color: var(--accent); }
+        .step-item.selected { border-color: var(--accent); background: rgba(233,69,96,0.08); }
+        .step-item.dragging { opacity: 0.4; }
+        .step-item .grip { cursor: grab; color: var(--text2); user-select: none; }
+        .step-num { font-weight: 700; color: var(--accent); min-width: 20px; text-align: right; }
+        .step-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .step-delay { color: var(--text2); font-size: 11px; white-space: nowrap; }
+
+        /* === ACTION BADGES === */
+        .action-badge {
+            padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600;
+            min-width: 62px; text-align: center; display: inline-block; color: #fff;
+        }
+        .action-badge.CLICK { background: #1565c0; }
+        .action-badge.TYPE { background: #6a1b9a; }
+        .action-badge.SWIPE { background: #e65100; }
+        .action-badge.PHOTO { background: #2e7d32; }
+        .action-badge.ARM_MOVE { background: #37474f; }
+        .action-badge.OCR_VERIFY { background: #00838f; }
+        .action-badge.CHECK_SCREEN { background: #ff6f00; }
+
+        /* === STEP FORM === */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .form-grid .full { grid-column: 1 / -1; }
+        .form-grid label { font-size: 11px; margin-bottom: 2px; }
+        .form-grid input:not([type="checkbox"]), .form-grid select { padding: 5px 7px; font-size: 12px; }
+        .form-grid input[type="checkbox"] { width: auto; }
+
+        /* === BOTTOM BAR === */
+        .builder-bottom {
+            background: var(--bg2); border-top: 1px solid var(--border);
+            padding: 6px 16px; display: flex; align-items: center; gap: 8px;
+        }
+        .builder-bottom .spacer { flex: 1; }
+        #status-log { font-size: 11px; color: var(--text2); max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* === KEYBOARD MODAL === */
+        .kb-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .kb-right { overflow-y: auto; max-height: 68vh; }
+        .kb-section-title { font-size: 10px; color: var(--text2); margin: 5px 0 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kb-section-grid { display: grid; gap: 3px; margin-bottom: 4px; }
+        .key-btn {
+            padding: 5px 2px; text-align: center; background: var(--bg);
+            border: 2px solid var(--border); border-radius: 4px;
+            color: var(--text); font-size: 11px; font-weight: 600; cursor: pointer;
+            min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .key-btn:hover { border-color: var(--accent); }
+        .key-btn.recorded { border-color: var(--success); background: rgba(76,175,80,0.1); }
+        .key-btn.active { border-color: var(--accent); background: rgba(233,69,96,0.15); }
+        .key-btn.special { font-size: 10px; color: var(--warning); }
+
+        /* === RUN LOG === */
+        .run-log {
+            max-height: 260px; overflow-y: auto; font-size: 12px;
+            font-family: 'Consolas', monospace; background: var(--bg);
+            border-radius: var(--radius); padding: 8px;
+        }
+        .log-line { padding: 1px 0; }
+        .log-line.running { color: var(--warning); }
+        .log-line.done { color: var(--success); }
+        .log-line.error { color: var(--danger); }
+        .log-line.info { color: var(--text2); }
+
+        /* === SETTINGS MODAL === */
+        .settings-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 12px; }
+        .settings-tab {
+            padding: 10px 20px; font-size: 15px; font-weight: 600; cursor: pointer;
+            color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -2px;
+        }
+        .settings-tab:hover { color: var(--text); }
+        .settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .settings-panel { display: none; }
+        .settings-panel.active { display: block; }
+        .settings-table { width: 100%; font-size: 14px; }
+        .settings-table th { font-size: 13px; padding: 8px 10px; }
+        .settings-table td { padding: 7px 10px; }
+        .settings-table input, .settings-table select {
+            padding: 5px 8px; font-size: 14px; width: 100%;
+        }
+        .settings-table .actions { white-space: nowrap; width: 80px; }
+    </style>
+</head>
+<body>
+
+<!-- ==================== NAV BAR ==================== -->
+<div class="builder-nav">
+    <span class="logo">Flow Builder</span>
+
+    <div class="ctx-group">
+        <label>Bank:</label>
+        <select id="bank-select" onchange="onBankChange()"><option value="">--</option></select>
+        <input id="bank-new" placeholder="New" style="width:70px;" onkeydown="if(event.key==='Enter')createBank()">
+        <select id="bank-ttype" style="width:85px;padding:4px 6px;font-size:11px;" title="Transfer type" onchange="onTemplateFieldChange()">
+            <option value="">Default</option>
+            <option value="SAME">Same Bank</option>
+            <option value="INTER">Interbank</option>
+        </select>
+        <select id="bank-amtfmt" style="width:95px;padding:4px 6px;font-size:11px;" title="Amount format" onchange="onTemplateFieldChange()">
+            <option value="">Amt: Default</option>
+            <option value="no_dot">Amt: No Dot</option>
+            <option value="always_decimal">Amt: .00</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="createBank()" title="Create new bank template">+</button>
+        <button class="btn btn-sm btn-secondary" onclick="copyFlow()" title="Copy flow to another arm or transfer type">Copy</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteFlow()" title="Delete current flow">Del</button>
+    </div>
+
+    <div class="ctx-group">
+        <label>Arm:</label>
+        <select id="arm-select" onchange="onArmChange()"></select>
+    </div>
+
+    <div class="ctx-group">
+        <label>Station:</label>
+        <select id="station-select" onchange="onStationChange()"></select>
+    </div>
+
+    <div class="nav-spacer"></div>
+
+    <div class="ctx-group">
+        <span class="status-dot off" id="cal-dot"></span>
+        <span style="font-size:11px;" id="cal-label">Not calibrated</span>
+        <button class="btn btn-sm btn-secondary" onclick="openCalibrate()" style="margin-left:4px;">Calibrate</button>
+    </div>
+
+    <div class="ctx-group">
+        <span class="status-dot off" id="cam-dot"></span>
+        <button class="btn btn-sm btn-secondary" id="cam-btn" onclick="toggleCam()">Open Camera</button>
+    </div>
+
+    <div class="ctx-group">
+        <span class="status-dot off" id="arm-dot"></span>
+        <button class="btn btn-sm btn-success" id="arm-btn" onclick="toggleArm()">Connect Arm</button>
+    </div>
+
+    <button class="btn btn-sm btn-secondary" onclick="openSettings()">Settings</button>
+    <a href="/" class="btn btn-sm btn-secondary" style="text-decoration:none;">Dashboard</a>
+</div>
+
+<!-- ==================== MAIN LAYOUT ==================== -->
+<div class="builder-main">
+
+    <!-- LEFT: Camera + Arm Control -->
+    <div class="panel-left">
+        <div class="camera-section">
+            <div class="mode-bar">
+                <div class="mode-btn active" data-mode="click" onclick="setMode('click')">Click</div>
+                <div class="mode-btn" data-mode="swipe" onclick="setMode('swipe')">Swipe</div>
+                <div class="mode-btn" data-mode="move" onclick="setMode('move')">Move Only</div>
+            </div>
+            <div class="camera-container">
+                <img id="camera-feed" src="" onclick="onCameraClick(event)" style="min-height:200px;">
+                <canvas id="overlay"></canvas>
+            </div>
+            <div class="camera-info">
+                <span>Mode: <strong id="lbl-mode">CLICK</strong></span>
+                <span>Pixel: <strong id="lbl-pixel">-</strong></span>
+                <span>Arm: <strong id="lbl-arm">-</strong></span>
+            </div>
+        </div>
+
+        <div class="arm-panel">
+            <div class="arm-row">
+                <strong style="font-size:12px;">Arm</strong>
+                <div class="arm-pos" id="pos-display">X=0.0 Y=0.0</div>
+                <span style="font-size:11px;color:var(--text2);margin-left:auto;">Step:</span>
+                <div id="jog-btns" style="display:flex;gap:2px;">
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(0.1)">0.1</button>
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(0.5)">0.5</button>
+                    <button class="btn btn-primary btn-sm"   onclick="setJog(1)">1</button>
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(5)">5</button>
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(10)">10</button>
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(20)">20</button>
+                    <button class="btn btn-secondary btn-sm" onclick="setJog(50)">50</button>
+                </div>
+            </div>
+            <div class="arm-row">
+                <button class="btn btn-secondary btn-sm" onclick="jog(0,-1)">&#9650;</button>
+                <button class="btn btn-secondary btn-sm" onclick="jog(0,1)">&#9660;</button>
+                <button class="btn btn-secondary btn-sm" onclick="jog(-1,0)">&#9664;</button>
+                <button class="btn btn-secondary btn-sm" onclick="jog(1,0)">&#9654;</button>
+                <span style="width:6px;"></span>
+                <button class="btn btn-secondary btn-sm" onclick="pressArm()">Z&#9660;</button>
+                <button class="btn btn-secondary btn-sm" onclick="liftArm()">Z&#9650;</button>
+                <button class="btn btn-secondary btn-sm" onclick="goHome()">Home</button>
+            </div>
+            <div class="arm-row">
+                <input id="go-x" type="number" step="0.1" placeholder="X" style="width:65px;padding:3px 6px;font-size:12px;">
+                <input id="go-y" type="number" step="0.1" placeholder="Y" style="width:65px;padding:3px 6px;font-size:12px;">
+                <button class="btn btn-primary btn-sm" onclick="goToXY()">Move</button>
+                <button class="btn btn-secondary btn-sm" onclick="syncPos()" title="Only update display, arm stays">Sync</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Step List + Step Form -->
+    <div class="panel-right">
+        <div class="step-list-area">
+            <div class="step-list-header">
+                <h3>Steps <span id="step-count" style="color:var(--text2);font-weight:400;font-size:12px;"></span></h3>
+                <div style="display:flex;gap:3px;flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="showAddStep()">+ Add Step</button>
+                    <button class="btn btn-secondary btn-sm" onclick="addQuick('PHOTO')">+Photo</button>
+                    <button class="btn btn-secondary btn-sm" onclick="addQuick('OCR_VERIFY')">+OCR</button>
+                    <button class="btn btn-secondary btn-sm" onclick="addQuick('done')">+Done</button>
+                    <button class="btn btn-success btn-sm" onclick="showCopyCoords()" title="Copy coords from another station with offset">Copy from S...</button>
+                </div>
+            </div>
+            <div id="step-list"></div>
+        </div>
+        <div class="step-form-area" id="form-area" style="display:none;">
+            <div id="step-form"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== BOTTOM BAR ==================== -->
+<div class="builder-bottom">
+    <button class="btn btn-primary" onclick="saveFlow()">Save Flow</button>
+    <button class="btn btn-secondary" onclick="testAll()">Test All</button>
+    <div class="spacer"></div>
+    <span id="status-log">Ready</span>
+</div>
+
+<!-- ==================== KEYBOARD MODAL ==================== -->
+<div class="modal-overlay" id="kb-modal">
+    <div class="modal" style="min-width:920px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+            <h3 id="kb-title" style="margin:0;">Record Keyboard</h3>
+            <select id="kb-cat" style="width:180px;padding:4px 8px;font-size:12px;" disabled>
+                <option value="system_keyboard">System Keyboard (full)</option>
+                <option value="system_keypad">System Keypad (digits)</option>
+                <option value="app_keyboard">App Keyboard (full)</option>
+                <option value="app_keypad">App Keypad (digits)</option>
+                <option value="multi_page">Multi-Page Keyboard</option>
+                <option value="random_pin">Random PIN Keypad</option>
+            </select>
+            <span id="kb-progress" style="font-size:11px;color:var(--text2);margin-left:auto;"></span>
+        </div>
+        <!-- Multi-page: page tabs -->
+        <div id="kb-page-tabs" style="display:none;margin-bottom:6px;">
+            <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;" id="kb-page-btns"></div>
+        </div>
+        <div class="kb-layout" style="flex:1;overflow:hidden;">
+            <div style="overflow-y:auto;">
+                <div class="camera-container">
+                    <img id="kb-cam" src="" onclick="onKbClick(event)" style="width:100%;cursor:crosshair;">
+                </div>
+                <p style="margin-top:6px;font-size:12px;">
+                    Current: <strong id="kb-cur" style="color:var(--accent);font-size:18px;">-</strong>
+                    <span style="color:var(--text2);margin-left:6px;">Click on camera to set position</span>
+                </p>
+            </div>
+            <div class="kb-right">
+                <div id="kb-grid"></div>
+                <!-- Multi-page properties -->
+                <div id="kb-props" style="display:none;margin-top:6px;padding:6px 8px;background:var(--bg);border-radius:var(--radius);font-size:12px;">
+                    <strong style="font-size:11px;color:var(--text2);">Keyboard Properties</strong>
+                    <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer;">
+                        <input type="checkbox" id="kb-auto-cap"> Auto-capitalize first letter
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;margin:4px 0;cursor:pointer;">
+                        <input type="checkbox" id="kb-shift-cancel" checked> Shift auto-cancel after one char
+                    </label>
+                </div>
+                <details style="margin-top:6px;">
+                    <summary style="font-size:11px;color:var(--text2);cursor:pointer;">Show recorded coordinates</summary>
+                    <div style="max-height:140px;overflow-y:auto;margin-top:4px;">
+                        <table style="width:100%;font-size:10px;">
+                            <thead><tr><th>Page</th><th>Key</th><th>X</th><th>Y</th></tr></thead>
+                            <tbody id="kb-table"></tbody>
+                        </table>
+                    </div>
+                </details>
+                <div class="btn-group" style="margin-top:8px;">
+                    <button class="btn btn-success btn-sm" onclick="autoFillRows()" title="Record first & last key of each row, then auto-fill the rest">Auto-fill Rows</button>
+                    <button class="btn btn-primary btn-sm" onclick="saveKb()">Save & Close</button>
+                    <button class="btn btn-secondary btn-sm" onclick="closeKb()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TEST RUN MODAL ==================== -->
+<div class="modal-overlay" id="run-modal">
+    <div class="modal" style="min-width:480px;">
+        <h3>Test Run</h3>
+        <div class="run-log" id="run-log"></div>
+        <div class="btn-group" style="margin-top:10px;">
+            <button class="btn btn-danger btn-sm" onclick="runAbort=true">Stop</button>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal('run-modal');runAbort=true">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== SETTINGS MODAL ==================== -->
+<div class="modal-overlay" id="settings-modal">
+    <div class="modal" style="min-width:850px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0;">
+            <h3 style="margin:0;">Settings</h3>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal('settings-modal')">Close</button>
+        </div>
+        <div class="settings-tabs">
+            <div class="settings-tab active" onclick="setSettingsTab('bank-apps')">Bank Apps</div>
+            <div class="settings-tab" onclick="setSettingsTab('arms')">Arms</div>
+            <div class="settings-tab" onclick="setSettingsTab('stations')">Stations</div>
+            <div class="settings-tab" onclick="setSettingsTab('phones')">Phones</div>
+            <div class="settings-tab" onclick="setSettingsTab('mappings')">Bank Mappings</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+            <div class="settings-panel active" id="sp-bank-apps"></div>
+            <div class="settings-panel" id="sp-arms"></div>
+            <div class="settings-panel" id="sp-stations"></div>
+            <div class="settings-panel" id="sp-phones"></div>
+            <div class="settings-panel" id="sp-mappings"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== CALIBRATION MODAL ==================== -->
+<div class="modal-overlay" id="cal-modal">
+    <div class="modal" style="min-width:600px;max-width:90vw;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">3-Point Auto Calibration</h3>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal('cal-modal')">Close</button>
+        </div>
+
+        <div id="cal-step-1">
+            <p style="margin-bottom:8px;">1. Move camera above the phone so you can see a reference icon in the camera feed.</p>
+            <p style="margin-bottom:8px;">2. Enter the <strong>known arm coordinates</strong> where the pen tip should touch this reference icon:</p>
+            <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
+                <div class="form-group" style="margin:0;"><label>Ref Pen X</label><input id="cal-ref-x" type="number" step="0.1" placeholder="56.5" style="width:80px;"></div>
+                <div class="form-group" style="margin:0;"><label>Ref Pen Y</label><input id="cal-ref-y" type="number" step="0.1" placeholder="92.0" style="width:80px;"></div>
+                <div class="form-group" style="margin:0;"><label>Step (mm)</label><input id="cal-step-mm" type="number" value="10" style="width:60px;"></div>
+            </div>
+            <p style="margin-bottom:8px;">3. Click <strong>Capture Template</strong> to take a photo. Then <strong>drag a box</strong> around the reference icon.</p>
+            <div style="margin-bottom:8px;">
+                <button class="btn btn-primary btn-sm" onclick="calCaptureTemplate()">Capture Template</button>
+                <span id="cal-tpl-status" style="margin-left:8px;font-size:12px;color:var(--text2);"></span>
+            </div>
+            <canvas id="cal-tpl-canvas" width="480" height="640" style="display:none;border:1px solid var(--border);border-radius:4px;cursor:crosshair;max-width:100%;"></canvas>
+            <div style="margin-top:12px;">
+                <button class="btn btn-success" onclick="calStartAuto()" id="cal-start-btn" disabled>Start Auto Calibration</button>
+            </div>
+        </div>
+
+        <div id="cal-step-2" style="display:none;">
+            <p style="margin-bottom:8px;">Template matching failed. Click the <strong>center of the reference icon</strong> in each photo:</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;" id="cal-manual-photos"></div>
+            <div style="margin-top:12px;">
+                <button class="btn btn-success" onclick="calSubmitManual()" id="cal-manual-btn" disabled>Calculate & Save</button>
+                <span id="cal-manual-status" style="margin-left:8px;font-size:12px;"></span>
+            </div>
+        </div>
+
+        <div id="cal-result" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--radius);">
+            <h4 style="color:var(--success);">Calibration Complete</h4>
+            <pre id="cal-result-text" style="font-size:12px;color:var(--text2);"></pre>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+let S = {
+    bank: '',
+    station: 1,
+    tplId: null,
+    templates: [],
+    armOn: false,
+    curX: 0, curY: 0,
+    jogStep: 1,
+    calibrated: false,
+    mode: 'click',
+    swipePhase: null,
+    swipeStartArm: null,
+    swipeStartPx: null,
+    lastArm: null,
+    steps: [],
+    selIdx: -1,
+    isNew: false,
+    uiEls: {},
+    swipes: {},
+    keymaps: {},
+    kbType: '',
+    kbKeys: {},
+    kbCurKey: null,
+    refs: [],
+    camOn: false,
+    armId: null,
+    allStations: [],
+};
+let runAbort = false;
+
+function getArmId() { return S.armId; }
+
+/* ============================================================
+   INIT
+   ============================================================ */
+async function init() {
+    const arms = await API.get('/api/stations/arms');
+    const armSel = document.getElementById('arm-select');
+    armSel.innerHTML = arms.map(a => `<option value="${a.id}">${a.name} (${a.com_port})</option>`).join('');
+    if (arms.length > 0) S.armId = arms[0].id;
+
+    S.allStations = await API.get('/api/stations/');
+    loadStationsForArm();
+
+    await reloadTemplates();
+
+    const arm = await API.get('/api/recorder/arm/status' + (S.armId ? '?arm_id=' + S.armId : ''));
+    if (arm.connected) {
+        S.armOn = true;
+        S.curX = arm.x || 0;
+        S.curY = arm.y || 0;
+    }
+    updateArmUI();
+
+    const cam = await API.get('/api/camera/status' + (S.armId ? '?arm_id=' + S.armId : ''));
+    if (cam.open) {
+        S.camOn = true;
+        document.getElementById('camera-feed').src = '/api/stream?arm_id=' + S.armId + '&t=' + Date.now();
+        document.getElementById('cam-dot').className = 'status-dot on';
+        document.getElementById('cam-btn').textContent = 'Close Camera';
+        document.getElementById('cam-btn').className = 'btn btn-sm btn-danger';
+    }
+
+    await checkCal();
+    renderSteps();
+    document.addEventListener('keydown', onKey);
+
+    window.addEventListener('beforeunload', (e) => {
+        if (S.armOn || S.camOn) {
+            const msg = 'Arm or camera is still connected. Leaving will auto-disconnect.';
+            e.returnValue = msg;
+            return msg;
+        }
+    });
+
+    window.addEventListener('unload', () => {
+        if (S.camOn) {
+            navigator.sendBeacon('/api/camera/close' + (S.armId ? '?arm_id=' + S.armId : ''));
+        }
+        if (S.armOn) {
+            navigator.sendBeacon('/api/recorder/arm/disconnect' + (S.armId ? '?arm_id=' + S.armId : ''));
+        }
+    });
+}
+
+function loadStationsForArm() {
+    const filtered = S.allStations.filter(s => s.arm_id === S.armId);
+    const sel = document.getElementById('station-select');
+    sel.innerHTML = filtered.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    if (filtered.length > 0) {
+        S.station = filtered[0].id;
+        sel.value = S.station;
+    } else {
+        S.station = null;
+    }
+}
+
+async function onArmChange() {
+    const newArmId = parseInt(document.getElementById('arm-select').value);
+    if (S.armOn) {
+        document.getElementById('arm-select').value = S.armId;
+        toast('Disconnect arm first before switching', 'error');
+        return;
+    }
+    if (S.camOn) { await toggleCam(); }
+    S.armId = newArmId;
+    loadStationsForArm();
+    await reloadTemplates();
+    S.bank = ''; S.tplId = null; S.steps = []; S.refs = [];
+    S.uiEls = {}; S.swipes = {}; S.keymaps = {};
+    S.selIdx = -1; S.curX = 0; S.curY = 0;
+    document.getElementById('bank-select').value = '';
+    showPos();
+    renderSteps();
+    await checkCal();
+    toast('Switched to ARM ' + S.armId);
+}
+
+async function reloadTemplates() {
+    S.templates = await API.get('/api/banks/templates?arm_id=' + S.armId);
+    fillBankSelect();
+}
+
+function fillBankSelect() {
+    const sel = document.getElementById('bank-select');
+    const active = S.templates.filter(t => t.status === 'active').sort((a,b) => a.bank_code.localeCompare(b.bank_code));
+    sel.innerHTML = '<option value="">-- select --</option>' +
+        active.map(t => {
+            const tt = t.transfer_type ? ` (${t.transfer_type})` : '';
+            return `<option value="${t.id}">${t.bank_code}${tt}</option>`;
+        }).join('');
+}
+
+/* ============================================================
+   CONTEXT: Bank / Station
+   ============================================================ */
+async function onBankChange() {
+    const selVal = document.getElementById('bank-select').value;
+    if (!selVal) { S.bank = ''; S.tplId = null; S.steps = []; renderSteps(); return; }
+    const tpl = S.templates.find(t => t.id === parseInt(selVal));
+    if (!tpl) return;
+    S.bank = tpl.bank_code;
+    S.tplId = tpl.id;
+    document.getElementById('bank-ttype').value = tpl.transfer_type || '';
+    document.getElementById('bank-amtfmt').value = tpl.amount_format || '';
+    await loadDirectTemplate();
+}
+
+async function onTemplateFieldChange() {
+    if (!S.tplId) return;
+    const tpl = S.templates.find(t => t.id === S.tplId);
+    if (!tpl) return;
+
+    const newTT = document.getElementById('bank-ttype').value || null;
+    const newAF = document.getElementById('bank-amtfmt').value || null;
+
+    const data = {};
+    if (newTT !== (tpl.transfer_type || null)) data.transfer_type = newTT;
+    if (newAF !== (tpl.amount_format || null)) data.amount_format = newAF;
+    if (!Object.keys(data).length) return;
+
+    const r = await API.put(`/api/banks/templates/${S.tplId}`, data);
+    if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+
+    if ('transfer_type' in data) tpl.transfer_type = newTT;
+    if ('amount_format' in data) tpl.amount_format = newAF;
+    fillBankSelect();
+    document.getElementById('bank-select').value = S.tplId;
+    toast('Updated: ' + Object.keys(data).join(', '));
+}
+
+async function createBank() {
+    const code = document.getElementById('bank-new').value.trim().toUpperCase();
+    if (!code) return;
+    const ttype = document.getElementById('bank-ttype').value || null;
+    const amtfmt = document.getElementById('bank-amtfmt').value || null;
+    const suffix = ttype ? ` ${ttype === 'SAME' ? 'Same Bank' : 'Interbank'}` : '';
+    const r = await API.post('/api/banks/templates', {
+        bank_code: code, arm_id: S.armId, name: code + suffix + ' Transfer Flow', transfer_type: ttype, amount_format: amtfmt,
+    });
+    if (r.success) {
+        await reloadTemplates();
+        document.getElementById('bank-select').value = r.id;
+        document.getElementById('bank-new').value = '';
+        S.bank = code;
+        S.tplId = r.id;
+        await loadDirectTemplate();
+        toast('Template created: ' + code + (ttype ? ' (' + ttype + ')' : ''));
+    }
+}
+
+async function onStationChange() {
+    S.station = parseInt(document.getElementById('station-select').value);
+    await checkCal();
+    if (S.bank) {
+        await loadCoords();
+        refreshStepCoords();
+        renderSteps();
+        setStatus(`Station S${S.station}: ${Object.keys(S.uiEls).length} coords, ${Object.keys(S.keymaps).length} keyboards loaded`);
+    }
+}
+
+function refreshStepCoords() {
+    for (const s of S.steps) {
+        if (['CLICK','ARM_MOVE','PHOTO','OCR_VERIFY','CHECK_SCREEN'].includes(s.action_type) && s.ui_element_key) {
+            const el = S.uiEls[s.ui_element_key];
+            s.coords = el ? { x: el.x, y: el.y } : null;
+        } else if (s.action_type === 'SWIPE' && s.swipe_key) {
+            const sw = S.swipes[s.swipe_key];
+            s.coords = sw ? { start_x: sw.start_x, start_y: sw.start_y, end_x: sw.end_x, end_y: sw.end_y } : null;
+        }
+    }
+}
+
+/* ============================================================
+   COPY COORDINATES (offset between stations)
+   ============================================================ */
+S._copySrcEls = null;
+S._copySrcSwipes = null;
+S._copySrcKeymaps = null;
+S._copyOffset = null;
+
+async function showCopyCoords() {
+    if (!S.bank) { toast('Select bank first', 'error'); return; }
+    const others = [1,2,3,4].filter(s => s !== S.station);
+    if (!others.length) return;
+
+    document.getElementById('form-area').style.display = 'block';
+    document.getElementById('step-form').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h3 style="font-size:14px;margin:0;">Copy Coords → S${S.station}</h3>
+            <button class="btn btn-secondary btn-sm" onclick="hideCopyMode()">✕</button>
+        </div>
+        <div class="form-grid">
+            <div class="form-group"><label>Copy FROM station</label>
+                <select id="cp-src" onchange="loadCopySrc()">
+                    ${others.map(s => `<option value="${s}">S${s}</option>`).join('')}
+                </select></div>
+            <div class="form-group"><label>Reference point</label>
+                <select id="cp-ref" onchange="onCopyRefChange()">
+                    <option value="">-- load source first --</option>
+                </select></div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin:4px 0;">
+            Source coord: <strong id="cp-src-xy" style="color:var(--accent);">-</strong>
+        </div>
+        <div style="font-size:12px;margin:4px 0;padding:6px 8px;background:var(--bg);border-radius:var(--radius);">
+            <strong>Step:</strong> Jog the arm to the same point on S${S.station}'s phone, then:<br>
+            <button class="btn btn-success btn-sm" onclick="calcOffsetFromArm()" style="margin-top:4px;">Use Current Arm Position</button>
+            <span style="color:var(--text2);margin-left:8px;">or click on camera (requires calibration)</span>
+        </div>
+        <div style="font-size:13px;margin:4px 0;">
+            Offset: <strong id="cp-offset" style="color:var(--success);">-</strong>
+        </div>
+        <div id="cp-preview" style="max-height:160px;overflow-y:auto;font-size:10px;margin:4px 0;"></div>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+            <button class="btn btn-primary btn-sm" id="cp-apply" onclick="applyCopy()" disabled>Apply All</button>
+            <button class="btn btn-secondary btn-sm" onclick="hideCopyMode()">Cancel</button>
+        </div>`;
+
+    S.mode = 'offset';
+    document.querySelectorAll('.mode-bar .mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('lbl-mode').textContent = 'OFFSET CAL';
+    S._copyOffset = null;
+
+    await loadCopySrc();
+}
+
+async function loadCopySrc() {
+    const srcSt = parseInt(document.getElementById('cp-src').value);
+    const [ui, sw, km] = await Promise.all([
+        API.get(`/api/coords/ui/${S.bank}/${srcSt}`),
+        API.get(`/api/coords/swipes/${S.bank}/${srcSt}`),
+        API.get(`/api/coords/keymaps/${S.bank}/${srcSt}`),
+    ]);
+
+    S._copySrcEls = {};
+    (Array.isArray(ui) ? ui : []).forEach(e => { S._copySrcEls[e.element_key] = { x: e.x, y: e.y }; });
+
+    S._copySrcSwipes = {};
+    (Array.isArray(sw) ? sw : []).forEach(s => {
+        S._copySrcSwipes[s.swipe_key] = { start_x: s.start_x, start_y: s.start_y, end_x: s.end_x, end_y: s.end_y };
+    });
+
+    S._copySrcKeymaps = {};
+    (Array.isArray(km) ? km : []).forEach(k => {
+        if (!S._copySrcKeymaps[k.keyboard_type]) S._copySrcKeymaps[k.keyboard_type] = {};
+        S._copySrcKeymaps[k.keyboard_type][k.key_char] = { x: k.x, y: k.y };
+    });
+
+    const sel = document.getElementById('cp-ref');
+    const keys = Object.keys(S._copySrcEls);
+    sel.innerHTML = '<option value="">-- pick reference --</option>' +
+        keys.map(k => {
+            const c = S._copySrcEls[k];
+            return `<option value="${k}">${k} (${c.x.toFixed(1)}, ${c.y.toFixed(1)})</option>`;
+        }).join('');
+
+    const nEl = keys.length, nSw = Object.keys(S._copySrcSwipes).length;
+    const nKm = Object.values(S._copySrcKeymaps).reduce((a, o) => a + Object.keys(o).length, 0);
+    setStatus(`S${srcSt}: ${nEl} elements, ${nSw} swipes, ${nKm} keys`);
+    document.getElementById('cp-offset').textContent = '-';
+    document.getElementById('cp-preview').innerHTML = '';
+    document.getElementById('cp-apply').disabled = true;
+    S._copyOffset = null;
+}
+
+function onCopyRefChange() {
+    const key = document.getElementById('cp-ref').value;
+    if (key && S._copySrcEls[key]) {
+        const c = S._copySrcEls[key];
+        document.getElementById('cp-src-xy').textContent = `(${c.x.toFixed(1)}, ${c.y.toFixed(1)})`;
+    } else {
+        document.getElementById('cp-src-xy').textContent = '-';
+    }
+    S._copyOffset = null;
+    document.getElementById('cp-offset').textContent = '-';
+    document.getElementById('cp-preview').innerHTML = '';
+    document.getElementById('cp-apply').disabled = true;
+}
+
+function calcOffsetFromArm() {
+    const refKey = document.getElementById('cp-ref')?.value;
+    if (!refKey || !S._copySrcEls || !S._copySrcEls[refKey]) {
+        toast('Select a reference point first', 'error'); return;
+    }
+    const src = S._copySrcEls[refKey];
+    S._copyOffset = {
+        dx: +(S.curX - src.x).toFixed(1),
+        dy: +(S.curY - src.y).toFixed(1),
+    };
+    document.getElementById('cp-offset').textContent =
+        `dx = ${S._copyOffset.dx}, dy = ${S._copyOffset.dy}`;
+    showCopyPreview();
+    document.getElementById('cp-apply').disabled = false;
+    setStatus(`Offset: dx=${S._copyOffset.dx}, dy=${S._copyOffset.dy} (from arm pos ${S.curX}, ${S.curY})`);
+}
+
+function showCopyPreview() {
+    if (!S._copyOffset) return;
+    const { dx, dy } = S._copyOffset;
+    let rows = '';
+    for (const [k, c] of Object.entries(S._copySrcEls)) {
+        rows += `<tr><td>UI</td><td>${k}</td><td>(${c.x.toFixed(1)},${c.y.toFixed(1)})</td>
+            <td style="color:var(--success);">(${(c.x+dx).toFixed(1)},${(c.y+dy).toFixed(1)})</td></tr>`;
+    }
+    for (const [k, c] of Object.entries(S._copySrcSwipes)) {
+        rows += `<tr><td>Swipe</td><td>${k}</td>
+            <td>(${c.start_x.toFixed(1)},${c.start_y.toFixed(1)})→(${c.end_x.toFixed(1)},${c.end_y.toFixed(1)})</td>
+            <td style="color:var(--success);">(${(c.start_x+dx).toFixed(1)},${(c.start_y+dy).toFixed(1)})→(${(c.end_x+dx).toFixed(1)},${(c.end_y+dy).toFixed(1)})</td></tr>`;
+    }
+    for (const [kbType, keys] of Object.entries(S._copySrcKeymaps)) {
+        const n = Object.keys(keys).length;
+        rows += `<tr><td>KB</td><td>${kbType}</td><td colspan="2">${n} keys (all offset by dx=${dx}, dy=${dy})</td></tr>`;
+    }
+    document.getElementById('cp-preview').innerHTML =
+        `<table style="width:100%;"><thead><tr><th>Type</th><th>Name</th><th>Source</th><th>→ S${S.station}</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function applyCopy() {
+    if (!S._copyOffset) return;
+    const { dx, dy } = S._copyOffset;
+    setStatus('Applying offset...');
+    let count = 0;
+
+    for (const [key, c] of Object.entries(S._copySrcEls)) {
+        const nx = +(c.x + dx).toFixed(1), ny = +(c.y + dy).toFixed(1);
+        const ex = S.uiEls[key];
+        if (ex && ex.id) {
+            await API.put(`/api/coords/ui/${ex.id}`, { x: nx, y: ny });
+            S.uiEls[key] = { x: nx, y: ny, id: ex.id };
+        } else {
+            const r = await API.post('/api/coords/ui', {
+                bank_code: S.bank, station_id: S.station, element_key: key, x: nx, y: ny,
+            });
+            if (!r.error) S.uiEls[key] = { x: nx, y: ny, id: r.id };
+        }
+        count++;
+    }
+
+    for (const [key, c] of Object.entries(S._copySrcSwipes)) {
+        const data = {
+            start_x: +(c.start_x+dx).toFixed(1), start_y: +(c.start_y+dy).toFixed(1),
+            end_x: +(c.end_x+dx).toFixed(1), end_y: +(c.end_y+dy).toFixed(1),
+        };
+        const ex = S.swipes[key];
+        if (ex && ex.id) {
+            await API.put(`/api/coords/swipes/${ex.id}`, data);
+            S.swipes[key] = { ...data, id: ex.id };
+        } else {
+            const r = await API.post('/api/coords/swipes', {
+                bank_code: S.bank, station_id: S.station, swipe_key: key, ...data,
+            });
+            if (!r.error) S.swipes[key] = { ...data, id: r.id };
+        }
+        count++;
+    }
+
+    for (const [kbType, keys] of Object.entries(S._copySrcKeymaps)) {
+        const batch = Object.entries(keys).map(([ch, p]) => ({
+            char: ch, x: +(p.x+dx).toFixed(1), y: +(p.y+dy).toFixed(1),
+        }));
+        await API.post('/api/coords/keymaps/batch', {
+            bank_code: S.bank, station_id: S.station, keyboard_type: kbType, keys: batch,
+        });
+        if (!S.keymaps[kbType]) S.keymaps[kbType] = {};
+        batch.forEach(k => { S.keymaps[kbType][k.char] = { x: k.x, y: k.y }; });
+        count += batch.length;
+    }
+
+    refreshStepCoords();
+    renderSteps();
+    toast(`Done! ${count} coordinates copied to S${S.station}`);
+    setStatus(`Offset applied: dx=${dx}, dy=${dy} — ${count} coords`);
+    hideCopyMode();
+}
+
+function hideCopyMode() {
+    setMode('click');
+    hideForm();
+    S._copySrcEls = null;
+    S._copySrcSwipes = null;
+    S._copySrcKeymaps = null;
+    S._copyOffset = null;
+}
+
+async function loadDirectTemplate() {
+    await loadRefs();
+    await loadCoords();
+    const rows = await API.get(`/api/flows/${S.tplId}/steps`);
+    S.steps = (Array.isArray(rows) ? rows : []).map(r => ({
+        id: r.id, step_name: r.step_name, action_type: r.action_type,
+        ui_element_key: r.ui_element_key, keymap_type: r.keymap_type,
+        swipe_key: r.swipe_key, input_source: r.input_source,
+        tap_count: r.tap_count || 1, pre_delay_ms: r.pre_delay_ms || 0,
+        post_delay_ms: r.post_delay_ms || 0, description: r.description || '',
+        coords: getStepCoords(r),
+    }));
+    S.selIdx = -1;
+    hideForm();
+    renderSteps();
+    setStatus(`Loaded ${S.steps.length} steps for ${S.bank}`);
+}
+
+async function loadTemplate() {
+    const tpl = S.templates.find(t => t.bank_code === S.bank && t.status === 'active');
+    await loadRefs();
+    if (tpl) {
+        S.tplId = tpl.id;
+        await loadCoords();
+        const rows = await API.get(`/api/flows/${S.tplId}/steps`);
+        S.steps = rows.map(r => ({
+            id: r.id,
+            step_name: r.step_name,
+            action_type: r.action_type,
+            ui_element_key: r.ui_element_key,
+            keymap_type: r.keymap_type,
+            swipe_key: r.swipe_key,
+            input_source: r.input_source,
+            tap_count: r.tap_count || 1,
+            pre_delay_ms: r.pre_delay_ms || 0,
+            post_delay_ms: r.post_delay_ms || 0,
+            description: r.description || '',
+            coords: getStepCoords(r),
+        }));
+        setStatus(`Loaded ${S.steps.length} steps for ${S.bank}`);
+    } else {
+        const r = await API.post('/api/banks/templates', { bank_code: S.bank, arm_id: S.armId, name: S.bank + ' Transfer Flow' });
+        S.tplId = r.id;
+        await reloadTemplates();
+        S.steps = [];
+        setStatus('New template: ' + S.bank);
+    }
+    S.selIdx = -1;
+    hideForm();
+    renderSteps();
+}
+
+function getStepCoords(row) {
+    if (row.ui_element_key && S.uiEls[row.ui_element_key])
+        return { x: S.uiEls[row.ui_element_key].x, y: S.uiEls[row.ui_element_key].y };
+    if (row.swipe_key && S.swipes[row.swipe_key]) {
+        const s = S.swipes[row.swipe_key];
+        return { start_x: s.start_x, start_y: s.start_y, end_x: s.end_x, end_y: s.end_y };
+    }
+    return null;
+}
+
+async function loadCoords() {
+    if (!S.bank) return;
+    const [ui, sw, km, kbConfigs] = await Promise.all([
+        API.get(`/api/coords/ui/${S.bank}/${S.station}`),
+        API.get(`/api/coords/swipes/${S.bank}/${S.station}`),
+        API.get(`/api/coords/keymaps/${S.bank}/${S.station}`),
+        API.get(`/api/coords/keyboard-configs/${S.bank}/${S.station}`),
+    ]);
+    S.uiEls = {}; ui.forEach(e => { S.uiEls[e.element_key] = { x: e.x, y: e.y, id: e.id }; });
+    S.swipes = {}; sw.forEach(s => { S.swipes[s.swipe_key] = { start_x: s.start_x, start_y: s.start_y, end_x: s.end_x, end_y: s.end_y, id: s.id }; });
+    S.keymaps = {}; km.forEach(k => {
+        if (!S.keymaps[k.keyboard_type]) S.keymaps[k.keyboard_type] = {};
+        S.keymaps[k.keyboard_type][k.key_char] = { x: k.x, y: k.y, id: k.id };
+    });
+    (Array.isArray(kbConfigs) ? kbConfigs : []).forEach(c => {
+        if (!S.keymaps[c.keyboard_type]) S.keymaps[c.keyboard_type] = {};
+    });
+}
+
+async function checkCal() {
+    const c = await API.get('/api/calibration/status');
+    S.calibrated = !!(c[S.station] && c[S.station].calibrated);
+    document.getElementById('cal-dot').className = 'status-dot ' + (S.calibrated ? 'on' : 'off');
+    document.getElementById('cal-label').textContent = S.calibrated ? 'Calibrated' : 'Not calibrated';
+}
+
+/* ============================================================
+   CAMERA TOGGLE
+   ============================================================ */
+async function toggleCam() {
+    const img = document.getElementById('camera-feed');
+    const dot = document.getElementById('cam-dot');
+    const btn = document.getElementById('cam-btn');
+    const aq = S.armId ? '?arm_id=' + S.armId : '';
+    if (S.camOn) {
+        img.src = '';
+        await API.post('/api/camera/close' + aq);
+        S.camOn = false;
+        dot.className = 'status-dot off';
+        btn.textContent = 'Open Camera';
+        btn.className = 'btn btn-sm btn-secondary';
+        toast('Camera released');
+    } else {
+        await API.post('/api/camera/open' + aq);
+        img.src = '/api/stream' + aq + (aq ? '&' : '?') + 't=' + Date.now();
+        S.camOn = true;
+        dot.className = 'status-dot on';
+        btn.textContent = 'Close Camera';
+        btn.className = 'btn btn-sm btn-danger';
+        toast('Camera opened');
+    }
+}
+
+/* ============================================================
+   ARM CONTROL
+   ============================================================ */
+async function toggleArm() {
+    const aq = S.armId ? '?arm_id=' + S.armId : '';
+    if (S.armOn) {
+        await API.post('/api/recorder/arm/disconnect' + aq);
+        S.armOn = false;
+        toast('Arm disconnected');
+    } else {
+        const r = await API.post('/api/recorder/arm/connect' + aq);
+        if (r.success) {
+            S.armOn = true;
+            S.curX = 0; S.curY = 0;
+            toast('Arm connected (pos 0,0 — Sync if arm elsewhere)');
+        } else { toast('Failed: ' + (r.error || '?'), 'error'); return; }
+    }
+    updateArmUI();
+}
+
+function updateArmUI() {
+    const dot = document.getElementById('arm-dot');
+    const btn = document.getElementById('arm-btn');
+    dot.className = 'status-dot ' + (S.armOn ? 'on' : 'off');
+    btn.textContent = S.armOn ? 'Disconnect' : 'Connect Arm';
+    btn.className = S.armOn ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-success';
+    showPos();
+}
+
+function showPos() {
+    document.getElementById('pos-display').textContent = `X=${S.curX.toFixed(1)} Y=${S.curY.toFixed(1)}`;
+}
+
+function setJog(v) {
+    S.jogStep = v;
+    document.querySelectorAll('#jog-btns .btn').forEach(b => b.className = 'btn btn-secondary btn-sm');
+    event.target.className = 'btn btn-primary btn-sm';
+}
+
+async function jog(dx, dy) {
+    S.curX = Math.round(Math.max(0, S.curX + dx * S.jogStep) * 10) / 10;
+    S.curY = Math.round(Math.max(0, S.curY + dy * S.jogStep) * 10) / 10;
+    showPos();
+    if (S.armOn) await API.post('/api/recorder/arm/move', { x: S.curX, y: S.curY, arm_id: getArmId() });
+}
+
+async function pressArm() { if (S.armOn) await API.post('/api/recorder/arm/press' + (S.armId ? '?arm_id=' + S.armId : '')); }
+async function liftArm()  { if (S.armOn) await API.post('/api/recorder/arm/lift' + (S.armId ? '?arm_id=' + S.armId : '')); }
+
+async function goHome() {
+    S.curX = 0; S.curY = 0; showPos();
+    if (S.armOn) await API.post('/api/recorder/arm/move', { x: 0, y: 0, arm_id: getArmId() });
+}
+
+async function goToXY() {
+    S.curX = parseFloat(document.getElementById('go-x').value) || 0;
+    S.curY = parseFloat(document.getElementById('go-y').value) || 0;
+    showPos();
+    if (S.armOn) await API.post('/api/recorder/arm/move', { x: S.curX, y: S.curY, arm_id: getArmId() });
+}
+
+function syncPos() {
+    S.curX = parseFloat(document.getElementById('go-x').value) || 0;
+    S.curY = parseFloat(document.getElementById('go-y').value) || 0;
+    showPos();
+    toast(`Synced: (${S.curX}, ${S.curY})`);
+}
+
+function onKey(e) {
+    if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+    const map = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
+    if (map[e.key]) { e.preventDefault(); jog(...map[e.key]); }
+}
+
+/* ============================================================
+   CAMERA INTERACTION
+   ============================================================ */
+function setMode(m) {
+    S.mode = m;
+    S.swipePhase = null;
+    S.swipeStartPx = null;
+    S.swipeStartArm = null;
+    clearCanvas();
+    document.querySelectorAll('.mode-bar .mode-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === m));
+    document.getElementById('lbl-mode').textContent = m.toUpperCase();
+}
+
+async function onCameraClick(e) {
+    const img = e.target, rect = img.getBoundingClientRect();
+    const rpx = (e.clientX - rect.left) / rect.width * (img.naturalWidth || 480);
+    const rpy = (e.clientY - rect.top) / rect.height * (img.naturalHeight || 640);
+    document.getElementById('lbl-pixel').textContent = `(${rpx.toFixed(0)}, ${rpy.toFixed(0)})`;
+
+    const r = await API.post('/api/calibration/convert', {
+        station_id: S.station, px: rpx, py: rpy,
+        cur_arm_x: S.curX, cur_arm_y: S.curY,
+    });
+    if (r.error) { document.getElementById('lbl-arm').textContent = r.error; return; }
+
+    const ax = r.arm_x, ay = r.arm_y;
+
+    if (S._pinRecording && pinRecordIdx < 12) {
+        pinPositions[pinRecordIdx] = [ax, ay];
+        toast(`${PIN_GRID_LABELS[pinRecordIdx]}: (${ax}, ${ay})`);
+        pinRecordIdx = Math.min(11, pinRecordIdx + 1);
+        refreshPinGrid();
+        document.getElementById('lbl-arm').textContent = `PIN pos recorded: (${ax.toFixed(1)}, ${ay.toFixed(1)})`;
+        return;
+    }
+    document.getElementById('lbl-arm').textContent = `(${ax.toFixed(1)}, ${ay.toFixed(1)})`;
+    S.lastArm = { x: ax, y: ay };
+
+    if (S.mode === 'move') {
+        if (S.armOn) { await API.post('/api/recorder/arm/move', { x: ax, y: ay, arm_id: getArmId() }); S.curX = ax; S.curY = ay; showPos(); }
+        drawDot(rpx, rpy, '#2196f3');
+        fillCoord(ax, ay);
+    } else if (S.mode === 'click') {
+        if (S.armOn) { await API.post('/api/recorder/arm/click', { x: ax, y: ay, arm_id: getArmId() }); S.curX = ax; S.curY = ay; showPos(); }
+        drawDot(rpx, rpy, '#2196f3');
+        fillCoord(ax, ay);
+    } else if (S.mode === 'swipe') {
+        if (!S.swipePhase) {
+            S.swipePhase = 'start';
+            S.swipeStartPx = { x: rpx, y: rpy };
+            S.swipeStartArm = { x: ax, y: ay };
+            clearCanvas();
+            drawDot(rpx, rpy, '#4caf50');
+            setStatus('Swipe: click END point');
+        } else {
+            drawDot(rpx, rpy, '#f44336');
+            drawLine(S.swipeStartPx.x, S.swipeStartPx.y, rpx, rpy);
+            if (S.armOn) {
+                await API.post('/api/recorder/arm/swipe', {
+                    start_x: S.swipeStartArm.x, start_y: S.swipeStartArm.y,
+                    end_x: ax, end_y: ay, arm_id: getArmId(),
+                });
+                S.curX = ax; S.curY = ay; showPos();
+            }
+            fillSwipeCoord(S.swipeStartArm, { x: ax, y: ay });
+            S.swipePhase = null;
+            setStatus('Swipe recorded. Click for new swipe.');
+        }
+    } else if (S.mode === 'offset') {
+        const refKey = document.getElementById('cp-ref')?.value;
+        if (!refKey || !S._copySrcEls || !S._copySrcEls[refKey]) {
+            toast('Select a reference point first', 'error'); return;
+        }
+        const src = S._copySrcEls[refKey];
+        S._copyOffset = { dx: +(ax - src.x).toFixed(1), dy: +(ay - src.y).toFixed(1) };
+        document.getElementById('cp-offset').textContent =
+            `dx = ${S._copyOffset.dx}, dy = ${S._copyOffset.dy}`;
+        drawDot(rpx, rpy, '#4caf50');
+        showCopyPreview();
+        document.getElementById('cp-apply').disabled = false;
+        setStatus(`Offset: dx=${S._copyOffset.dx}, dy=${S._copyOffset.dy}`);
+    }
+}
+
+function fillCoord(x, y) {
+    const xi = document.getElementById('sf-x'), yi = document.getElementById('sf-y');
+    if (xi) xi.value = x.toFixed(1);
+    if (yi) yi.value = y.toFixed(1);
+    const lbl = document.getElementById('sf-coords');
+    if (lbl) lbl.textContent = `(${x.toFixed(1)}, ${y.toFixed(1)})`;
+}
+
+function fillSwipeCoord(st, en) {
+    const ids = ['sf-sx','sf-sy','sf-ex','sf-ey'];
+    const vals = [st.x, st.y, en.x, en.y];
+    ids.forEach((id, i) => { const el = document.getElementById(id); if (el) el.value = vals[i].toFixed(1); });
+    const lbl = document.getElementById('sf-swipe-lbl');
+    if (lbl) lbl.textContent = `(${st.x.toFixed(1)},${st.y.toFixed(1)}) → (${en.x.toFixed(1)},${en.y.toFixed(1)})`;
+}
+
+/* Canvas helpers */
+function ensureCanvas() {
+    const c = document.getElementById('overlay'), img = document.getElementById('camera-feed');
+    const w = img.naturalWidth || 480, h = img.naturalHeight || 640;
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return c.getContext('2d');
+}
+
+function clearCanvas() { const ctx = ensureCanvas(); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); }
+
+function drawDot(px, py, color) {
+    const ctx = ensureCanvas();
+    ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    ctx.globalAlpha = 0.25; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.moveTo(px-14,py); ctx.lineTo(px+14,py);
+    ctx.moveTo(px,py-14); ctx.lineTo(px,py+14);
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.globalAlpha = 0.4; ctx.stroke(); ctx.globalAlpha = 1;
+}
+
+function drawLine(x1, y1, x2, y2) {
+    const ctx = ensureCanvas();
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+    ctx.strokeStyle = '#ff9800'; ctx.lineWidth = 2; ctx.setLineDash([5,4]); ctx.stroke(); ctx.setLineDash([]);
+    const a = Math.atan2(y2-y1, x2-x1);
+    ctx.beginPath(); ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-10*Math.cos(a-0.5), y2-10*Math.sin(a-0.5));
+    ctx.lineTo(x2-10*Math.cos(a+0.5), y2-10*Math.sin(a+0.5));
+    ctx.closePath(); ctx.fillStyle = '#ff9800'; ctx.fill();
+}
+
+/* ============================================================
+   STEP LIST
+   ============================================================ */
+function renderSteps() {
+    const el = document.getElementById('step-list');
+    document.getElementById('step-count').textContent = S.steps.length ? `(${S.steps.length})` : '';
+    if (!S.steps.length) {
+        el.innerHTML = '<p style="color:var(--text2);padding:16px;text-align:center;">No steps. Click "+ Add Step" to begin.</p>';
+        return;
+    }
+    el.innerHTML = S.steps.map((s, i) => {
+        let c = '';
+        if (s.coords) {
+            c = s.coords.start_x !== undefined
+                ? `(${fmt(s.coords.start_x)},${fmt(s.coords.start_y)})→(${fmt(s.coords.end_x)},${fmt(s.coords.end_y)})`
+                : `(${fmt(s.coords.x)},${fmt(s.coords.y)})`;
+        }
+        if (s.action_type === 'CHECK_SCREEN') {
+            try { const cfg = JSON.parse(s.description || '{}'); c = cfg.reference ? `ref:${cfg.reference}` : ''; } catch(e) {}
+        }
+        const dl = [s.pre_delay_ms ? `pre:${s.pre_delay_ms}` : '', s.post_delay_ms ? `post:${s.post_delay_ms}` : ''].filter(Boolean).join(' ');
+        return `<div class="step-item ${i===S.selIdx?'selected':''}" onclick="selStep(${i})"
+                     draggable="true" ondragstart="dStart(event,${i})" ondragover="event.preventDefault()" ondrop="dDrop(event,${i})">
+            <span class="grip">⠿</span>
+            <span class="step-num">${i+1}</span>
+            <span class="action-badge ${s.action_type}">${s.action_type}</span>
+            <span class="step-name">${s.step_name}</span>
+            <span style="color:var(--text2);font-size:10px;flex-shrink:0;">${c}</span>
+            <span class="step-delay">${dl}</span>
+            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();testOne(${i})" title="Test">▶</button>
+            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delStep(${i})" title="Delete">✕</button>
+        </div>`;
+    }).join('');
+}
+function fmt(v) { return v != null ? Number(v).toFixed(1) : '?'; }
+
+let _dIdx = null;
+function dStart(e, i) { _dIdx = i; e.target.closest('.step-item').classList.add('dragging'); }
+function dDrop(e, ti) {
+    e.preventDefault();
+    if (_dIdx === null || _dIdx === ti) return;
+    const from = _dIdx;
+    const item = S.steps.splice(from, 1)[0];
+    S.steps.splice(ti, 0, item);
+    if (S.selIdx === from) S.selIdx = ti;
+    else if (S.selIdx > from && S.selIdx <= ti) S.selIdx--;
+    else if (S.selIdx < from && S.selIdx >= ti) S.selIdx++;
+    _dIdx = null;
+    renderSteps();
+}
+document.addEventListener('dragend', () => {
+    document.querySelectorAll('.step-item').forEach(el => el.classList.remove('dragging'));
+    _dIdx = null;
+});
+
+function selStep(i) { S.selIdx = i; S.isNew = false; renderSteps(); renderForm(S.steps[i]); }
+
+function delStep(i) {
+    S.steps.splice(i, 1);
+    if (S.selIdx === i) { S.selIdx = -1; hideForm(); }
+    else if (S.selIdx > i) S.selIdx--;
+    renderSteps();
+}
+
+/* ============================================================
+   STEP FORM
+   ============================================================ */
+function showAddStep() {
+    if (!S.bank) { toast('Select a bank first', 'error'); return; }
+    S.isNew = true; S.selIdx = -1; renderSteps();
+    renderForm({ step_name:'', action_type:'CLICK', ui_element_key:'', keymap_type:'',
+                 swipe_key:'', input_source:'', tap_count:1, pre_delay_ms:0, post_delay_ms:0, description:'', coords:null }, true);
+}
+
+function renderForm(step, isNew) {
+    document.getElementById('form-area').style.display = 'block';
+
+    const kbOpts = Object.keys(S.keymaps).map(t => `<option value="${t}">${t}</option>`).join('');
+    let extra = '';
+
+    if (step.action_type === 'CLICK' || step.action_type === 'ARM_MOVE') {
+        const cx = step.coords?.x ?? '', cy = step.coords?.y ?? '';
+        extra = `<div class="form-group full">
+            <label>Coordinate (click camera or enter)</label>
+            <div style="display:flex;gap:5px;align-items:center;">
+                <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;" value="${cx}">
+                <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;" value="${cy}">
+                <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? `(${cx}, ${cy})` : 'click camera'}</span>
+                <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Arm Pos</button>
+            </div></div>`;
+    } else if (step.action_type === 'TYPE') {
+        extra = `<div class="form-group full">
+            <label>Keyboard Name (each TYPE step uses a different keyboard)</label>
+            <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+                <select id="sf-kb" style="width:120px;"><option value="">-- existing --</option>${kbOpts}</select>
+                <input id="sf-kb-new" placeholder="or new name" style="width:110px;">
+                <select id="sf-kb-cat" style="width:170px;">
+                    <option value="system_keypad">Simple: System Keypad</option>
+                    <option value="app_keypad">Simple: App Keypad</option>
+                    <option value="system_keyboard">Simple: System KB</option>
+                    <option value="app_keyboard">Simple: App KB</option>
+                    <option value="multi_page">Multi-Page Keyboard</option>
+                    <option value="random_pin">Random PIN Keypad</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="openKb()" type="button">Record KB</button>
+            </div></div>
+            <div class="form-group">
+            <label>Input Source</label>
+            <select id="sf-src" style="width:180px;" onchange="const w=document.getElementById('sf-fixed-wrap');if(w)w.style.display=this.value==='fixed_text'?'block':'none';">
+                <option value="">--</option>
+                <option value="password">password</option>
+                <option value="pin">pin (from bank_app.pin field)</option>
+                <option value="amount">amount</option>
+                <option value="pay_to_account_no">pay_to_account_no</option>
+                <option value="pay_to_bank_name">pay_to_bank_name</option>
+                <option value="pay_to_account_name">pay_to_account_name</option>
+                <option value="fixed_text">fixed_text</option>
+            </select></div>
+            <div class="form-group" id="sf-fixed-wrap" style="display:none;">
+            <label>Fixed Text (e.g. payment reference)</label>
+            <input id="sf-fixed-text" placeholder="Enter fixed text to type" style="width:100%;">
+            </div>`;
+    } else if (step.action_type === 'SWIPE') {
+        const sw = step.coords || {};
+        extra = `<div class="form-group full">
+            <label>Swipe coordinates (use Swipe mode on camera)</label>
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                <span style="font-size:10px;">Start:</span>
+                <input id="sf-sx" type="number" step="0.1" placeholder="X" style="width:65px;" value="${sw.start_x??''}">
+                <input id="sf-sy" type="number" step="0.1" placeholder="Y" style="width:65px;" value="${sw.start_y??''}">
+                <span style="font-size:10px;">End:</span>
+                <input id="sf-ex" type="number" step="0.1" placeholder="X" style="width:65px;" value="${sw.end_x??''}">
+                <input id="sf-ey" type="number" step="0.1" placeholder="Y" style="width:65px;" value="${sw.end_y??''}">
+            </div>
+            <span id="sf-swipe-lbl" style="color:var(--accent);font-size:11px;">${sw.start_x!=null ? `(${fmt(sw.start_x)},${fmt(sw.start_y)})→(${fmt(sw.end_x)},${fmt(sw.end_y)})` : ''}</span>
+            </div>`;
+    } else if (step.action_type === 'PHOTO') {
+        const cx = step.coords?.x ?? '', cy = step.coords?.y ?? '';
+        extra = `<div class="form-group full">
+            <label>Camera position (arm moves here before photo)</label>
+            <div style="display:flex;gap:5px;align-items:center;">
+                <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;" value="${cx}">
+                <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;" value="${cy}">
+                <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? `(${cx}, ${cy})` : 'move camera, then click below'}</span>
+                <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Camera Pos</button>
+            </div>
+            <span style="font-size:10px;color:var(--text2);">Default pre-delay 5000ms. Saved as ui_element "camera_pos".</span>
+            </div>`;
+    } else if (step.action_type === 'OCR_VERIFY') {
+        const cx = step.coords?.x ?? '', cy = step.coords?.y ?? '';
+        let ocrCfg = {};
+        try { ocrCfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        const vf = ocrCfg.verify_fields || ['pay_to_account_no', 'amount'];
+        const rs = ocrCfg.receipt_status || null;
+        extra = `
+        <div class="full">
+            <label style="font-size:11px;margin-bottom:2px;">Camera position (arm moves here, takes photo, OCR verifies)</label>
+            <div style="display:flex;gap:5px;align-items:center;">
+                <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;padding:5px 7px;font-size:12px;" value="${cx}">
+                <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;padding:5px 7px;font-size:12px;" value="${cy}">
+                <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? '(' + cx + ', ' + cy + ')' : ''}</span>
+                <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Camera Pos</button>
+            </div>
+        </div>
+        <div class="full" style="margin-top:6px;">
+            <label style="font-size:11px;margin-bottom:4px;">Verify Fields</label>
+            <div style="display:flex;gap:16px;">
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="checkbox" id="sf-ocr-account" ${vf.includes('pay_to_account_no')?'checked':''}> Account No</label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="checkbox" id="sf-ocr-amount" ${vf.includes('amount')?'checked':''}> Amount</label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="checkbox" id="sf-ocr-name" ${vf.includes('pay_to_account_name')?'checked':''}> Account Name</label>
+            </div>
+        </div>
+        <div class="full" style="margin-top:6px;">
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="sf-ocr-receipt" ${rs?'checked':''} onchange="document.getElementById('sf-receipt-cfg').style.display=this.checked?'block':'none'">
+                Verify Receipt Status
+            </label>
+            <div id="sf-receipt-cfg" style="display:${rs?'block':'none'};margin-top:6px;padding:10px;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border);">
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:11px;display:block;margin-bottom:2px;">Success keywords (comma-separated)</label>
+                    <input id="sf-receipt-success" value="${rs?rs.success.join(', '):''}" placeholder="Success, Successful, Completed" style="padding:5px 7px;font-size:12px;">
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:11px;display:block;margin-bottom:2px;">In Review keywords</label>
+                    <input id="sf-receipt-review" value="${rs?rs.review.join(', '):''}" placeholder="In Review, Pending, Processing" style="padding:5px 7px;font-size:12px;">
+                </div>
+                <div>
+                    <label style="font-size:11px;display:block;margin-bottom:2px;">Failed keywords</label>
+                    <input id="sf-receipt-failed" value="${rs?rs.failed.join(', '):''}" placeholder="Failed, Unsuccessful, Declined" style="padding:5px 7px;font-size:12px;">
+                </div>
+            </div>
+        </div>`;
+    } else if (step.action_type === 'CHECK_SCREEN') {
+        let cfg = {};
+        try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        const cx = step.coords?.x ?? '', cy = step.coords?.y ?? '';
+        const refOpts = S.refs.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
+        const handlerOpts = S.templates
+            .filter(t => t.bank_code !== S.bank || t.id !== S.tplId)
+            .map(t => `<option value="${t.bank_code}__${t.id}">${t.bank_code} - ${t.name}</option>`).join('');
+        extra = `
+            <div class="form-group full">
+                <label>Camera position (arm moves here before screen check)</label>
+                <div style="display:flex;gap:5px;align-items:center;">
+                    <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;" value="${cx}">
+                    <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;" value="${cy}">
+                    <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? `(${cx}, ${cy})` : 'move camera, then click below'}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Camera Pos</button>
+                </div>
+            </div>
+            <div class="form-group full">
+                <label>Reference Image (expected screen)</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+                    <select id="sf-ref" style="width:140px;"><option value="">-- select --</option>${refOpts}</select>
+                    <button class="btn btn-sm btn-primary" onclick="captureRef()" type="button">Capture Now</button>
+                    <button class="btn btn-sm btn-secondary" onclick="previewRef()" type="button">Preview</button>
+                    <button class="btn btn-sm btn-success" onclick="testCompare()" type="button">Test Compare</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Popup Handler Flow</label>
+                <select id="sf-handler" style="width:100%;" onchange="loadHandlerSteps()">
+                    <option value="">-- none (no popup handling) --</option>
+                    ${handlerOpts}
+                </select>
+            </div>
+            <div id="sf-handler-steps" class="form-group full" style="display:none;"></div>
+            <div class="form-group">
+                <label>Match Threshold (0-1)</label>
+                <input id="sf-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.70}" style="width:80px;">
+            </div>
+            <div class="form-group">
+                <label>Max Retries</label>
+                <input id="sf-retries" type="number" min="1" max="10" value="${cfg.max_retries ?? 3}" style="width:80px;">
+            </div>
+            <div class="form-group full">
+                <label>ROI — Compare region only (%, 0=full image)</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:11px;">Top:</span>
+                    <input id="sf-roi-top" type="number" min="0" max="100" value="${cfg.roi?.top_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Bottom:</span>
+                    <input id="sf-roi-bottom" type="number" min="0" max="100" value="${cfg.roi?.bottom_percent ?? 100}" style="width:55px;">
+                    <span style="font-size:11px;">Left:</span>
+                    <input id="sf-roi-left" type="number" min="0" max="100" value="${cfg.roi?.left_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Right:</span>
+                    <input id="sf-roi-right" type="number" min="0" max="100" value="${cfg.roi?.right_percent ?? 100}" style="width:55px;">
+                </div>
+                <span style="font-size:10px;color:var(--text2);">Example: Top=0, Bottom=70 → only compare upper 70% (ignore bottom notices)</span>
+            </div>`;
+    }
+
+    document.getElementById('step-form').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h3 style="font-size:14px;margin:0;">${isNew ? 'Add Step' : 'Edit Step #'+(S.selIdx+1)}</h3>
+            <button class="btn btn-secondary btn-sm" onclick="hideForm()">✕</button>
+        </div>
+        <div class="form-grid">
+            <div class="form-group"><label>Step Name</label>
+                <input id="sf-name" value="${step.step_name}" placeholder="e.g. click_send"></div>
+            <div class="form-group"><label>Action Type</label>
+                <select id="sf-action" onchange="onTypeChange()">
+                    ${['CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE','OCR_VERIFY','CHECK_SCREEN'].map(a =>
+                        `<option value="${a}" ${a===step.action_type?'selected':''}>${a}</option>`).join('')}
+                </select></div>
+            <div class="form-group"><label>Pre-delay (ms)</label>
+                <input id="sf-pre" type="number" value="${step.pre_delay_ms}"></div>
+            <div class="form-group"><label>Post-delay (ms)</label>
+                <input id="sf-post" type="number" value="${step.post_delay_ms}"></div>
+            ${extra}
+            <div class="full" style="display:flex;gap:6px;margin-top:2px;">
+                <button class="btn btn-primary btn-sm" onclick="${isNew?'addFromForm()':'updateFromForm()'}">${isNew?'Add Step':'Update'}</button>
+            </div>
+        </div>`;
+
+    if (step.action_type === 'TYPE') {
+        if (step.keymap_type) { const el = document.getElementById('sf-kb'); if (el) el.value = step.keymap_type; }
+        if (step.input_source) { const el = document.getElementById('sf-src'); if (el) el.value = step.input_source; }
+        if (step.input_source === 'fixed_text') {
+            const w = document.getElementById('sf-fixed-wrap'); if (w) w.style.display = 'block';
+            const f = document.getElementById('sf-fixed-text'); if (f) f.value = step.description || '';
+        }
+    }
+    if (step.action_type === 'CHECK_SCREEN') {
+        let cfg = {};
+        try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        if (cfg.reference) { const el = document.getElementById('sf-ref'); if (el) el.value = cfg.reference; }
+        if (cfg.handler_flow) {
+            const el = document.getElementById('sf-handler');
+            if (el) { el.value = cfg.handler_flow; loadHandlerSteps(); }
+        }
+    }
+
+    if (step.action_type === 'SWIPE') setMode('swipe');
+    else if (step.action_type === 'ARM_MOVE') setMode('move');
+    else if (step.action_type === 'CLICK') setMode('click');
+}
+
+function onTypeChange() {
+    const v = readForm();
+    renderForm(v, S.isNew);
+}
+
+function useArmPos() { fillCoord(S.curX, S.curY); }
+
+function readForm() {
+    const action = document.getElementById('sf-action')?.value || 'CLICK';
+    const s = {
+        step_name: document.getElementById('sf-name')?.value?.trim() || '',
+        action_type: action,
+        pre_delay_ms: parseInt(document.getElementById('sf-pre')?.value) || 0,
+        post_delay_ms: parseInt(document.getElementById('sf-post')?.value) || 0,
+        ui_element_key: null, keymap_type: null, swipe_key: null,
+        input_source: null, tap_count: 1, description: '', coords: null,
+    };
+    if (action === 'CLICK' || action === 'ARM_MOVE') {
+        s.ui_element_key = s.step_name;
+        const x = parseFloat(document.getElementById('sf-x')?.value);
+        const y = parseFloat(document.getElementById('sf-y')?.value);
+        if (!isNaN(x) && !isNaN(y)) s.coords = { x, y };
+    } else if (action === 'TYPE') {
+        s.keymap_type = document.getElementById('sf-kb')?.value || document.getElementById('sf-kb-new')?.value?.trim() || null;
+        s.input_source = document.getElementById('sf-src')?.value || null;
+        if (s.input_source === 'fixed_text') {
+            s.description = document.getElementById('sf-fixed-text')?.value || '';
+        }
+    } else if (action === 'SWIPE') {
+        s.swipe_key = s.step_name;
+        const sx = parseFloat(document.getElementById('sf-sx')?.value);
+        const sy = parseFloat(document.getElementById('sf-sy')?.value);
+        const ex = parseFloat(document.getElementById('sf-ex')?.value);
+        const ey = parseFloat(document.getElementById('sf-ey')?.value);
+        if ([sx,sy,ex,ey].every(v => !isNaN(v)))
+            s.coords = { start_x: sx, start_y: sy, end_x: ex, end_y: ey };
+    } else if (action === 'PHOTO') {
+        if (!s.step_name) s.step_name = 'take_photo';
+        s.ui_element_key = s.step_name;
+        if (!s.pre_delay_ms) s.pre_delay_ms = 5000;
+        const x = parseFloat(document.getElementById('sf-x')?.value);
+        const y = parseFloat(document.getElementById('sf-y')?.value);
+        if (!isNaN(x) && !isNaN(y)) s.coords = { x, y };
+    } else if (action === 'OCR_VERIFY') {
+        if (!s.step_name) s.step_name = 'ocr_verify';
+        s.ui_element_key = s.step_name;
+        const x = parseFloat(document.getElementById('sf-x')?.value);
+        const y = parseFloat(document.getElementById('sf-y')?.value);
+        if (!isNaN(x) && !isNaN(y)) s.coords = { x, y };
+        const vf = [];
+        if (document.getElementById('sf-ocr-account')?.checked) vf.push('pay_to_account_no');
+        if (document.getElementById('sf-ocr-amount')?.checked) vf.push('amount');
+        if (document.getElementById('sf-ocr-name')?.checked) vf.push('pay_to_account_name');
+        const ocrCfg = { verify_fields: vf };
+        if (document.getElementById('sf-ocr-receipt')?.checked) {
+            const split = v => v.split(',').map(s => s.trim()).filter(Boolean);
+            ocrCfg.receipt_status = {
+                success: split(document.getElementById('sf-receipt-success')?.value || ''),
+                review: split(document.getElementById('sf-receipt-review')?.value || ''),
+                failed: split(document.getElementById('sf-receipt-failed')?.value || ''),
+            };
+        }
+        s.description = JSON.stringify(ocrCfg);
+    } else if (action === 'CHECK_SCREEN') {
+        if (!s.step_name) s.step_name = 'check_homepage';
+        s.ui_element_key = s.step_name;
+        const x = parseFloat(document.getElementById('sf-x')?.value);
+        const y = parseFloat(document.getElementById('sf-y')?.value);
+        if (!isNaN(x) && !isNaN(y)) s.coords = { x, y };
+        const roiT = parseInt(document.getElementById('sf-roi-top')?.value) || 0;
+        const roiB = parseInt(document.getElementById('sf-roi-bottom')?.value) || 100;
+        const roiL = parseInt(document.getElementById('sf-roi-left')?.value) || 0;
+        const roiR = parseInt(document.getElementById('sf-roi-right')?.value) || 100;
+        const roi = (roiT === 0 && roiB === 100 && roiL === 0 && roiR === 100) ? null
+            : { top_percent: roiT, bottom_percent: roiB, left_percent: roiL, right_percent: roiR };
+        s.description = JSON.stringify({
+            reference: document.getElementById('sf-ref')?.value || '',
+            handler_flow: document.getElementById('sf-handler')?.value || '',
+            threshold: parseFloat(document.getElementById('sf-threshold')?.value) || 0.70,
+            max_retries: parseInt(document.getElementById('sf-retries')?.value) || 3,
+            roi,
+        });
+    }
+
+    const ttype = document.getElementById('bank-ttype')?.value;
+    if (ttype === 'INTER' && s.step_name && !s.step_name.endsWith('_inter')) {
+        s.step_name += '_inter';
+        if (s.ui_element_key === s.step_name.replace(/_inter$/, '')) {
+            s.ui_element_key = s.step_name;
+        }
+    }
+
+    return s;
+}
+
+function addFromForm() {
+    const s = readForm();
+    if (!s.step_name) { toast('Enter step name', 'error'); return; }
+    S.steps.push(s);
+    S.selIdx = S.steps.length - 1;
+    S.isNew = false;
+    renderSteps();
+    renderForm(s, false);
+    toast('Added: ' + s.step_name);
+}
+
+function updateFromForm() {
+    if (S.selIdx < 0) return;
+    const s = readForm();
+    if (!s.step_name) { toast('Enter step name', 'error'); return; }
+    s.id = S.steps[S.selIdx].id;
+    S.steps[S.selIdx] = s;
+    renderSteps();
+    toast('Updated: ' + s.step_name);
+}
+
+function addQuick(type) {
+    if (!S.bank) { toast('Select a bank first', 'error'); return; }
+    const suffix = document.getElementById('bank-ttype')?.value === 'INTER' ? '_inter' : '';
+    if (type === 'PHOTO') {
+        const n = 'take_photo' + suffix;
+        S.steps.push({ step_name:n, action_type:'PHOTO', ui_element_key:n, pre_delay_ms:5000, post_delay_ms:500, coords:null });
+    } else if (type === 'OCR_VERIFY') {
+        const n = 'ocr_verify' + suffix;
+        S.steps.push({ step_name:n, action_type:'OCR_VERIFY', ui_element_key:n, pre_delay_ms:0, post_delay_ms:0, coords:null });
+    } else if (type === 'done') {
+        S.steps.push({ step_name:'done', action_type:'ARM_MOVE', pre_delay_ms:0, post_delay_ms:0, coords:null });
+    }
+    renderSteps();
+    toast(type + ' added');
+}
+
+/* --- Handler sub-flow inline editor --- */
+async function loadHandlerSteps() {
+    const sel = document.getElementById('sf-handler');
+    const container = document.getElementById('sf-handler-steps');
+    if (!sel || !container) return;
+    const val = sel.value;
+    if (!val) { container.style.display = 'none'; return; }
+
+    const hId = val.split('__')[1];
+    if (!hId) { container.style.display = 'none'; return; }
+
+    const steps = await API.get(`/api/flows/${hId}/steps`);
+    container.style.display = 'block';
+    let html = '<label style="font-size:11px;">Handler Sub-flow Steps</label>';
+    if (Array.isArray(steps) && steps.length) {
+        html += '<div style="max-height:120px;overflow-y:auto;margin:4px 0;">';
+        for (const hs of steps) {
+            const c = S.uiEls[hs.ui_element_key];
+            const coords = c ? `(${c.x}, ${c.y})` : '';
+            html += `<div class="step-item" style="padding:4px 6px;font-size:11px;margin-bottom:2px;">
+                <span class="step-num">${hs.step_number}</span>
+                <span class="action-badge ${hs.action_type}" style="font-size:9px;min-width:50px;">${hs.action_type}</span>
+                <span class="step-name">${hs.step_name}</span>
+                <span style="color:var(--text2);font-size:10px;">${coords}</span>
+                <span style="color:var(--text2);font-size:10px;">${hs.post_delay_ms ? 'post:'+hs.post_delay_ms : ''}</span>
+                <button class="btn btn-danger btn-sm" style="padding:1px 5px;font-size:10px;" onclick="delHandlerStep(${hId},${hs.id})">x</button>
+            </div>`;
+        }
+        html += '</div>';
+    } else {
+        html += '<p style="color:var(--text2);font-size:11px;">No steps yet.</p>';
+    }
+    html += `<div style="display:flex;gap:4px;margin-top:4px;align-items:flex-end;flex-wrap:wrap;">
+        <input id="hs-name" placeholder="step name" style="width:100px;padding:3px 5px;font-size:11px;">
+        <select id="hs-type" style="width:90px;padding:3px 5px;font-size:11px;">
+            <option>CLICK</option><option>ARM_MOVE</option><option>SWIPE</option>
+        </select>
+        <input id="hs-post" type="number" placeholder="post-delay" value="1000" style="width:70px;padding:3px 5px;font-size:11px;">
+        <button class="btn btn-primary btn-sm" style="padding:2px 8px;font-size:11px;" onclick="addHandlerStep(${hId})">+ Add</button>
+        <span style="font-size:10px;color:var(--text2);">Click camera first to set coords</span>
+    </div>`;
+    container.innerHTML = html;
+}
+
+async function addHandlerStep(templateId) {
+    const name = document.getElementById('hs-name')?.value?.trim();
+    const type = document.getElementById('hs-type')?.value || 'CLICK';
+    const postDelay = parseInt(document.getElementById('hs-post')?.value) || 0;
+    if (!name) { toast('Enter step name', 'error'); return; }
+
+    const coords = S.lastArm || { x: S.curX, y: S.curY };
+
+    if (type === 'CLICK' || type === 'ARM_MOVE') {
+        await API.post('/api/coords/ui', {
+            bank_code: S.bank, station_id: S.station,
+            element_key: name, x: coords.x, y: coords.y,
+        });
+        S.uiEls[name] = { x: coords.x, y: coords.y };
+    }
+
+    await API.post(`/api/flows/${templateId}/steps`, {
+        step_name: name, action_type: type,
+        ui_element_key: (type === 'CLICK' || type === 'ARM_MOVE') ? name : null,
+        post_delay_ms: postDelay,
+    });
+    toast('Handler step added: ' + name);
+    loadHandlerSteps();
+}
+
+async function delHandlerStep(templateId, stepId) {
+    await API.del('/api/flows/steps/' + stepId);
+    toast('Handler step deleted');
+    loadHandlerSteps();
+}
+
+function hideForm() {
+    document.getElementById('form-area').style.display = 'none';
+    S.selIdx = -1; S.isNew = false;
+}
+
+/* ============================================================
+   SAVE FLOW
+   ============================================================ */
+async function saveFlow() {
+    if (!S.bank) { toast('Select bank', 'error'); return; }
+    if (!S.steps.length) { toast('No steps', 'error'); return; }
+    if (!S.tplId) { toast('No template', 'error'); return; }
+
+    const namesSeen = new Set();
+    for (const s of S.steps) {
+        if (!s.step_name) { toast('Step name cannot be empty', 'error'); return; }
+        if (namesSeen.has(s.step_name)) {
+            toast(`Duplicate step name: "${s.step_name}". Each step must have a unique name.`, 'error');
+            return;
+        }
+        namesSeen.add(s.step_name);
+    }
+
+    setStatus('Saving...');
+
+    try {
+        const old = await API.get(`/api/flows/${S.tplId}/steps`);
+        if (Array.isArray(old)) {
+            for (const o of old) await API.del('/api/flows/steps/' + o.id);
+        }
+
+        const savedUiKeys = new Set();
+        for (let i = 0; i < S.steps.length; i++) {
+            const s = S.steps[i];
+
+            if (['CLICK','ARM_MOVE','PHOTO','OCR_VERIFY','CHECK_SCREEN'].includes(s.action_type) && s.coords && s.ui_element_key && !savedUiKeys.has(s.ui_element_key)) {
+                savedUiKeys.add(s.ui_element_key);
+                const ex = S.uiEls[s.ui_element_key];
+                if (ex && ex.id) {
+                    const r = await API.put(`/api/coords/ui/${ex.id}`, { x: s.coords.x, y: s.coords.y });
+                    if (r.error) console.warn('ui PUT error:', r.error);
+                } else {
+                    const r = await API.post('/api/coords/ui', {
+                        bank_code: S.bank, station_id: S.station,
+                        element_key: s.ui_element_key, x: s.coords.x, y: s.coords.y,
+                    });
+                    if (r.error) console.warn('ui POST error:', r.error);
+                    else S.uiEls[s.ui_element_key] = { x: s.coords.x, y: s.coords.y, id: r.id };
+                }
+            }
+
+            if (s.action_type === 'SWIPE' && s.coords && s.swipe_key) {
+                const ex = S.swipes[s.swipe_key];
+                if (ex && ex.id) {
+                    const r = await API.put(`/api/coords/swipes/${ex.id}`, {
+                        start_x: s.coords.start_x, start_y: s.coords.start_y,
+                        end_x: s.coords.end_x, end_y: s.coords.end_y,
+                    });
+                    if (r.error) console.warn('swipe PUT error:', r.error);
+                } else {
+                    const r = await API.post('/api/coords/swipes', {
+                        bank_code: S.bank, station_id: S.station, swipe_key: s.swipe_key,
+                        start_x: s.coords.start_x, start_y: s.coords.start_y,
+                        end_x: s.coords.end_x, end_y: s.coords.end_y,
+                    });
+                    if (r.error) console.warn('swipe POST error:', r.error);
+                    else S.swipes[s.swipe_key] = { ...s.coords, id: r.id };
+                }
+            }
+
+            const r = await API.post(`/api/flows/${S.tplId}/steps`, {
+                step_number: i + 1,
+                step_name: s.step_name,
+                action_type: s.action_type,
+                ui_element_key: s.ui_element_key || null,
+                keymap_type: s.keymap_type || null,
+                swipe_key: s.swipe_key || null,
+                input_source: s.input_source || null,
+                tap_count: s.tap_count || 1,
+                pre_delay_ms: s.pre_delay_ms || 0,
+                post_delay_ms: s.post_delay_ms || 0,
+                description: s.description || null,
+            });
+            if (r.error) {
+                toast(`Step ${i+1} save failed: ${r.error}`, 'error');
+                console.error('Step save error:', r);
+                setStatus('Save failed at step ' + (i+1));
+                return;
+            }
+            s.id = r.id;
+        }
+
+        await API.put(`/api/banks/templates/${S.tplId}`, { total_steps: S.steps.length });
+        toast(`Saved! ${S.steps.length} steps`);
+        setStatus(`Flow saved: ${S.steps.length} steps for ${S.bank}`);
+    } catch (err) {
+        toast('Save error: ' + err.message, 'error');
+        console.error('Save exception:', err);
+        setStatus('Save failed');
+    }
+}
+
+/* ============================================================
+   TEST
+   ============================================================ */
+async function testTypeStep(step, log) {
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    const kbType = step.keymap_type;
+    if (!kbType) { toast('No keyboard type set', 'error'); return; }
+
+    let text;
+    const src = step.input_source;
+    if (src === 'password' || src === 'pin') {
+        const apps = await API.get(`/api/banks/apps/${S.station}`);
+        const app = (Array.isArray(apps) ? apps : []).find(a => a.bank_code === S.bank);
+        text = src === 'pin' ? app?.pin : app?.password;
+        if (!text) { toast(`No bank_app ${src} found for ${S.bank} S${S.station}`, 'error'); return; }
+        if (!log) { if (!confirm(`Type ${src}: "${text}" ?`)) return; }
+    } else if (src === 'amount') {
+        text = log ? '100.00' : prompt('Test amount:', '100.00');
+    } else if (src === 'pay_to_account_no') {
+        text = log ? '1234567890' : prompt('Test account number:', '1234567890');
+    } else if (src === 'pay_to_bank_name') {
+        text = log ? 'Test Bank' : prompt('Test bank name:', 'Test Bank');
+    } else if (src === 'pay_to_account_name') {
+        text = log ? 'Test Name' : prompt('Test account name:', 'Test Name');
+    } else if (src === 'fixed_text') {
+        text = step.description || '';
+        if (!text) { toast('No fixed text configured', 'error'); return; }
+        if (!log && !confirm(`Type fixed text: "${text}" ?`)) return;
+    } else {
+        text = log ? '12345' : prompt('Test string to type:', '12345');
+    }
+    if (!text) return;
+
+    const kbCfg = await API.get(`/api/coords/keyboard-configs/${S.bank}/${S.station}/${kbType}`);
+    if (kbCfg && kbCfg.config) {
+        await _typeMultiPage(kbCfg.config, text, log);
+    } else {
+        await _typeSimple(kbType, text, log);
+    }
+}
+
+async function _typeMultiPage(rawCfg, text, log) {
+    const cfg = typeof rawCfg === 'string' ? JSON.parse(rawCfg) : rawCfg;
+    const props = cfg.properties || {};
+    const autoCapFirst = !!props.auto_capitalize_first;
+    const pages = cfg.pages || {};
+
+    // Build char → page map (mirrors keyboard_engine._build_char_page_map)
+    const charMap = {};
+    for (const [range, page] of Object.entries(cfg.char_to_page || {})) {
+        if (range.length === 3 && range[1] === '-') {
+            for (let c = range.charCodeAt(0); c <= range.charCodeAt(2); c++) charMap[String.fromCharCode(c)] = page;
+        } else { for (const c of range) charMap[c] = page; }
+    }
+
+    // Find default page
+    let curPage = 'abc';
+    for (const [pn, pd] of Object.entries(pages)) { if (pd.is_default) { curPage = pn; break; } }
+
+    const clickKey = async (page, key) => {
+        const coords = pages[page]?.keys?.[key];
+        if (!coords) return false;
+        await API.post('/api/recorder/arm/click', { x: coords[0], y: coords[1], arm_id: getArmId() });
+        S.curX = coords[0]; S.curY = coords[1]; showPos();
+        return true;
+    };
+
+    // Switch pages (mirrors keyboard_engine._switch_pages, supports 2-hop)
+    const switchPage = async (fromPage, toPage) => {
+        const af = fromPage === 'abc+shift' ? 'abc' : fromPage;
+        const at = toPage === 'abc+shift' ? 'abc' : toPage;
+        if (af === at) return true;
+
+        // Direct switch
+        const directKey = pages[at]?.['switch_from_' + af];
+        if (directKey && pages[af]?.keys?.[directKey]) {
+            await clickKey(af, directKey);
+            await sleep(300);
+            return true;
+        }
+        // Two-hop: from → mid → to
+        for (const [midName, midData] of Object.entries(pages)) {
+            if (midName === af || midName === at) continue;
+            const step1 = midData['switch_from_' + af];
+            const step2 = pages[at]?.['switch_from_' + midName];
+            if (step1 && step2 && pages[af]?.keys?.[step1] && pages[midName]?.keys?.[step2]) {
+                if (log) addLog(log, `    page switch: ${af}→${midName}→${at}`, 'info');
+                await clickKey(af, step1);
+                await sleep(300);
+                await clickKey(midName, step2);
+                await sleep(300);
+                return true;
+            }
+        }
+        if (log) addLog(log, `    no switch path ${af}→${at}`, 'error');
+        return false;
+    };
+
+    const CHAR_ALIASES = {' ': 'space', '\n': 'enter', '\t': 'tab'};
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const lookupChar = CHAR_ALIASES[char] || char;
+
+        // Determine target page (mirrors keyboard_engine.get_page_for_char)
+        let targetPage = charMap[char] || charMap[lookupChar];
+        if (!targetPage && char.toLowerCase() in charMap) {
+            targetPage = charMap[char.toLowerCase()];
+            if (char !== char.toLowerCase() && targetPage === 'abc') targetPage = 'abc+shift';
+        }
+        if (!targetPage && lookupChar !== char) {
+            for (const [pn, pd] of Object.entries(pages)) {
+                if (pd.keys && pd.keys[lookupChar]) { targetPage = pn; break; }
+            }
+        }
+        if (!targetPage) {
+            if (log) addLog(log, `    '${char}' has no page mapping, skip`, 'error');
+            continue;
+        }
+
+        const needsShift = targetPage === 'abc+shift';
+        const actualChar = needsShift ? char.toLowerCase() : lookupChar;
+        const targetBase = needsShift ? 'abc' : targetPage;
+        const curBase = curPage === 'abc+shift' ? 'abc' : curPage;
+
+        // Page switch if needed
+        if (targetBase !== curBase) {
+            await switchPage(curPage, targetBase);
+            curPage = targetBase;
+        }
+
+        // Shift handling (mirrors keyboard_engine logic exactly)
+        if (needsShift) {
+            if (i === 0 && autoCapFirst) {
+                if (log) addLog(log, `    '${char}' auto-capitalize (no shift needed)`, 'info');
+            } else {
+                if (log) addLog(log, `    shift for '${char}'`, 'info');
+                await clickKey('abc', 'shift');
+                await sleep(200);
+            }
+        }
+
+        // Click the character
+        if (await clickKey(curPage, actualChar)) {
+            if (log) addLog(log, `    typed '${char}' on page ${curPage}`, 'done');
+        } else {
+            if (log) addLog(log, `    key '${actualChar}' not found on ${curPage}`, 'error');
+        }
+        await sleep(500);
+
+        // After shift+char, shift auto-cancels → stays on abc
+        if (needsShift) curPage = 'abc';
+    }
+    toast(`Typed "${text}" (multi-page keyboard)`);
+}
+
+async function _typeSimple(kbType, text, log) {
+    const keys = await API.get(`/api/coords/keymaps/${S.bank}/${S.station}/${kbType}`);
+    if (!Array.isArray(keys) || !keys.length) { toast('No keymap found for ' + kbType, 'error'); return; }
+    const keymap = {};
+    keys.forEach(k => { keymap[k.key_char] = { x: k.x, y: k.y }; });
+
+    const CHAR_ALIASES = {' ': 'space', '\n': 'enter', '\t': 'tab'};
+    for (const char of text) {
+        const key = CHAR_ALIASES[char] || char;
+        const k = keymap[key];
+        if (k) {
+            await API.post('/api/recorder/arm/click', { x: k.x, y: k.y, arm_id: getArmId() });
+            S.curX = k.x; S.curY = k.y; showPos();
+            if (log) addLog(log, `    typed '${char}' (${k.x},${k.y})`, 'done');
+        } else {
+            if (log) addLog(log, `    key '${char}' not in keymap`, 'error');
+        }
+        await sleep(500);
+    }
+    toast(`Typed "${text}" (simple keymap)`);
+}
+
+async function testOne(i) {
+    const s = S.steps[i];
+    setStatus(`Testing #${i+1}: ${s.step_name}...`);
+    try {
+        if (s.action_type === 'CLICK' || s.action_type === 'ARM_MOVE') {
+            if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+            const c = s.coords || S.uiEls[s.ui_element_key];
+            if (!c) { toast('No coords', 'error'); return; }
+            await API.post('/api/recorder/test-step', { action_type: s.action_type, x: c.x, y: c.y, arm_id: getArmId() });
+            S.curX = c.x; S.curY = c.y; showPos();
+        } else if (s.action_type === 'SWIPE') {
+            if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+            const c = s.coords || S.swipes[s.swipe_key];
+            if (!c) { toast('No swipe coords', 'error'); return; }
+            await API.post('/api/recorder/test-step', {
+                action_type: 'SWIPE', start_x: c.start_x, start_y: c.start_y, end_x: c.end_x, end_y: c.end_y, arm_id: getArmId(),
+            });
+            S.curX = c.end_x; S.curY = c.end_y; showPos();
+        } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
+            const camPos = s.coords || S.uiEls[s.ui_element_key];
+            if (camPos && S.armOn) {
+                await API.post('/api/recorder/arm/move', { x: camPos.x, y: camPos.y, arm_id: getArmId() });
+                S.curX = camPos.x; S.curY = camPos.y; showPos();
+                await sleep(500);
+            }
+            if (s.action_type === 'CHECK_SCREEN') {
+                let cfg = {};
+                try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+                if (!cfg.reference) { toast('No reference image configured', 'error'); return; }
+
+                const retries = cfg.max_retries || 3;
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    const r = await API.post('/api/opencv/compare', {
+                        bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.70, roi: cfg.roi || null, arm_id: getArmId(),
+                    });
+                    if (r.error) { toast('Compare error: ' + r.error, 'error'); return; }
+                    if (r.match) {
+                        toast(`MATCH (score: ${r.score})`, 'success');
+                        break;
+                    }
+                    toast(`NO MATCH (score: ${r.score}, attempt ${attempt}/${retries})`, 'error');
+                    if (cfg.handler_flow && attempt < retries) {
+                        setStatus('Running popup handler...');
+                        const hBankCode = cfg.handler_flow.split('__')[0];
+                        const hId = cfg.handler_flow.split('__')[1];
+                        if (hId) {
+                            const hUiEls = {};
+                            const hUi = await API.get(`/api/coords/ui/${hBankCode}/${S.station}`);
+                            (Array.isArray(hUi) ? hUi : []).forEach(e => { hUiEls[e.element_key] = e; });
+                            const hSteps = await API.get(`/api/flows/${hId}/steps`);
+                            for (const hs of hSteps) {
+                                if (hs.action_type === 'CLICK' || hs.action_type === 'ARM_MOVE') {
+                                    const el = hUiEls[hs.ui_element_key] || S.uiEls[hs.ui_element_key];
+                                    if (el) await API.post('/api/recorder/test-step', { action_type: hs.action_type, x: el.x, y: el.y, arm_id: getArmId() });
+                                }
+                                if (hs.pre_delay_ms > 0) await sleep(hs.pre_delay_ms);
+                                if (hs.post_delay_ms > 0) await sleep(hs.post_delay_ms);
+                            }
+                        }
+                        if (camPos) {
+                            await API.post('/api/recorder/arm/move', { x: camPos.x, y: camPos.y, arm_id: getArmId() });
+                            S.curX = camPos.x; S.curY = camPos.y; showPos();
+                        }
+                        await sleep(1000);
+                    }
+                }
+            } else {
+                toast(`${s.action_type} — moved to camera_pos`);
+            }
+        } else {
+            if (s.action_type === 'TYPE') {
+                await testTypeStep(s);
+            } else {
+                toast(s.action_type + ' — skipped in test mode');
+            }
+            return;
+        }
+        toast(`#${i+1} OK`);
+    } catch (err) { toast('Test error: ' + err.message, 'error'); }
+    setStatus('Ready');
+}
+
+async function testAll() {
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    if (!S.steps.length) { toast('No steps', 'error'); return; }
+    runAbort = false;
+    document.getElementById('run-modal').classList.add('active');
+    const log = document.getElementById('run-log');
+    log.innerHTML = '';
+
+    for (let i = 0; i < S.steps.length; i++) {
+        if (runAbort) { addLog(log, `Aborted at step ${i+1}`, 'error'); break; }
+        const s = S.steps[i];
+        addLog(log, `▶ #${i+1} ${s.step_name} (${s.action_type})`, 'running');
+        if (s.pre_delay_ms > 0) { addLog(log, `  wait ${s.pre_delay_ms}ms`, 'info'); await sleep(s.pre_delay_ms); }
+
+        try {
+            if (s.action_type === 'CLICK' || s.action_type === 'ARM_MOVE') {
+                const c = s.coords || S.uiEls[s.ui_element_key];
+                if (c) { await API.post('/api/recorder/test-step', { action_type: s.action_type, x: c.x, y: c.y, arm_id: getArmId() }); S.curX = c.x; S.curY = c.y; }
+                else addLog(log, '  no coords, skip', 'error');
+            } else if (s.action_type === 'SWIPE') {
+                const c = s.coords || S.swipes[s.swipe_key];
+                if (c) { await API.post('/api/recorder/test-step', { action_type:'SWIPE', start_x:c.start_x, start_y:c.start_y, end_x:c.end_x, end_y:c.end_y, arm_id: getArmId() }); S.curX = c.end_x; S.curY = c.end_y; }
+                else addLog(log, '  no swipe coords, skip', 'error');
+            } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
+                const camPos = s.coords || S.uiEls[s.ui_element_key];
+                if (camPos) {
+                    addLog(log, `  move to ${s.ui_element_key} (${camPos.x}, ${camPos.y})`, 'info');
+                    await API.post('/api/recorder/arm/move', { x: camPos.x, y: camPos.y, arm_id: getArmId() });
+                    S.curX = camPos.x; S.curY = camPos.y;
+                    await sleep(500);
+                }
+
+                if (s.action_type === 'CHECK_SCREEN') {
+                    let cfg = {};
+                    try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+                    if (!cfg.reference) { addLog(log, '  no reference, skip', 'error'); }
+                    else {
+                        const retries = cfg.max_retries || 3;
+                        let matched = false;
+                        for (let attempt = 1; attempt <= retries && !matched && !runAbort; attempt++) {
+                            const cmp = await API.post('/api/opencv/compare', {
+                                bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.70, roi: cfg.roi || null, arm_id: getArmId(),
+                            });
+                            if (cmp.error) { addLog(log, `  compare error: ${cmp.error}`, 'error'); break; }
+                            if (cmp.match) {
+                                addLog(log, `  screen OK (score: ${cmp.score})`, 'done');
+                                matched = true;
+                            } else {
+                                addLog(log, `  no match (score: ${cmp.score}, attempt ${attempt}/${retries})`, 'error');
+                                if (cfg.handler_flow && attempt < retries) {
+                                    addLog(log, `  running popup handler...`, 'info');
+                                    const hBankCode = cfg.handler_flow.split('__')[0];
+                                    const hId = cfg.handler_flow.split('__')[1];
+                                    if (hId) {
+                                        // Load handler's coordinates (may be under different bank_code)
+                                        const hUiEls = {};
+                                        const hUi = await API.get(`/api/coords/ui/${hBankCode}/${S.station}`);
+                                        (Array.isArray(hUi) ? hUi : []).forEach(e => { hUiEls[e.element_key] = e; });
+                                        // Also check current bank's coords as fallback
+                                        const hSteps = await API.get(`/api/flows/${hId}/steps`);
+                                        for (const hs of hSteps) {
+                                            if (hs.action_type === 'CLICK' || hs.action_type === 'ARM_MOVE') {
+                                                const el = hUiEls[hs.ui_element_key] || S.uiEls[hs.ui_element_key];
+                                                if (el) {
+                                                    addLog(log, `    ${hs.action_type} ${hs.step_name} (${el.x},${el.y})`, 'info');
+                                                    await API.post('/api/recorder/test-step', { action_type: hs.action_type, x: el.x, y: el.y, arm_id: getArmId() });
+                                                    S.curX = el.x; S.curY = el.y;
+                                                } else {
+                                                    addLog(log, `    ${hs.step_name}: no coords found`, 'error');
+                                                }
+                                            }
+                                            if (hs.pre_delay_ms > 0) await sleep(hs.pre_delay_ms);
+                                            if (hs.post_delay_ms > 0) await sleep(hs.post_delay_ms);
+                                        }
+                                    }
+                                    // Move back to camera_pos after handler
+                                    if (camPos) {
+                                        await API.post('/api/recorder/arm/move', { x: camPos.x, y: camPos.y, arm_id: getArmId() });
+                                        S.curX = camPos.x; S.curY = camPos.y;
+                                    }
+                                    await sleep(1000);
+                                }
+                            }
+                        }
+                        if (!matched) addLog(log, `  CHECK_SCREEN failed after retries`, 'error');
+                    }
+                } else {
+                    addLog(log, `  ${s.action_type} at ${s.ui_element_key}`, 'info');
+                }
+            } else {
+                if (s.action_type === 'TYPE') {
+                    addLog(log, `  TYPE: testing with dummy text...`, 'info');
+                    await testTypeStep(s, log);
+                } else {
+                    addLog(log, `  ${s.action_type} skipped (test mode)`, 'info');
+                }
+            }
+            addLog(log, `✓ #${i+1} done`, 'done');
+        } catch (err) { addLog(log, `  Error: ${err.message}`, 'error'); }
+
+        if (s.post_delay_ms > 0) await sleep(s.post_delay_ms);
+        showPos();
+    }
+    addLog(log, 'Test complete.', 'done');
+}
+
+function addLog(el, msg, cls) {
+    el.innerHTML += `<div class="log-line ${cls}">${msg}</div>`;
+    el.scrollTop = el.scrollHeight;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ============================================================
+   KEYBOARD RECORDING — simple presets + multi-page mode
+   ============================================================ */
+const KB_PRESETS = {
+    app_keypad: {
+        multiPage: false,
+        sections: [
+            { name: 'Digits', keys: ['1','2','3','4','5','6','7','8','9','0','.'], cols: 3 }
+        ]
+    },
+    system_keypad: {
+        multiPage: false,
+        sections: [
+            { name: 'Digits', keys: ['1','2','3','4','5','6','7','8','9','0','.'], cols: 3 },
+            { name: 'Special', keys: ['backspace','enter'], cols: 3 }
+        ]
+    },
+    app_keyboard: {
+        multiPage: false,
+        sections: [
+            { name: 'Letters (a-z)', keys: ['q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m'], cols: 10 },
+            { name: 'Digits (0-9)', keys: ['1','2','3','4','5','6','7','8','9','0'], cols: 10 },
+            { name: 'Symbols', keys: ['.',',','@','-','_','!','?','#','$','&','*','(',')','+','=','/',':',';'], cols: 10 },
+            { name: 'Special / Mode Switch', keys: ['shift','space','backspace','enter','?123','ABC'], cols: 6 }
+        ]
+    },
+    system_keyboard: {
+        multiPage: false,
+        sections: [
+            { name: 'Letters (a-z)', keys: ['q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m'], cols: 10 },
+            { name: 'Digits (0-9)', keys: ['1','2','3','4','5','6','7','8','9','0'], cols: 10 },
+            { name: 'Symbols Page 1', keys: ['!','@','#','$','%','^','&','*','(',')','-','_','=','+'], cols: 10 },
+            { name: 'Symbols Page 2', keys: ['[',']','{','}','|','\\',':',';',"'",'\"','<','>',',','.','/','?','`','~'], cols: 10 },
+            { name: 'Special / Mode Switch', keys: ['shift','space','backspace','enter','?123','ABC','#+='], cols: 7 }
+        ]
+    },
+    multi_page: {
+        multiPage: true,
+        defaultPages: {
+            abc: {
+                label: 'ABC (letters)',
+                keys: ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m','shift','space','backspace','enter','?123'],
+                cols: 10,
+                is_default: true,
+                charRange: 'a-z',
+            },
+            '123': {
+                label: '123 (digits+symbols)',
+                keys: ['1','2','3','4','5','6','7','8','9','0','.','-','+','=','(',')','/','*','@','#','$','%','^','&','!','?','ABC','#+=','space','backspace','enter'],
+                cols: 10,
+                charRange: '0-9',
+            },
+            symbols: {
+                label: 'Symbols (extra)',
+                keys: ['[',']','{','}','|','\\',':',';',"'",'\"','<','>',',','`','~','_','ABC','?123','space','backspace','enter'],
+                cols: 10,
+                charRange: '',
+            }
+        }
+    }
+};
+
+const KEY_LABEL = {
+    'space':'␣ space', 'backspace':'⌫ back', 'enter':'↵ enter', 'shift':'⇧ shift',
+    '?123':'?123', 'ABC':'ABC', '#+=':'#+=',
+    '\\':'\\\\', "'":'\'', '\"':'"',
+};
+const SPECIAL_KEYS = new Set(['shift','space','backspace','enter','?123','ABC','#+=']);
+
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;'); }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function getAllKbKeys() {
+    const cat = document.getElementById('kb-cat')?.value || 'system_keyboard';
+    const preset = KB_PRESETS[cat];
+    if (!preset) return [];
+    return preset.sections.flatMap(sec => sec.keys);
+}
+
+async function openKb() {
+    const t = document.getElementById('sf-kb')?.value || document.getElementById('sf-kb-new')?.value?.trim();
+    if (!t) { toast('Enter keyboard name first', 'error'); return; }
+    const cat = document.getElementById('sf-kb-cat')?.value || 'system_keyboard';
+
+    if (cat === 'random_pin') {
+        await openRandomPinRecorder(t);
+        return;
+    }
+
+    const preset = KB_PRESETS[cat];
+    if (!preset) return;
+
+    S.kbType = t;
+    S.kbCurKey = null;
+    S.kbMultiPage = !!preset.multiPage;
+
+    if (S.kbMultiPage) {
+        S.kbPages = {};
+        for (const [pn, pd] of Object.entries(preset.defaultPages)) {
+            S.kbPages[pn] = {
+                label: pd.label,
+                cols: pd.cols,
+                is_default: pd.is_default || false,
+                charRange: pd.charRange || '',
+                keys: {},
+            };
+        }
+
+        // Load existing config from keyboard_configs table
+        const existing = await API.get(`/api/coords/keyboard-configs/${S.bank}/${S.station}/${t}`);
+        if (existing && existing.config) {
+            const cfg = typeof existing.config === 'string' ? JSON.parse(existing.config) : existing.config;
+            if (cfg.pages) {
+                for (const [pn, pageData] of Object.entries(cfg.pages)) {
+                    if (S.kbPages[pn] && pageData.keys) {
+                        for (const [k, coords] of Object.entries(pageData.keys)) {
+                            S.kbPages[pn].keys[k] = { x: coords[0], y: coords[1] };
+                        }
+                    }
+                }
+            }
+            if (cfg.properties) {
+                document.getElementById('kb-auto-cap').checked = !!cfg.properties.auto_capitalize_first;
+                document.getElementById('kb-shift-cancel').checked = cfg.properties.shift_auto_cancel_after_one !== false;
+            }
+            const totalKeys = Object.values(S.kbPages).reduce((a, p) => a + Object.keys(p.keys).length, 0);
+            toast(`Loaded existing config: ${totalKeys} keys`);
+        } else {
+            document.getElementById('kb-auto-cap').checked = false;
+            document.getElementById('kb-shift-cancel').checked = true;
+        }
+
+        S.kbCurPage = 'abc';
+        S.kbKeys = S.kbPages['abc'].keys;
+        document.getElementById('kb-page-tabs').style.display = 'block';
+        document.getElementById('kb-props').style.display = 'block';
+    } else {
+        S.kbPages = null;
+        S.kbCurPage = null;
+        S.kbKeys = S.keymaps[t] ? JSON.parse(JSON.stringify(S.keymaps[t])) : {};
+        document.getElementById('kb-page-tabs').style.display = 'none';
+        document.getElementById('kb-props').style.display = 'none';
+    }
+
+    document.getElementById('kb-title').textContent = `Record: ${t} (${S.bank} / S${S.station})`;
+    document.getElementById('kb-cat').value = cat;
+    document.getElementById('kb-cam').src = '/api/stream' + (S.armId ? '?arm_id=' + S.armId + '&' : '?') + 't=' + Date.now();
+    document.getElementById('kb-modal').classList.add('active');
+
+    if (S.kbMultiPage) renderKbPageTabs();
+    renderKbGrid(); renderKbTable();
+    autoPickNextKey();
+}
+
+function closeKb() {
+    document.getElementById('kb-modal').classList.remove('active');
+    document.getElementById('kb-cam').src = '';
+}
+
+function renderKbPageTabs() {
+    if (!S.kbPages) return;
+    document.getElementById('kb-page-btns').innerHTML = Object.entries(S.kbPages).map(([pn, pd]) => {
+        const active = pn === S.kbCurPage ? 'active' : '';
+        const done = Object.keys(pd.keys).length;
+        const total = pd.keys ? (KB_PRESETS.multi_page.defaultPages[pn]?.keys?.length || 0) : 0;
+        return `<button class="mode-btn ${active}" onclick="switchKbPage('${pn}')">${pd.label || pn} (${done}/${total})</button>`;
+    }).join('');
+}
+
+function switchKbPage(page) {
+    if (!S.kbPages || !S.kbPages[page]) return;
+    S.kbCurPage = page;
+    S.kbKeys = S.kbPages[page].keys;
+    renderKbPageTabs();
+    renderKbGrid(); renderKbTable();
+    autoPickNextKey();
+}
+
+function pickKbKey(k) {
+    S.kbCurKey = k;
+    const label = KEY_LABEL[k] || k;
+    document.getElementById('kb-cur').textContent = (S.kbCurPage ? `[${S.kbCurPage}] ` : '') + label;
+    renderKbGrid();
+}
+
+const KB_ROWS = {
+    abc: [
+        { keys: ['1','2','3','4','5','6','7','8','9','0'] },
+        { keys: ['q','w','e','r','t','y','u','i','o','p'] },
+        { keys: ['a','s','d','f','g','h','j','k','l'] },
+        { keys: ['z','x','c','v','b','n','m'] },
+    ],
+    '123': [
+        { keys: ['1','2','3','4','5','6','7','8','9','0'] },
+        { keys: ['.','-','+','=','(',')','/','*','@','#'] },
+        { keys: ['$','%','^','&','!','?'] },
+    ],
+};
+
+function autoFillRows() {
+    if (!S.kbMultiPage || !S.kbCurPage) return;
+    const rows = KB_ROWS[S.kbCurPage];
+    if (!rows) { toast('No auto-fill data for this page', 'error'); return; }
+
+    let filled = 0;
+    for (const row of rows) {
+        const first = row.keys[0], last = row.keys[row.keys.length - 1];
+        const p1 = S.kbKeys[first], p2 = S.kbKeys[last];
+        if (!p1 || !p2) continue;
+        const n = row.keys.length;
+        for (let i = 1; i < n - 1; i++) {
+            const k = row.keys[i];
+            if (S.kbKeys[k]) continue;
+            const t = i / (n - 1);
+            S.kbKeys[k] = {
+                x: Math.round((p1.x + (p2.x - p1.x) * t) * 10) / 10,
+                y: Math.round((p1.y + (p2.y - p1.y) * t) * 10) / 10,
+            };
+            filled++;
+        }
+    }
+    if (filled) {
+        toast(`Auto-filled ${filled} keys by interpolation`);
+        if (S.kbMultiPage) renderKbPageTabs();
+        renderKbGrid(); renderKbTable();
+        autoPickNextKey();
+    } else {
+        toast('Record first & last key of each row first', 'error');
+    }
+}
+
+function autoPickNextKey() {
+    const all = getAllKbKeys();
+    const first = all.find(k => !S.kbKeys[k]);
+    if (first) pickKbKey(first);
+    else { S.kbCurKey = null; document.getElementById('kb-cur').textContent = S.kbMultiPage ? 'Page done!' : 'All done!'; }
+}
+
+function getAllKbKeys() {
+    if (S.kbMultiPage && S.kbCurPage) {
+        return KB_PRESETS.multi_page.defaultPages[S.kbCurPage]?.keys || [];
+    }
+    const cat = document.getElementById('kb-cat')?.value || 'system_keyboard';
+    const preset = KB_PRESETS[cat];
+    if (!preset || !preset.sections) return [];
+    return preset.sections.flatMap(sec => sec.keys);
+}
+
+function renderKbGrid() {
+    let sections;
+    if (S.kbMultiPage && S.kbCurPage) {
+        const pd = KB_PRESETS.multi_page.defaultPages[S.kbCurPage];
+        sections = [{ name: pd.label || S.kbCurPage, keys: pd.keys, cols: pd.cols }];
+    } else {
+        const cat = document.getElementById('kb-cat')?.value || 'system_keyboard';
+        const preset = KB_PRESETS[cat];
+        if (!preset) return;
+        sections = preset.sections;
+    }
+
+    const all = getAllKbKeys();
+    const done = all.filter(k => S.kbKeys[k]).length;
+    document.getElementById('kb-progress').textContent = `${done} / ${all.length} recorded`;
+
+    let html = '';
+    for (const sec of sections) {
+        html += `<div class="kb-section-title">${sec.name}</div>`;
+        html += `<div class="kb-section-grid" style="grid-template-columns:repeat(${sec.cols},1fr);">`;
+        for (const k of sec.keys) {
+            const label = KEY_LABEL[k] || k;
+            const rec = S.kbKeys[k] ? 'recorded' : '';
+            const act = k === S.kbCurKey ? 'active' : '';
+            const spc = SPECIAL_KEYS.has(k) ? 'special' : '';
+            html += `<div class="key-btn ${rec} ${act} ${spc}" data-key="${escAttr(k)}" onclick="pickKbKey(this.dataset.key)">${escHtml(label)}</div>`;
+        }
+        html += '</div>';
+    }
+    document.getElementById('kb-grid').innerHTML = html;
+}
+
+function renderKbTable() {
+    if (S.kbMultiPage) {
+        let rows = '';
+        for (const [pn, pd] of Object.entries(S.kbPages || {})) {
+            for (const [k, pos] of Object.entries(pd.keys)) {
+                rows += `<tr><td>${pn}</td><td><strong>${escHtml(KEY_LABEL[k]||k)}</strong></td><td>${pos.x.toFixed(1)}</td><td>${pos.y.toFixed(1)}</td></tr>`;
+            }
+        }
+        document.getElementById('kb-table').innerHTML = rows || '<tr><td colspan="4" style="color:var(--text2)">No keys yet</td></tr>';
+    } else {
+        const all = getAllKbKeys();
+        document.getElementById('kb-table').innerHTML = all.filter(k => S.kbKeys[k]).map(k => {
+            const r = S.kbKeys[k];
+            return `<tr><td>-</td><td><strong>${escHtml(KEY_LABEL[k]||k)}</strong></td><td>${r.x.toFixed(1)}</td><td>${r.y.toFixed(1)}</td></tr>`;
+        }).join('') || '<tr><td colspan="4" style="color:var(--text2)">No keys yet</td></tr>';
+    }
+}
+
+async function onKbClick(e) {
+    if (!S.kbCurKey) { toast('Pick a key first', 'error'); return; }
+    const img = e.target, rect = img.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width * (img.naturalWidth || 480);
+    const py = (e.clientY - rect.top) / rect.height * (img.naturalHeight || 640);
+
+    const r = await API.post('/api/recorder/record-key', {
+        station_id: S.station, bank_code: S.bank,
+        keyboard_type: S.kbType, key_char: S.kbCurKey,
+        px, py, cur_arm_x: S.curX, cur_arm_y: S.curY,
+    });
+    if (r.success) {
+        S.kbKeys[S.kbCurKey] = { x: r.arm_x, y: r.arm_y };
+        const label = KEY_LABEL[S.kbCurKey] || S.kbCurKey;
+        toast(`"${label}" → (${r.arm_x.toFixed(1)}, ${r.arm_y.toFixed(1)})`);
+        if (S.kbMultiPage) renderKbPageTabs();
+        renderKbGrid(); renderKbTable();
+        autoPickNextKey();
+    } else { toast(r.error || 'Failed', 'error'); }
+}
+
+async function saveKb() {
+    if (S.kbMultiPage) {
+        await saveKbMultiPage();
+    } else {
+        await saveKbSimple();
+    }
+}
+
+async function saveKbSimple() {
+    const keys = Object.entries(S.kbKeys).map(([c, p]) => ({ char: c, x: p.x, y: p.y }));
+    if (!keys.length) { toast('No keys recorded', 'error'); return; }
+    await API.post('/api/coords/keymaps/batch', {
+        bank_code: S.bank, station_id: S.station, keyboard_type: S.kbType, keys,
+    });
+    S.keymaps[S.kbType] = JSON.parse(JSON.stringify(S.kbKeys));
+    const sel = document.getElementById('sf-kb');
+    if (sel && !sel.querySelector(`option[value="${S.kbType}"]`))
+        sel.innerHTML += `<option value="${S.kbType}">${S.kbType}</option>`;
+    if (sel) sel.value = S.kbType;
+    toast(`Keyboard "${S.kbType}" saved (${keys.length} keys)`);
+    closeKb();
+}
+
+async function saveKbMultiPage() {
+    const pages = {};
+    const charToPage = {};
+
+    for (const [pageName, pageData] of Object.entries(S.kbPages)) {
+        const keysObj = {};
+        for (const [k, pos] of Object.entries(pageData.keys)) {
+            keysObj[k] = [pos.x, pos.y];
+        }
+        if (!Object.keys(keysObj).length) continue;
+
+        const pageDef = KB_PRESETS.multi_page.defaultPages[pageName];
+        const pageConfig = { keys: keysObj };
+
+        if (pageDef.is_default) pageConfig.is_default = true;
+        if (pageName === 'abc') { pageConfig.switch_from_123 = 'ABC'; pageConfig.switch_from_symbols = 'ABC'; }
+        if (pageName === '123') { pageConfig.switch_from_abc = '?123'; pageConfig.switch_from_symbols = '?123'; }
+        if (pageName === 'symbols') { pageConfig.switch_from_123 = '#+='; }
+
+        pages[pageName] = pageConfig;
+
+        if (pageDef.charRange) {
+            charToPage[pageDef.charRange] = pageName;
+        }
+    }
+    charToPage['A-Z'] = 'abc+shift';
+
+    // Build symbols char_to_page from recorded keys
+    if (pages.symbols) {
+        const symChars = Object.keys(pages.symbols.keys).filter(k => !SPECIAL_KEYS.has(k) && k.length === 1);
+        if (symChars.length) charToPage[symChars.join('')] = 'symbols';
+    }
+    if (pages['123']) {
+        const numSymChars = Object.keys(pages['123'].keys).filter(k => !SPECIAL_KEYS.has(k) && k.length === 1 && !/[0-9]/.test(k));
+        if (numSymChars.length) {
+            const existing = charToPage[numSymChars.join('')];
+            if (!existing) charToPage[numSymChars.join('')] = '123';
+        }
+    }
+
+    const config = {
+        properties: {
+            auto_capitalize_first: document.getElementById('kb-auto-cap').checked,
+            shift_auto_cancel_after_one: document.getElementById('kb-shift-cancel').checked,
+        },
+        pages,
+        char_to_page: charToPage,
+    };
+
+    const r = await API.post('/api/coords/keyboard-configs', {
+        bank_code: S.bank, station_id: S.station, keyboard_type: S.kbType, config,
+    });
+    if (r.error) { toast('Save error: ' + r.error, 'error'); return; }
+
+    const sel = document.getElementById('sf-kb');
+    if (sel && !sel.querySelector(`option[value="${S.kbType}"]`))
+        sel.innerHTML += `<option value="${S.kbType}">${S.kbType}</option>`;
+    if (sel) sel.value = S.kbType;
+
+    const totalKeys = Object.values(S.kbPages).reduce((a, p) => a + Object.keys(p.keys).length, 0);
+    toast(`Multi-page keyboard "${S.kbType}" saved (${Object.keys(pages).length} pages, ${totalKeys} keys)`);
+    closeKb();
+}
+
+/* ============================================================
+   COPY / DELETE FLOW
+   ============================================================ */
+async function copyFlow() {
+    if (!S.tplId) { toast('No flow selected', 'error'); return; }
+    const tpl = S.templates.find(t => t.id === S.tplId);
+    const arms = await API.get('/api/stations/arms');
+    const curTT = tpl ? (tpl.transfer_type || 'NULL') : '?';
+
+    const choice = prompt(
+        'Copy "' + S.bank + '" (' + curTT + ')\n\n' +
+        '1 = Copy to another ARM\n' +
+        '2 = Copy as SAME bank transfer\n' +
+        '3 = Copy as INTER bank transfer\n\n' +
+        'Enter 1, 2, or 3:'
+    );
+    if (!choice || !['1','2','3'].includes(choice)) return;
+
+    const payload = {};
+
+    if (choice === '1') {
+        const others = arms.filter(a => a.id !== S.armId);
+        if (!others.length) { toast('No other arms available', 'error'); return; }
+        const armInput = prompt(
+            'Target arm:\n' + others.map(a => a.id + ' = ' + a.name).join('\n') + '\n\nEnter arm ID:'
+        );
+        if (!armInput) return;
+        const targetArm = parseInt(armInput);
+        if (!others.find(a => a.id === targetArm)) { toast('Invalid arm ID', 'error'); return; }
+        payload.arm_id = targetArm;
+    } else {
+        const tt = choice === '2' ? 'SAME' : 'INTER';
+        if (tt === curTT) { toast('Already ' + tt + ', nothing to copy', 'error'); return; }
+        payload.transfer_type = tt;
+    }
+
+    const r = await API.post(`/api/banks/templates/${S.tplId}/copy`, payload);
+    if (r.success) {
+        toast(`Flow copied (${r.steps_copied} steps, new id=${r.id}). Edit steps as needed.`);
+        await reloadTemplates();
+    } else {
+        toast(r.error || 'Copy failed', 'error');
+    }
+}
+
+async function deleteFlow() {
+    if (!S.tplId) { toast('No flow selected', 'error'); return; }
+    if (!confirm(`Delete flow "${S.bank}"?\nThis removes the template and all its steps.`)) return;
+    await API.del(`/api/banks/templates/${S.tplId}`);
+    toast('Flow deleted');
+    await reloadTemplates();
+    S.bank = ''; S.tplId = null; S.steps = []; S.refs = [];
+    document.getElementById('bank-select').value = '';
+    hideForm(); renderSteps();
+    setStatus('Flow deleted');
+}
+
+/* ============================================================
+   OPENCV — REFERENCE IMAGES & SCREEN CHECK
+   ============================================================ */
+async function loadRefs() {
+    if (!S.bank) { S.refs = []; return; }
+    S.refs = await API.get(`/api/opencv/references/${S.bank}?arm_id=${S.armId}`);
+}
+
+async function captureRef() {
+    if (!S.bank) { toast('Select bank first', 'error'); return; }
+    const name = prompt('Reference name (e.g. homepage, after_login):');
+    if (!name || !name.trim()) return;
+    setStatus('Capturing reference...');
+    const r = await API.post('/api/opencv/capture-reference', { bank_code: S.bank, name: name.trim(), arm_id: getArmId() });
+    if (r.success) {
+        toast('Reference captured: ' + name.trim());
+        await loadRefs();
+        const sel = document.getElementById('sf-ref');
+        if (sel) {
+            const opts = S.refs.map(ref => `<option value="${ref.name}">${ref.name}</option>`).join('');
+            sel.innerHTML = '<option value="">-- select --</option>' + opts;
+            sel.value = name.trim();
+        }
+    } else { toast(r.error || 'Capture failed', 'error'); }
+    setStatus('Ready');
+}
+
+async function testCompare() {
+    const ref = document.getElementById('sf-ref')?.value;
+    if (!ref) { toast('Select a reference image first', 'error'); return; }
+    const threshold = parseFloat(document.getElementById('sf-threshold')?.value) || 0.70;
+    const roiT = parseInt(document.getElementById('sf-roi-top')?.value) || 0;
+    const roiB = parseInt(document.getElementById('sf-roi-bottom')?.value) || 100;
+    const roiL = parseInt(document.getElementById('sf-roi-left')?.value) || 0;
+    const roiR = parseInt(document.getElementById('sf-roi-right')?.value) || 100;
+    const roi = (roiT === 0 && roiB === 100 && roiL === 0 && roiR === 100) ? null
+        : { top_percent: roiT, bottom_percent: roiB, left_percent: roiL, right_percent: roiR };
+    setStatus('Comparing...');
+    const r = await API.post('/api/opencv/compare', { bank_code: S.bank, name: ref, threshold, roi, arm_id: getArmId() });
+    if (r.error) { toast(r.error, 'error'); setStatus('Ready'); return; }
+    const msg = r.match
+        ? `MATCH — score: ${r.score} (threshold: ${r.threshold})`
+        : `NO MATCH — score: ${r.score} (threshold: ${r.threshold})`;
+    toast(msg, r.match ? 'success' : 'error');
+    setStatus(msg);
+}
+
+async function previewRef() {
+    const ref = document.getElementById('sf-ref')?.value;
+    if (!ref) return;
+    const r = await API.get(`/api/opencv/references/${S.bank}/${ref}/preview?arm_id=${S.armId}`);
+    if (r.preview) {
+        const w = window.open('', '_blank', 'width=500,height=700');
+        w.document.write(`<img src="data:image/jpeg;base64,${r.preview}" style="max-width:100%;">`);
+    }
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+/* ============================================================
+   SETTINGS — bank_apps, arms, stations, phones
+   ============================================================ */
+function openSettings() {
+    document.getElementById('settings-modal').classList.add('active');
+    setSettingsTab('bank-apps');
+}
+
+function setSettingsTab(tab) {
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().replace(/\s+/g,'-') === tab || t.onclick.toString().includes(tab)));
+    document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('sp-' + tab).classList.add('active');
+
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.settings-tab[onclick*="${tab}"]`).classList.add('active');
+
+    if (tab === 'bank-apps') loadBankApps();
+    else if (tab === 'arms') loadArms();
+    else if (tab === 'stations') loadStations();
+    else if (tab === 'phones') loadPhones();
+    else if (tab === 'mappings') loadMappings();
+}
+
+/* --- Bank Apps --- */
+async function loadBankApps() {
+    const apps = await API.get('/api/banks/apps');
+    const myStations = S.allStations.filter(s => s.arm_id === S.armId).map(s => s.id);
+    const grouped = {};
+    (Array.isArray(apps) ? apps : []).filter(a => myStations.includes(a.station_id)).forEach(a => {
+        if (!grouped[a.station_id]) grouped[a.station_id] = [];
+        grouped[a.station_id].push(a);
+    });
+
+    let html = `<div style="margin-bottom:10px;">
+        <button class="btn btn-primary btn-sm" onclick="showAddBankApp()">+ Add Bank App</button>
+    </div><div id="ba-add-form"></div>`;
+
+    const armName = document.getElementById('arm-select').selectedOptions[0]?.textContent || 'ARM-' + S.armId;
+    for (const sid of myStations) {
+        const list = grouped[sid] || [];
+        const sName = S.allStations.find(s => s.id === sid)?.name || 'S' + sid;
+        html += `<h4 style="margin:10px 0 4px;font-size:13px;">${armName} / ${sName} (${list.length} apps)</h4>`;
+        if (!list.length) { html += '<p style="color:var(--text2);font-size:12px;">No bank apps</p>'; continue; }
+        html += `<table class="settings-table"><thead><tr>
+            <th>Bank</th><th>Account No</th><th>Password</th><th>PIN</th><th>Status</th><th class="actions"></th>
+        </tr></thead><tbody>`;
+        for (const a of list) {
+            html += `<tr id="ba-row-${a.id}">
+                <td>${a.bank_code}</td>
+                <td><input value="${a.account_no}" id="ba-acct-${a.id}" style="width:140px;"></td>
+                <td><input value="${a.password}" id="ba-pwd-${a.id}" style="width:100px;"></td>
+                <td><input value="${a.pin||''}" id="ba-pin-${a.id}" style="width:60px;" placeholder="PIN"></td>
+                <td><select id="ba-st-${a.id}">
+                    <option value="active" ${a.status==='active'?'selected':''}>active</option>
+                    <option value="suspended" ${a.status==='suspended'?'selected':''}>suspended</option>
+                </select></td>
+                <td class="actions">
+                    <button class="btn btn-primary btn-sm" onclick="saveBankApp(${a.id})">Save</button>
+                    <button class="btn btn-danger btn-sm" onclick="delBankApp(${a.id})">Del</button>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+    }
+    document.getElementById('sp-bank-apps').innerHTML = html;
+}
+
+function showAddBankApp() {
+    document.getElementById('ba-add-form').innerHTML = `
+        <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;padding:8px;background:var(--bg);border-radius:var(--radius);margin-bottom:8px;">
+            <div class="form-group" style="margin:0;"><label>Station</label>
+                <select id="ba-n-sid" style="width:60px;">
+                    ${S.allStations.filter(s => s.arm_id === S.armId).map(s => '<option value="'+s.id+'">S'+s.id+'</option>').join('')}
+                </select></div>
+            <div class="form-group" style="margin:0;"><label>Bank Code</label>
+                <input id="ba-n-bank" placeholder="e.g. ABA" style="width:80px;"></div>
+            <div class="form-group" style="margin:0;"><label>Bank Name</label>
+                <input id="ba-n-name" placeholder="e.g. ABA Bank" style="width:110px;"></div>
+            <div class="form-group" style="margin:0;"><label>Account No</label>
+                <input id="ba-n-acct" placeholder="Account" style="width:140px;"></div>
+            <div class="form-group" style="margin:0;"><label>Password</label>
+                <input id="ba-n-pwd" placeholder="Password" style="width:100px;"></div>
+            <button class="btn btn-primary btn-sm" onclick="addBankApp()">Add</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ba-add-form').innerHTML=''">Cancel</button>
+        </div>`;
+}
+
+async function addBankApp() {
+    const sid = parseInt(document.getElementById('ba-n-sid').value);
+    const r = await API.post('/api/banks/apps', {
+        phone_id: sid, station_id: sid,
+        bank_code: document.getElementById('ba-n-bank').value.toUpperCase(),
+        bank_name: document.getElementById('ba-n-name').value,
+        account_no: document.getElementById('ba-n-acct').value,
+        password: document.getElementById('ba-n-pwd').value,
+    });
+    if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+    toast('Bank app added');
+    loadBankApps();
+}
+
+async function saveBankApp(id) {
+    const r = await API.put('/api/banks/apps/' + id, {
+        account_no: document.getElementById('ba-acct-' + id).value,
+        password: document.getElementById('ba-pwd-' + id).value,
+        pin: document.getElementById('ba-pin-' + id)?.value || null,
+        status: document.getElementById('ba-st-' + id).value,
+    });
+    if (r.error) toast('Error: ' + r.error, 'error');
+    else toast('Saved');
+}
+
+async function delBankApp(id) {
+    if (!confirm('Delete this bank app?')) return;
+    await API.del('/api/banks/apps/' + id);
+    toast('Deleted');
+    loadBankApps();
+}
+
+/* --- Arms --- */
+async function loadArms() {
+    const arms = await API.get('/api/stations/arms');
+    let html = '<p style="font-size:11px;color:var(--text2);margin-bottom:8px;">All arm config is stored in database. Workers read from here at startup.</p>';
+    html += '<table class="settings-table"><thead><tr><th>ID</th><th>Name</th><th>COM Port</th><th>Camera</th><th>Z Down</th><th>Active</th><th>Status</th><th class="actions"></th></tr></thead><tbody>';
+    for (const a of (Array.isArray(arms) ? arms : [])) {
+        const isCurrent = a.id === S.armId;
+        html += `<tr${isCurrent ? ' style="background:rgba(233,69,96,0.08);"' : ''}>
+            <td>${a.id}${isCurrent ? ' ★' : ''}</td>
+            <td><input value="${a.name||''}" id="arm-name-${a.id}" style="width:80px;"></td>
+            <td><input value="${a.com_port||''}" id="arm-com-${a.id}" style="width:70px;"></td>
+            <td><input value="${a.camera_id??0}" id="arm-cam-${a.id}" type="number" style="width:50px;"></td>
+            <td><input value="${a.z_down||10}" id="arm-z-${a.id}" type="number" style="width:50px;"></td>
+            <td><span class="badge ${a.active ? 'badge-active' : 'badge-inactive'}" style="cursor:pointer;" onclick="toggleArmActive(${a.id},${a.active})">${a.active ? 'ON' : 'OFF'}</span></td>
+            <td><span class="badge badge-${a.status==='idle'?'idle':a.status==='busy'?'busy':'inactive'}">${a.status}</span></td>
+            <td class="actions"><button class="btn btn-primary btn-sm" onclick="saveArm(${a.id})">Save</button></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('sp-arms').innerHTML = html;
+}
+
+async function toggleArmActive(id, current) {
+    await API.put('/api/stations/arms/' + id, { active: !current });
+    loadArms();
+}
+
+async function saveArm(id) {
+    const r = await API.put('/api/stations/arms/' + id, {
+        name: document.getElementById('arm-name-' + id).value,
+        com_port: document.getElementById('arm-com-' + id).value,
+        camera_id: parseInt(document.getElementById('arm-cam-' + id).value) || 0,
+        z_down: parseInt(document.getElementById('arm-z-' + id).value) || 10,
+    });
+    if (r.error) toast('Error: ' + r.error, 'error');
+    else toast('Arm config saved');
+}
+
+/* --- Stations --- */
+async function loadStations() {
+    const allSt = await API.get('/api/stations/');
+    const stations = (Array.isArray(allSt) ? allSt : []).filter(s => s.arm_id === S.armId);
+    let html = '<table class="settings-table"><thead><tr><th>ID</th><th>Name</th><th>Arm</th><th>Status</th><th class="actions"></th></tr></thead><tbody>';
+    for (const s of stations) {
+        html += `<tr>
+            <td>S${s.id}</td>
+            <td>${s.name||''}</td>
+            <td>${s.arm_name||''}</td>
+            <td><select id="stn-st-${s.id}">
+                <option value="active" ${s.status==='active'?'selected':''}>active</option>
+                <option value="inactive" ${s.status==='inactive'?'selected':''}>inactive</option>
+            </select></td>
+            <td class="actions"><button class="btn btn-primary btn-sm" onclick="saveStation(${s.id})">Save</button></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('sp-stations').innerHTML = html;
+}
+
+async function saveStation(id) {
+    const r = await API.put('/api/stations/' + id, {
+        status: document.getElementById('stn-st-' + id).value,
+    });
+    if (r.error) toast('Error: ' + r.error, 'error');
+    else toast('Station saved');
+}
+
+/* --- Phones --- */
+async function loadPhones() {
+    const allPh = await API.get('/api/stations/phones');
+    const myStations = S.allStations.filter(s => s.arm_id === S.armId).map(s => s.id);
+    const phones = (Array.isArray(allPh) ? allPh : []).filter(p => myStations.includes(p.station_id));
+    let html = '<table class="settings-table"><thead><tr><th>ID</th><th>Station</th><th>Name</th><th>Model</th><th>Status</th><th class="actions"></th></tr></thead><tbody>';
+    for (const p of phones) {
+        html += `<tr>
+            <td>${p.id}</td>
+            <td>${p.station_name||'S'+p.station_id}</td>
+            <td><input value="${p.name||''}" id="ph-name-${p.id}" style="width:100px;"></td>
+            <td><input value="${p.model||''}" id="ph-model-${p.id}" style="width:120px;"></td>
+            <td><select id="ph-st-${p.id}">
+                <option value="active" ${p.status==='active'?'selected':''}>active</option>
+                <option value="inactive" ${p.status==='inactive'?'selected':''}>inactive</option>
+            </select></td>
+            <td class="actions"><button class="btn btn-primary btn-sm" onclick="savePhone(${p.id})">Save</button></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('sp-phones').innerHTML = html;
+}
+
+async function savePhone(id) {
+    const r = await API.put('/api/stations/phones/' + id, {
+        name: document.getElementById('ph-name-' + id).value,
+        model: document.getElementById('ph-model-' + id).value,
+        status: document.getElementById('ph-st-' + id).value,
+    });
+    if (r.error) toast('Error: ' + r.error, 'error');
+    else toast('Phone saved');
+}
+
+/* --- Bank Name Mappings --- */
+async function loadMappings() {
+    const mappings = await API.get('/api/banks/mappings');
+    const grouped = {};
+    (Array.isArray(mappings) ? mappings : []).forEach(m => {
+        if (!grouped[m.from_bank_code]) grouped[m.from_bank_code] = [];
+        grouped[m.from_bank_code].push(m);
+    });
+
+    let html = `<div style="margin-bottom:10px;">
+        <button class="btn btn-primary btn-sm" onclick="showAddMapping()">+ Add Mapping</button>
+    </div><div id="mp-add-form"></div>`;
+
+    for (const [from, list] of Object.entries(grouped).sort()) {
+        html += `<h4 style="margin:10px 0 4px;font-size:13px;">From: ${from} (${list.length} mappings)</h4>`;
+        html += `<table class="settings-table"><thead><tr>
+            <th>To Bank</th><th>Search Text</th><th>Display Name</th><th class="actions"></th>
+        </tr></thead><tbody>`;
+        for (const m of list) {
+            html += `<tr>
+                <td><strong>${m.to_bank_code}</strong></td>
+                <td><input value="${m.search_text}" id="mp-search-${m.id}" style="width:140px;"></td>
+                <td><input value="${m.display_name||''}" id="mp-disp-${m.id}" style="width:180px;"></td>
+                <td class="actions">
+                    <button class="btn btn-primary btn-sm" onclick="saveMapping(${m.id})">Save</button>
+                    <button class="btn btn-danger btn-sm" onclick="delMapping(${m.id})">Del</button>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+    }
+    if (!Object.keys(grouped).length) html += '<p style="color:var(--text2);font-size:13px;">No mappings yet.</p>';
+    document.getElementById('sp-mappings').innerHTML = html;
+}
+
+function showAddMapping() {
+    document.getElementById('mp-add-form').innerHTML = `
+        <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;padding:8px;background:var(--bg);border-radius:var(--radius);margin-bottom:8px;">
+            <div class="form-group" style="margin:0;"><label>From Bank</label>
+                <input id="mp-n-from" placeholder="e.g. MBB" style="width:80px;"></div>
+            <div class="form-group" style="margin:0;"><label>To Bank</label>
+                <input id="mp-n-to" placeholder="e.g. CIMB" style="width:80px;"></div>
+            <div class="form-group" style="margin:0;"><label>Search Text</label>
+                <input id="mp-n-search" placeholder="e.g. CIMB" style="width:120px;"></div>
+            <div class="form-group" style="margin:0;"><label>Display Name</label>
+                <input id="mp-n-disp" placeholder="e.g. CIMB Bank Berhad" style="width:160px;"></div>
+            <button class="btn btn-primary btn-sm" onclick="addMapping()">Add</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('mp-add-form').innerHTML=''">Cancel</button>
+        </div>`;
+}
+
+async function addMapping() {
+    const r = await API.post('/api/banks/mappings', {
+        from_bank_code: document.getElementById('mp-n-from').value.toUpperCase(),
+        to_bank_code: document.getElementById('mp-n-to').value.toUpperCase(),
+        search_text: document.getElementById('mp-n-search').value,
+        display_name: document.getElementById('mp-n-disp').value || null,
+    });
+    if (r.error) { toast('Error: ' + r.error, 'error'); return; }
+    toast('Mapping added'); loadMappings();
+}
+
+async function saveMapping(id) {
+    const r = await API.put('/api/banks/mappings/' + id, {
+        search_text: document.getElementById('mp-search-' + id).value,
+        display_name: document.getElementById('mp-disp-' + id).value || null,
+    });
+    if (r.error) toast('Error: ' + r.error, 'error');
+    else toast('Saved');
+}
+
+async function delMapping(id) {
+    if (!confirm('Delete this mapping?')) return;
+    await API.del('/api/banks/mappings/' + id);
+    toast('Deleted'); loadMappings();
+}
+
+/* ============================================================
+   UTILS
+   ============================================================ */
+function setStatus(m) { document.getElementById('status-log').textContent = m; }
+
+/* ============================================================
+   CALIBRATION
+   ============================================================ */
+let calTemplate = null;
+let calManualPoints = [null, null, null];
+let calPhotos = [];
+let calStartX = 0, calStartY = 0;
+
+function openCalibrate() {
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    if (!S.camOn) { toast('Open camera first', 'error'); return; }
+    document.getElementById('cal-step-1').style.display = '';
+    document.getElementById('cal-step-2').style.display = 'none';
+    document.getElementById('cal-result').style.display = 'none';
+    document.getElementById('cal-tpl-canvas').style.display = 'none';
+    document.getElementById('cal-tpl-status').textContent = '';
+    document.getElementById('cal-start-btn').disabled = true;
+    calTemplate = null;
+    document.getElementById('cal-modal').classList.add('active');
+}
+
+async function calCaptureTemplate() {
+    const snap = await API.get('/api/snapshot' + (S.armId ? '?arm_id=' + S.armId : ''));
+    if (snap.error) { toast('Snapshot failed', 'error'); return; }
+    const img = new Image();
+    img.onload = () => {
+        const canvas = document.getElementById('cal-tpl-canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.style.display = 'block';
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        canvas._img = img;
+        canvas._snapB64 = snap.image;
+        document.getElementById('cal-tpl-status').textContent = 'Drag a box around the reference icon...';
+
+        let sx = 0, sy = 0, dragging = false;
+        canvas.onmousedown = (e) => {
+            const r = canvas.getBoundingClientRect();
+            sx = (e.clientX - r.left) * canvas.width / r.width;
+            sy = (e.clientY - r.top) * canvas.height / r.height;
+            dragging = true;
+        };
+        canvas.onmouseup = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            const r = canvas.getBoundingClientRect();
+            const ex = (e.clientX - r.left) * canvas.width / r.width;
+            const ey = (e.clientY - r.top) * canvas.height / r.height;
+            const x1 = Math.min(sx, ex), y1 = Math.min(sy, ey);
+            const w = Math.abs(ex - sx), h = Math.abs(ey - sy);
+            if (w < 10 || h < 10) return;
+
+            ctx.drawImage(img, 0, 0);
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1, y1, w, h);
+
+            const tplCanvas = document.createElement('canvas');
+            tplCanvas.width = w; tplCanvas.height = h;
+            tplCanvas.getContext('2d').drawImage(img, x1, y1, w, h, 0, 0, w, h);
+            calTemplate = tplCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+
+            document.getElementById('cal-tpl-status').textContent =
+                `Template selected: ${Math.round(w)}x${Math.round(h)}px`;
+            document.getElementById('cal-start-btn').disabled = false;
+        };
+    };
+    img.src = 'data:image/jpeg;base64,' + snap.image;
+
+    calStartX = S.curX;
+    calStartY = S.curY;
+}
+
+async function calStartAuto() {
+    const refX = parseFloat(document.getElementById('cal-ref-x').value);
+    const refY = parseFloat(document.getElementById('cal-ref-y').value);
+    const stepMm = parseFloat(document.getElementById('cal-step-mm').value) || 10;
+    if (isNaN(refX) || isNaN(refY)) { toast('Enter reference pen X/Y coordinates', 'error'); return; }
+
+    document.getElementById('cal-start-btn').disabled = true;
+    document.getElementById('cal-start-btn').textContent = 'Calibrating...';
+
+    const r = await API.post('/api/calibration/auto-calibrate', {
+        station_id: S.station,
+        arm_id: S.armId,
+        start_x: calStartX,
+        start_y: calStartY,
+        ref_arm_x: refX,
+        ref_arm_y: refY,
+        template_b64: calTemplate,
+        step_mm: stepMm,
+    });
+
+    document.getElementById('cal-start-btn').textContent = 'Start Auto Calibration';
+    document.getElementById('cal-start-btn').disabled = false;
+
+    if (r.status === 'ok') {
+        showCalResult(r);
+    } else if (r.status === 'need_manual') {
+        calPhotos = r.photos;
+        calManualPoints = [null, null, null];
+        showManualPointPicker(r.photos);
+    } else {
+        toast(r.error || 'Calibration failed', 'error');
+    }
+}
+
+function showManualPointPicker(photos) {
+    document.getElementById('cal-step-1').style.display = 'none';
+    document.getElementById('cal-step-2').style.display = '';
+    const labels = ['Position A (start)', 'Position B (Y+10mm)', 'Position C (X+10mm)'];
+    const container = document.getElementById('cal-manual-photos');
+    container.innerHTML = photos.map((b64, i) => `
+        <div style="text-align:center;">
+            <div style="font-size:12px;margin-bottom:4px;font-weight:600;">${labels[i]}</div>
+            <canvas id="cal-mp-${i}" width="240" height="320"
+                style="border:1px solid var(--border);border-radius:4px;cursor:crosshair;"
+                onclick="calClickPhoto(${i}, event)"></canvas>
+            <div id="cal-mp-label-${i}" style="font-size:11px;color:var(--text2);margin-top:2px;">Click reference point</div>
+        </div>
+    `).join('');
+
+    photos.forEach((b64, i) => {
+        const canvas = document.getElementById('cal-mp-' + i);
+        const img = new Image();
+        img.onload = () => {
+            canvas.width = img.width / 2;
+            canvas.height = img.height / 2;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas._img = img;
+            canvas._scale = 2;
+        };
+        img.src = 'data:image/jpeg;base64,' + b64;
+    });
+
+    document.getElementById('cal-manual-btn').disabled = true;
+    document.getElementById('cal-manual-status').textContent = 'Click reference point in all 3 photos';
+}
+
+function calClickPhoto(idx, event) {
+    const canvas = document.getElementById('cal-mp-' + idx);
+    const rect = canvas.getBoundingClientRect();
+    const displayX = event.clientX - rect.left;
+    const displayY = event.clientY - rect.top;
+    const scaleW = canvas._img.width / rect.width;
+    const scaleH = canvas._img.height / rect.height;
+    const realX = displayX * scaleW;
+    const realY = displayY * scaleH;
+
+    calManualPoints[idx] = [realX, realY];
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(canvas._img, 0, 0, canvas.width, canvas.height);
+    const dotX = displayX * canvas.width / rect.width;
+    const dotY = displayY * canvas.height / rect.height;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#e94560';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    document.getElementById('cal-mp-label-' + idx).textContent =
+        `(${Math.round(realX)}, ${Math.round(realY)})`;
+
+    if (calManualPoints.every(p => p !== null)) {
+        document.getElementById('cal-manual-btn').disabled = false;
+        document.getElementById('cal-manual-status').textContent = 'All 3 points set. Ready to calculate.';
+    }
+}
+
+async function calSubmitManual() {
+    const refX = parseFloat(document.getElementById('cal-ref-x').value);
+    const refY = parseFloat(document.getElementById('cal-ref-y').value);
+    const stepMm = parseFloat(document.getElementById('cal-step-mm').value) || 10;
+
+    document.getElementById('cal-manual-btn').disabled = true;
+    document.getElementById('cal-manual-btn').textContent = 'Calculating...';
+
+    const r = await API.post('/api/calibration/auto-calibrate/manual-points', {
+        station_id: S.station,
+        points: calManualPoints,
+        start_x: calStartX,
+        start_y: calStartY,
+        ref_arm_x: refX,
+        ref_arm_y: refY,
+        step_mm: stepMm,
+    });
+
+    document.getElementById('cal-manual-btn').textContent = 'Calculate & Save';
+    document.getElementById('cal-manual-btn').disabled = false;
+
+    if (r.status === 'ok') {
+        showCalResult(r);
+    } else {
+        toast(r.error || 'Calculation failed', 'error');
+    }
+}
+
+function showCalResult(r) {
+    document.getElementById('cal-step-1').style.display = 'none';
+    document.getElementById('cal-step-2').style.display = 'none';
+    document.getElementById('cal-result').style.display = '';
+    const m = r.transform_matrix;
+    document.getElementById('cal-result-text').textContent =
+        `Scale: ${r.scale_mm_per_pixel} mm/pixel\n` +
+        `Rotation: ${r.rotation_degrees} degrees\n` +
+        `Camera Park: (${r.camera_park_pos[0]}, ${r.camera_park_pos[1]})\n` +
+        `Matrix:\n  [${m[0].map(v => v.toFixed(6)).join(', ')}]\n  [${m[1].map(v => v.toFixed(6)).join(', ')}]`;
+    checkCal();
+    toast('Calibration saved for Station ' + S.station);
+}
+
+/* ============================================================
+   RANDOM PIN KEYPAD RECORDER
+   ============================================================ */
+const PIN_GRID_LABELS = [
+    'Row1-Left', 'Row1-Mid', 'Row1-Right',
+    'Row2-Left', 'Row2-Mid', 'Row2-Right',
+    'Row3-Left', 'Row3-Mid', 'Row3-Right',
+    'Delete(X)', 'Row4-Mid', 'Confirm(✓)'
+];
+let pinPositions = [];
+let pinRecordIdx = 0;
+
+async function openRandomPinRecorder(kbName) {
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    if (!S.camOn) { toast('Open camera first', 'error'); return; }
+
+    let savedCamPos = null;
+    const existing = await API.get(`/api/coords/keyboard-configs/${S.bank}/${S.station}/${kbName}`);
+    if (existing && existing.config) {
+        const cfg = typeof existing.config === 'string' ? JSON.parse(existing.config) : existing.config;
+        if (cfg.positions) pinPositions = cfg.positions;
+        else pinPositions = Array(12).fill(null);
+        if (cfg.camera_pos) savedCamPos = cfg.camera_pos;
+    } else {
+        pinPositions = Array(12).fill(null);
+    }
+    pinRecordIdx = 0;
+
+    const posHtml = PIN_GRID_LABELS.map((label, i) => {
+        const p = pinPositions[i];
+        const coordStr = p ? `(${p[0]}, ${p[1]})` : 'not set';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);${pinRecordIdx===i?'background:rgba(233,69,96,0.15);':''}">
+            <span style="font-weight:${pinRecordIdx===i?'700':'400'};">${i+1}. ${label}</span>
+            <span style="font-size:12px;color:${p?'var(--success)':'var(--text2)'};" id="pin-pos-${i}">${coordStr}</span>
+        </div>`;
+    }).join('');
+
+    const camPosHtml = existing?.config?.camera_pos
+        ? `${existing.config.camera_pos[0]}, ${existing.config.camera_pos[1]}`
+        : `${S.curX}, ${S.curY}`;
+
+    document.getElementById('step-form').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 style="font-size:14px;margin:0;">Record Random PIN: ${kbName} (${S.bank}/S${S.station})</h3>
+            <button class="btn btn-secondary btn-sm" onclick="hideForm()">✕</button>
+        </div>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:8px;">
+            Click each grid position on the camera feed in order (row by row, left to right).
+            Current position is highlighted. Click camera feed to record arm coordinates.
+        </p>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div class="form-group" style="margin:0;"><label>Camera Pos X</label><input id="pin-cam-x" value="${savedCamPos ? savedCamPos[0] : S.curX}" type="number" step="0.1" style="width:70px;"></div>
+            <div class="form-group" style="margin:0;"><label>Camera Pos Y</label><input id="pin-cam-y" value="${savedCamPos ? savedCamPos[1] : S.curY}" type="number" step="0.1" style="width:70px;"></div>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('pin-cam-x').value=S.curX;document.getElementById('pin-cam-y').value=S.curY;">Use Current</button>
+        </div>
+        <div id="pin-grid" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);">
+            ${posHtml}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+            <button class="btn btn-primary btn-sm" onclick="savePinKeyboard('${kbName}')">Save</button>
+            <button class="btn btn-secondary btn-sm" onclick="pinRecordIdx=Math.max(0,pinRecordIdx-1);refreshPinGrid();">← Prev</button>
+            <button class="btn btn-secondary btn-sm" onclick="pinRecordIdx=Math.min(11,pinRecordIdx+1);refreshPinGrid();">Next →</button>
+            <button class="btn btn-danger btn-sm" onclick="pinPositions=Array(12).fill(null);pinRecordIdx=0;refreshPinGrid();">Reset All</button>
+        </div>
+    `;
+    document.getElementById('form-area').style.display = 'block';
+
+    S._pinRecording = true;
+    S._pinKbName = kbName;
+}
+
+function refreshPinGrid() {
+    const grid = document.getElementById('pin-grid');
+    if (!grid) return;
+    grid.innerHTML = PIN_GRID_LABELS.map((label, i) => {
+        const p = pinPositions[i];
+        const coordStr = p ? `(${p[0]}, ${p[1]})` : 'not set';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);${pinRecordIdx===i?'background:rgba(233,69,96,0.15);':''}">
+            <span style="font-weight:${pinRecordIdx===i?'700':'400'};">${i+1}. ${label}</span>
+            <span style="font-size:12px;color:${p?'var(--success)':'var(--text2)'};">${coordStr}</span>
+        </div>`;
+    }).join('');
+}
+
+async function savePinKeyboard(kbName) {
+    const filled = pinPositions.filter(p => p !== null).length;
+    if (filled < 10) {
+        toast('Record at least 10 digit positions (have ' + filled + ')', 'error');
+        return;
+    }
+    const camX = parseFloat(document.getElementById('pin-cam-x').value) || S.curX;
+    const camY = parseFloat(document.getElementById('pin-cam-y').value) || S.curY;
+
+    const config = {
+        type: 'random_pin',
+        camera_pos: [camX, camY],
+        positions: pinPositions,
+        roi: { top_percent: 50, bottom_percent: 98, left_percent: 5, right_percent: 95 },
+    };
+
+    const r = await API.post('/api/coords/keyboard-configs', {
+        bank_code: S.bank,
+        station_id: S.station,
+        keyboard_type: kbName,
+        config: config,
+    });
+    if (r.success) {
+        toast('Random PIN keyboard saved (' + filled + ' positions)');
+        S._pinRecording = false;
+        hideForm();
+    } else {
+        toast(r.error || 'Save failed', 'error');
+    }
+}
+
+init();
+</script>
+</body>
+</html>

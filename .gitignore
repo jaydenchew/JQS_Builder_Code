@@ -1,0 +1,54 @@
+# 敏感配置
+.env
+.env.*
+!.env.example
+
+# 数据库种子（含真实凭证 — 测试数据也不推）
+db/seed.sql
+db/seed_*.sql
+!db/seed.example.sql
+
+# 大文件 / 二进制
+ngrok.exe
+ngrok-*.zip
+models/
+references/
+arm_service/service/*.exe
+arm_service/service/*.dll
+arm_service/service/*.pdb
+arm_service/service/*.InstallLog
+arm_service/service/*.InstallState
+deploy/nssm.exe
+deploy/nssm-*.zip
+deploy/tesseract-setup.exe
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+.Python
+venv/
+env/
+.venv/
+
+# Claude / Agent 本地
+.agent/
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+deploy/logs/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
