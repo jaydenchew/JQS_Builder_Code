@@ -94,9 +94,18 @@ async def reorder_steps(template_id: int, data: dict):
     if set(order) != existing_ids:
         return {"error": "Order list contains IDs not belonging to this template"}
 
-    for idx, step_id in enumerate(order):
-        await database.execute(
-            "UPDATE flow_steps SET step_number = %s WHERE id = %s AND flow_template_id = %s",
-            (idx + 1, step_id, template_id)
-        )
+    pool = await database.get_pool()
+    async with pool.acquire() as conn:
+        await conn.begin()
+        try:
+            async with conn.cursor() as cur:
+                for idx, step_id in enumerate(order):
+                    await cur.execute(
+                        "UPDATE flow_steps SET step_number = %s WHERE id = %s AND flow_template_id = %s",
+                        (idx + 1, step_id, template_id)
+                    )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
     return {"success": True}

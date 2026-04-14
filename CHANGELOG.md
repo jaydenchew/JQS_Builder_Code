@@ -48,6 +48,11 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Audit Fixes (Round 4)
+- **PAS callback HTTP status check**: `callback_result` now returns None (treated as failure) when PAS responds with non-2xx status code. Previously, 4xx/5xx responses with valid JSON body were treated as success, causing `callback_sent_at` to be written even though PAS rejected the request.
+- **reorder_steps transaction**: UPDATE loop now wrapped in explicit DB transaction. If any UPDATE fails mid-loop, all changes roll back instead of leaving partial reorder state.
+- **Audit report cleanup**: Consolidated 4 audit reports into single `AUDIT_REPORT_4.md`.
+
 ### Audit Fixes (Round 3)
 - **PAS callback_sent_at consistency**: `callback_sent_at` now only written when `callback_result` returns a valid response. If PAS callback fails (network error, 500, etc.), `callback_sent_at` stays NULL so the transaction can be identified as "not yet delivered" for retry/reconciliation.
 - **Resume status fix**: `resume_arm` no longer force-writes `arms.status='idle'`. Only sets `active=1`; worker manages its own status transitions to avoid momentary idle/busy flicker.

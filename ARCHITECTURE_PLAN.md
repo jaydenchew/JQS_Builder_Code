@@ -157,6 +157,8 @@ arm_worker._process_task 读取 _ocr_result：
 
 所有 callback 都带 receipt 截图，以 `multipart/form-data` file 方式发送（非 base64 JSON）。DB 仍存 base64，发送时 decode 为文件字节。不重试，失败交给 PAS 人工处理。
 
+**回调一致性保证：** `callback_result` 检查 HTTP 状态码，仅 2xx 视为成功。非 2xx 或网络异常返回 None，worker 不写 `callback_sent_at`，保留 NULL 以便后续对账/重发。Stall 时该 arm 所有 queued 任务也会自动回调 status=4 后标记 failed。
+
 **Stall 设计原则：** 任何步骤级失败一律走 stall（DB status='stall', PAS status=4），因为：
 - 机器无法判断转账是否已经成功（可能已走到确认步骤）
 - 自动关闭 APP 依赖 `all_apps_btn`，不是所有银行都有，且状态不确定时操作危险

@@ -73,6 +73,9 @@ async def callback_result(process_id: int, status: int, transaction_datetime: st
                 headers=_json_headers,
             )
         logger.info("PAS callback: process_id=%d status=%d resp=%d", process_id, status, resp.status_code)
+        if resp.status_code < 200 or resp.status_code >= 300:
+            logger.error("PAS callback rejected: process_id=%d resp=%d body=%s", process_id, resp.status_code, resp.text[:200])
+            return None
         return resp.json()
     except Exception as e:
         logger.error("PAS callback failed: %s", e)
