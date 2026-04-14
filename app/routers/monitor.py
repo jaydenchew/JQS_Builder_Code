@@ -2,9 +2,15 @@
 import asyncio
 import json
 import logging
+import subprocess
+import time
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import database
 from app.worker_manager import manager
+from app.config import ARM_SERVICE_URL
+
+_start_time = time.time()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -41,6 +47,46 @@ async def get_today_stats():
         "running": stats.get("running", 0),
         "total": sum(stats.values()),
     }
+
+
+@router.get("/services")
+async def get_service_status():
+    """Check status of all dependent services."""
+    result = {}
+
+    # MySQL
+    try:
+        row = await database.fetchone("SELECT 1 as ok")
+        result["mysql"] = {"online": row is not None, "detail": "Connected"}
+    except Exception as e:
+        result["mysql"] = {"online": False, "detail": str(e)[:100]}
+
+    # Arm WCF Service
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            resp = await client.get(ARM_SERVICE_URL + "?duankou=COM0&hco=0&daima=0")
+            result["arm_wcf"] = {"online": True, "detail": "HTTP %d" % resp.status_code}
+    except Exception:
+        result["arm_wcf"] = {"online": False, "detail": "Not reachable"}
+
+    # Cloudflare Tunnel
+    try:
+        proc = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: subprocess.run(
+                ["sc.exe", "query", "cloudflared"],
+                capture_output=True, text=True, timeout=3))
+        running = "RUNNING" in proc.stdout
+        result["cloudflare_tunnel"] = {"online": running, "detail": "Running" if running else "Stopped"}
+    except Exception:
+        result["cloudflare_tunnel"] = {"online": False, "detail": "Service not found"}
+
+    # WA Service (self)
+    uptime_s = int(time.time() - _start_time)
+    hours, remainder = divmod(uptime_s, 3600)
+    minutes = remainder // 60
+    result["wa_service"] = {"online": True, "detail": "%dh %dm" % (hours, minutes)}
+
+    return result
 
 
 @router.post("/pause/{arm_id}")

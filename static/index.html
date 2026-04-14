@@ -19,6 +19,13 @@
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         .btn-warning { background: var(--warning); color: #000; }
         .btn-warning:hover { background: #e68a00; }
+        .svc-panel { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+        .svc-card { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 12px; min-width: 150px; }
+        .svc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .svc-dot.on { background: var(--success); }
+        .svc-dot.off { background: var(--danger); }
+        .svc-name { font-weight: 600; }
+        .svc-detail { color: var(--text2); margin-left: auto; }
     </style>
 </head>
 <body>
@@ -27,6 +34,11 @@
         <h2 style="margin-bottom: 20px;">Dashboard</h2>
 
         <div class="grid grid-5" id="stats"></div>
+
+        <h3 style="margin-top:24px;margin-bottom:12px;">Services</h3>
+        <div class="svc-panel" id="svc-panel">
+            <div class="svc-card"><span class="svc-dot"></span><span class="svc-name">Loading...</span></div>
+        </div>
 
         <h3 style="margin-top:24px;margin-bottom:12px;">Machine Status</h3>
         <div class="grid grid-4" id="arm-cards">
@@ -60,7 +72,33 @@
     <script>
     let ws = null;
 
+    const SVC_LABELS = {
+        mysql: 'MySQL',
+        arm_wcf: 'Arm WCF',
+        cloudflare_tunnel: 'Tunnel',
+        wa_service: 'WA Service',
+    };
+
+    async function loadServices() {
+        try {
+            const data = await API.get('/api/monitor/services');
+            const panel = document.getElementById('svc-panel');
+            panel.innerHTML = Object.entries(data).map(([key, svc]) => `
+                <div class="svc-card">
+                    <span class="svc-dot ${svc.online ? 'on' : 'off'}"></span>
+                    <span class="svc-name">${SVC_LABELS[key] || key}</span>
+                    <span class="svc-detail">${svc.detail}</span>
+                </div>
+            `).join('');
+        } catch (e) {
+            document.getElementById('svc-panel').innerHTML = '<div class="svc-card"><span class="svc-dot off"></span><span class="svc-name">Error loading services</span></div>';
+        }
+    }
+
+    setInterval(loadServices, 30000);
+
     async function load() {
+        loadServices();
         const todayStats = await API.get('/api/monitor/stats/today');
 
         document.getElementById('stats').innerHTML = `
