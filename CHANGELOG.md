@@ -48,6 +48,17 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Code Review Fixes (CODEX + Claude)
+- **create_arm rollback**: Worker start failure now auto-sets arm to `active=0, status='offline'`, preventing "accepted but never processed" tasks.
+- **PAS_API_URL empty short-circuit**: `callback_result` returns None immediately if URL is empty, avoiding 50s retry block per task when `.env` is misconfigured.
+- **reset_arm non-blocking**: Hardware calls now run through worker's thread pool executor instead of blocking the event loop.
+- **Transaction indexes**: Added `idx_station_id` and `idx_bank_app_id` on `transactions` table for JOIN performance at scale.
+- **Stall photo preserves receipt**: Stall screenshot only used when no PHOTO step receipt exists. Previously, stall photo would overwrite the actual bank receipt.
+
+### Dashboard
+- **Service status monitor**: Dashboard shows MySQL, Arm WCF, Cloudflare Tunnel, and WA uptime status. Auto-refreshes every 30 seconds.
+- **Removed redundant nav buttons** from dashboard bottom.
+
 ### PAS Callback Retry
 - **Automatic retry with backoff**: `callback_result` now retries up to 3 times on failure (5s, 15s, 30s intervals). Handles network blips and temporary PAS outages without losing callbacks. After all retries exhausted, returns None (caller leaves `callback_sent_at` as NULL for manual reconciliation).
 

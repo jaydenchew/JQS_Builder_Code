@@ -199,7 +199,7 @@ class ArmWorker:
             self._last_error = error_msg
 
             stall_screenshot = await self._capture_stall_photo(station_id)
-            if stall_screenshot:
+            if not receipt_b64 and stall_screenshot:
                 receipt_b64 = stall_screenshot
 
             await database.execute(

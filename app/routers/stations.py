@@ -24,7 +24,8 @@ async def create_arm(data: dict):
     if data.get("active", True):
         ok = await manager.add_worker(row_id)
         if not ok:
-            return {"success": False, "id": row_id, "error": "Arm created in DB but worker failed to start"}
+            await database.execute("UPDATE arms SET active = 0, status = 'offline' WHERE id = %s", (row_id,))
+            return {"success": False, "id": row_id, "error": "Arm created but worker failed to start — set to inactive/offline"}
     return {"success": True, "id": row_id}
 
 

@@ -116,8 +116,9 @@ async def reset_arm(arm_id: int):
     if not worker:
         return {"success": False, "error": "Worker not found"}
     try:
-        worker.arm_client.reset_to_origin()
-        worker.arm_client.close_port()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(worker._executor, worker.arm_client.reset_to_origin)
+        await loop.run_in_executor(worker._executor, worker.arm_client.close_port)
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}

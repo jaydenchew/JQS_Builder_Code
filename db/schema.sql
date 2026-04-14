@@ -81,7 +81,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     finished_at DATETIME NULL,
     callback_sent_at DATETIME NULL,
     INDEX idx_status (status),
-    INDEX idx_process_id (process_id)
+    INDEX idx_process_id (process_id),
+    INDEX idx_station_id (station_id),
+    INDEX idx_bank_app_id (bank_app_id)
 ) ENGINE=InnoDB;
 
 -- transaction_logs

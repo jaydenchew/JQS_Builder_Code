@@ -50,6 +50,10 @@ async def callback_result(process_id: int, status: int, transaction_datetime: st
     Otherwise sends JSON without receipt.
     Retries up to 3 times on failure with 5s/15s/30s backoff.
     """
+    if not PAS_API_URL:
+        logger.error("PAS callback skipped: PAS_API_URL not configured (process_id=%d)", process_id)
+        return None
+
     for attempt in range(1 + len(RETRY_DELAYS)):
         result = await _send_callback(process_id, status, transaction_datetime, receipt)
         if result is not None:
