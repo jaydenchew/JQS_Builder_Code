@@ -308,9 +308,12 @@ class ArmWorker:
             await database.execute(
                 "UPDATE transactions SET status = 'failed', error_message = %s, finished_at = NOW() WHERE id = %s",
                 (message, t["id"]))
-            await pas_client.callback_result(t["process_id"], 4, now)
-            await database.execute(
-                "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (t["id"],))
+            cb_result = await pas_client.callback_result(t["process_id"], 4, now)
+            if cb_result is not None:
+                await database.execute(
+                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (t["id"],))
+            else:
+                logger.error("[%s] PAS callback failed for queued task process_id=%d", self.name, t["process_id"])
             logger.warning("[%s] Queued task rejected: process_id=%d — %s", self.name, t["process_id"], message)
         logger.info("[%s] Rejected %d queued tasks", self.name, len(rows))
 
