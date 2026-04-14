@@ -67,7 +67,7 @@ echo Service Python: %VENV_PY%
 %NSSM% stop %SERVICE_NAME% >nul 2>&1
 %NSSM% remove %SERVICE_NAME% confirm >nul 2>&1
 
-%NSSM% install %SERVICE_NAME% "%VENV_PY%" -m uvicorn app.main:app --host 0.0.0.0 --port 9000
+%NSSM% install %SERVICE_NAME% "%VENV_PY%" -m uvicorn app.main:app --host 127.0.0.1 --port 9000
 %NSSM% set %SERVICE_NAME% AppDirectory "%APP_DIR%"
 %NSSM% set %SERVICE_NAME% DisplayName "WA Unified System"
 %NSSM% set %SERVICE_NAME% Description "Withdrawal Automation - Builder + Multi-Arm Workers"
