@@ -73,6 +73,20 @@ ingress:
 
 **Security**: Only 3 paths are exposed. Dashboard, Builder, Settings, and all configuration APIs are NOT accessible from the internet — only from localhost.
 
+### Cloudflare Security Settings (Required)
+
+Go to Cloudflare Dashboard → your domain → **Security → Settings**:
+
+1. **Browser Integrity Check** → Turn **OFF**
+   - This blocks API requests without browser-like User-Agent headers
+   - PAS sends programmatic requests (not browser traffic), so this must be off
+   - Without this, PAS gets `403 (error code 1010)` from Cloudflare edge
+
+2. **Bot Fight Mode** → Keep **OFF**
+   - Same reason — API clients are not bots
+
+These settings apply to the entire domain. If you need browser protection on other subdomains, use WAF rules to create an exception specifically for `wa.yourdomain.com`.
+
 ### Run
 
 **Option A — As Windows Service (recommended for production):**

@@ -120,6 +120,10 @@ ingress:
 
 Only 3 paths are exposed to the internet. All other endpoints (Dashboard, Builder, Settings, etc.) are only accessible from localhost.
 
+**Important Cloudflare settings** (without these, PAS gets 403):
+- Security → Settings → **Browser Integrity Check** → OFF
+- Security → Settings → **Bot Fight Mode** → OFF
+
 **Run as Windows Service** (auto-start on boot):
 ```bash
 cloudflared service install
