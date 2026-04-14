@@ -48,6 +48,10 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Deployment
+- **FastAPI binds to 127.0.0.1**: External access only through Cloudflare Tunnel. Localhost-only prevents LAN exposure of unauthenticated management endpoints.
+- **Cloudflare Tunnel via NSSM**: `cloudflared service install` has LocalSystem config path issues. Tunnel now runs as NSSM service (`CF-Tunnel`) under user account, reading config from `~/.cloudflared/config.yml`. See DD-015.
+
 ### Code Review Fixes (CODEX + Claude)
 - **create_arm rollback**: Worker start failure now auto-sets arm to `active=0, status='offline'`, preventing "accepted but never processed" tasks.
 - **PAS_API_URL empty short-circuit**: `callback_result` returns None immediately if URL is empty, avoiding 50s retry block per task when `.env` is misconfigured.

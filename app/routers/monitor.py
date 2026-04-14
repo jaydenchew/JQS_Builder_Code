@@ -73,7 +73,7 @@ async def get_service_status():
     try:
         proc = await asyncio.get_event_loop().run_in_executor(
             None, lambda: subprocess.run(
-                ["sc.exe", "query", "cloudflared"],
+                ["sc.exe", "query", "CF-Tunnel"],
                 capture_output=True, text=True, timeout=3))
         running = "RUNNING" in proc.stdout
         result["cloudflare_tunnel"] = {"online": running, "detail": "Running" if running else "Stopped"}

@@ -28,12 +28,13 @@ For design decisions that may look unusual, see `DESIGN_DECISIONS.md`.
 
 ```
 1. Download cloudflared from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
-2. Run: cloudflared tunnel login (authorize in browser)
+2. Run: cloudflared tunnel login  (authorize in browser)
 3. Run: cloudflared tunnel create wa-system
 4. Run: cloudflared tunnel route dns wa-system wa.yourdomain.com
-5. Create config file — see "Cloudflare Tunnel Configuration" section below
-6. Run: cloudflared tunnel run wa-system
+5. Right-click deploy/install_tunnel.bat → Run as Administrator
 ```
+
+The script auto-creates `config.yml` and installs as Windows service. See `deploy/README.md` for details.
 
 ### Step 4: Start Database
 
@@ -124,12 +125,9 @@ Only 3 paths are exposed to the internet. All other endpoints (Dashboard, Builde
 - Security → Settings → **Browser Integrity Check** → OFF
 - Security → Settings → **Bot Fight Mode** → OFF
 
-**Run as Windows Service** (auto-start on boot):
-```bash
-cloudflared service install
-```
+**Install as service:** Run `deploy/install_tunnel.bat` as Administrator. It auto-creates config and installs the NSSM service.
 
-**Or run manually:**
+**Or run manually (development):**
 ```bash
 cloudflared tunnel run wa-system
 ```

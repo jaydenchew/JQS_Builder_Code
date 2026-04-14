@@ -89,18 +89,24 @@ These settings apply to the entire domain. If you need browser protection on oth
 
 ### Run
 
-**Option A — As Windows Service (recommended for production):**
+**Option A — As Windows Service via NSSM (recommended for production):**
+
+`cloudflared service install` runs as LocalSystem which cannot access user-directory config files. Use NSSM instead (same as WA service):
+
 ```bash
-cloudflared service install
-# Starts automatically on boot
+# Install (run as Administrator)
+nssm install CF-Tunnel "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --config "C:\Users\<your-user>\.cloudflared\config.yml" run wa-system
+nssm set CF-Tunnel DisplayName "Cloudflare Tunnel (WA)"
+nssm set CF-Tunnel ObjectName ".\<your-user>"
+nssm start CF-Tunnel
 ```
 
 Manage:
 ```bash
-# In services.msc → "Cloudflare Tunnel"
-# Or:
-sc start cloudflared
-sc stop cloudflared
+nssm start CF-Tunnel
+nssm stop CF-Tunnel
+nssm restart CF-Tunnel
+# Or in services.msc → "Cloudflare Tunnel (WA)"
 ```
 
 **Option B — Manual (development):**
@@ -129,8 +135,8 @@ URL changes on every restart. Not suitable for production.
 On machine boot, services should start in this order:
 
 1. **Docker** (MySQL) — auto-starts via Docker Desktop
-2. **WA-Unified** (NSSM) — auto-starts, waits for DB on startup
-3. **Cloudflare Tunnel** — auto-starts if installed as service
+2. **WA-Unified** (NSSM) — auto-starts, binds to 127.0.0.1:9000
+3. **CF-Tunnel** (NSSM) — auto-starts, connects localhost:9000 to Cloudflare edge
 
 All three are Windows services and auto-start on boot.
 
@@ -139,7 +145,7 @@ All three are Windows services and auto-start on boot.
 | Problem | Check |
 |---------|-------|
 | Service won't start | `deploy/logs/service_stderr.log` — look for DB connection errors |
-| PAS can't reach endpoint | Is Cloudflare Tunnel running? Check `cloudflared tunnel info` |
+| PAS can't reach endpoint | Is CF-Tunnel running? `nssm status CF-Tunnel` or check services.msc |
 | 401 on /process-withdrawal | Check `.env` has correct `WA_API_KEY` and `WA_TENANT_ID` |
 | 503 on /process-withdrawal | `WA_API_KEY` or `WA_TENANT_ID` is empty in `.env` |
 | Arm not responding | Check COM port in Settings, try restart service |

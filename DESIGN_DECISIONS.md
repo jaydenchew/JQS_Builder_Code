@@ -133,3 +133,15 @@ Architectural and design decisions that may look like bugs to someone unfamiliar
 **What**: `transactions.process_id` is `INT` (max ~2.1 billion).
 
 **Why**: PAS assigns process_ids. Current volume is low (hundreds per day). INT capacity is sufficient for decades of operation. If PAS changes to larger IDs, migration to BIGINT is a single ALTER TABLE.
+
+---
+
+## DD-015: Cloudflare Tunnel Runs via NSSM (Not Native Service)
+
+**What**: `cloudflared` is installed as a Windows service using NSSM (service name `CF-Tunnel`), not via `cloudflared service install`.
+
+**Why**: `cloudflared service install` registers the service under LocalSystem account, which looks for config files in `C:\Windows\System32\config\systemprofile\.cloudflared\`. This is a different directory from the user's `~/.cloudflared/` where `cloudflared tunnel login` stores credentials. Even when config files are manually copied to the system directory, YAML formatting issues and permission problems cause the service to fail silently.
+
+NSSM runs the service as the actual user (`ObjectName = .\username`), so it naturally reads from `C:\Users\<user>\.cloudflared\config.yml` where credentials and config are stored. This matches the manual `cloudflared tunnel run` behavior exactly.
+
+**Alternative considered**: Copying config + credentials to system profile directory. Attempted and failed due to YAML encoding issues, path escaping, and no useful error messages from the service on failure.
