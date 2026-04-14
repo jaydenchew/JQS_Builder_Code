@@ -169,9 +169,12 @@ class ArmWorker:
             await database.execute(
                 "UPDATE transactions SET status = %s, finished_at = NOW() WHERE id = %s",
                 (db_status, transaction_id))
-            await pas_client.callback_result(process_id, pas_status, now, receipt_b64)
-            await database.execute(
-                "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            cb_result = await pas_client.callback_result(process_id, pas_status, now, receipt_b64)
+            if cb_result is not None:
+                await database.execute(
+                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            else:
+                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.info("[%s] === DONE process_id=%d pas_status=%d receipt=%s ===",
                         self.name, process_id, pas_status, rr)
 
@@ -179,9 +182,12 @@ class ArmWorker:
             await database.execute(
                 "UPDATE transactions SET status = 'success', finished_at = NOW() WHERE id = %s",
                 (transaction_id,))
-            await pas_client.callback_result(process_id, 1, now, receipt_b64)
-            await database.execute(
-                "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            cb_result = await pas_client.callback_result(process_id, 1, now, receipt_b64)
+            if cb_result is not None:
+                await database.execute(
+                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            else:
+                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.info("[%s] === SUCCESS process_id=%d ===", self.name, process_id)
 
         else:
@@ -199,9 +205,12 @@ class ArmWorker:
             await database.execute(
                 "UPDATE transactions SET status = 'stall', error_message = %s, receipt_base64 = %s, finished_at = NOW() WHERE id = %s",
                 (error_msg, receipt_b64, transaction_id))
-            await pas_client.callback_result(process_id, 4, now, receipt_b64)
-            await database.execute(
-                "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            cb_result = await pas_client.callback_result(process_id, 4, now, receipt_b64)
+            if cb_result is not None:
+                await database.execute(
+                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+            else:
+                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.warning("[%s] === STALL process_id=%d error=%s ===", self.name, process_id, error_msg)
 
         await self._cleanup_arm()

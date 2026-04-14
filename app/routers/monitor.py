@@ -53,7 +53,7 @@ async def pause_arm(arm_id: int):
 async def resume_arm(arm_id: int):
     ok = await manager.resume(arm_id)
     if ok:
-        await database.execute("UPDATE arms SET status = 'idle', active = 1 WHERE id = %s", (arm_id,))
+        await database.execute("UPDATE arms SET active = 1 WHERE id = %s", (arm_id,))
     return {"success": ok}
 
 

@@ -48,6 +48,10 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Audit Fixes (Round 3)
+- **PAS callback_sent_at consistency**: `callback_sent_at` now only written when `callback_result` returns a valid response. If PAS callback fails (network error, 500, etc.), `callback_sent_at` stays NULL so the transaction can be identified as "not yet delivered" for retry/reconciliation.
+- **Resume status fix**: `resume_arm` no longer force-writes `arms.status='idle'`. Only sets `active=1`; worker manages its own status transitions to avoid momentary idle/busy flicker.
+
 ### Audit Fixes (Round 2)
 - **process_id race condition**: All 3 INSERT paths in `/process-withdrawal` now catch `IntegrityError(1062)` and return `"Duplicate process_id"` instead of 500. SELECT pre-check retained as fast path; IntegrityError is the concurrency safety net.
 - **reorder_steps validation**: Added 3 guards before updating: step count match, no duplicate IDs, all IDs belong to template. Prevents corrupted step ordering from malformed requests.
