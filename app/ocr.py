@@ -42,6 +42,18 @@ def rotate_frame(frame):
     return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
 
+def _enhance_for_ocr(frame):
+    """Enhance image contrast and sharpness for better OCR accuracy.
+    Converts to grayscale, applies CLAHE for local contrast, then
+    upscales 2x with bicubic interpolation for sharper text edges."""
+    import numpy as np
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    upscaled = cv2.resize(enhanced, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    return upscaled
+
+
 def extract_text(frame):
     """Extract all text from image frame (auto-rotates 90 CW first)"""
     frame = rotate_frame(frame)
@@ -104,7 +116,8 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         x1 = int(w * roi.get("left_percent", 0) / 100)
         x2 = int(w * roi.get("right_percent", 100) / 100)
         cropped = rotated_frame[y1:y2, x1:x2]
-        text = _ocr_frame(cropped)
+        enhanced = _enhance_for_ocr(cropped)
+        text = _ocr_frame(enhanced)
     else:
         text = _ocr_frame(rotated_frame)
     logger.info("OCR extracted text: %s", text[:200])
