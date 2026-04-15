@@ -45,16 +45,20 @@ def rotate_frame(frame):
 def extract_text(frame):
     """Extract all text from image frame (auto-rotates 90 CW first)"""
     frame = rotate_frame(frame)
+    return _ocr_frame(frame), frame
+
+
+def _ocr_frame(rotated_frame):
+    """Run OCR on an already-rotated frame. Returns text string."""
     reader = get_reader()
     if reader is None:
-        return "", frame
+        return ""
     if reader == "tesseract":
         import pytesseract
-        text = pytesseract.image_to_string(frame)
-        return text, frame
+        return pytesseract.image_to_string(rotated_frame)
     else:
-        results = reader.readtext(frame, detail=0)
-        return " ".join(results), frame
+        results = reader.readtext(rotated_frame, detail=0)
+        return " ".join(results)
 
 
 def extract_numbers(text):
@@ -91,7 +95,18 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
     if frame is None:
         return False, "Frame is None", None, None
 
-    text, rotated_frame = extract_text(frame)
+    rotated_frame = rotate_frame(frame)
+    roi = ocr_config.get("roi")
+    if roi:
+        h, w = rotated_frame.shape[:2]
+        y1 = int(h * roi.get("top_percent", 0) / 100)
+        y2 = int(h * roi.get("bottom_percent", 100) / 100)
+        x1 = int(w * roi.get("left_percent", 0) / 100)
+        x2 = int(w * roi.get("right_percent", 100) / 100)
+        cropped = rotated_frame[y1:y2, x1:x2]
+        text = _ocr_frame(cropped)
+    else:
+        text = _ocr_frame(rotated_frame)
     logger.info("OCR extracted text: %s", text[:200])
 
     _, buffer = cv2.imencode(".jpg", rotated_frame)

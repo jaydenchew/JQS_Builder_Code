@@ -431,6 +431,18 @@
 </div>
 
 <!-- ==================== CALIBRATION MODAL ==================== -->
+<div class="modal-overlay" id="roi-modal" onclick="if(event.target===this)this.classList.remove('active')">
+    <div class="modal" style="max-width:540px;text-align:center;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 style="margin:0;">Select OCR Region</h3>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal('roi-modal')">Done</button>
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Draw a rectangle on the photo to select the OCR area. You can redraw.</p>
+        <canvas id="roi-canvas" style="cursor:crosshair;border:1px solid var(--border);border-radius:4px;max-width:100%;"></canvas>
+        <div id="roi-info" style="margin-top:6px;font-size:12px;color:var(--accent);"></div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="cal-modal">
     <div class="modal" style="min-width:600px;max-width:90vw;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -1419,6 +1431,16 @@ function renderForm(step, isNew) {
                     <input id="sf-receipt-failed" value="${rs?rs.failed.join(', '):''}" placeholder="Failed, Unsuccessful, Declined" style="padding:5px 7px;font-size:12px;">
                 </div>
             </div>
+        </div>
+        <div class="full" style="margin-top:6px;">
+            <label style="font-size:11px;margin-bottom:4px;">OCR Region of Interest (optional — crop before OCR)</label>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <span style="font-size:11px;">Top%</span><input id="sf-ocr-roi-top" type="number" min="0" max="100" value="${ocrCfg.roi?.top_percent ?? 0}" style="width:50px;padding:3px 5px;font-size:11px;">
+                <span style="font-size:11px;">Bottom%</span><input id="sf-ocr-roi-bottom" type="number" min="0" max="100" value="${ocrCfg.roi?.bottom_percent ?? 100}" style="width:50px;padding:3px 5px;font-size:11px;">
+                <span style="font-size:11px;">Left%</span><input id="sf-ocr-roi-left" type="number" min="0" max="100" value="${ocrCfg.roi?.left_percent ?? 0}" style="width:50px;padding:3px 5px;font-size:11px;">
+                <span style="font-size:11px;">Right%</span><input id="sf-ocr-roi-right" type="number" min="0" max="100" value="${ocrCfg.roi?.right_percent ?? 100}" style="width:50px;padding:3px 5px;font-size:11px;">
+                <button class="btn btn-sm btn-primary" onclick="selectOcrRoi()" type="button">Select on Photo</button>
+            </div>
         </div>`;
     } else if (step.action_type === 'CHECK_SCREEN') {
         let cfg = {};
@@ -1586,6 +1608,13 @@ function readForm() {
                 review: split(document.getElementById('sf-receipt-review')?.value || ''),
                 failed: split(document.getElementById('sf-receipt-failed')?.value || ''),
             };
+        }
+        const ocrRoiT = parseInt(document.getElementById('sf-ocr-roi-top')?.value) || 0;
+        const ocrRoiB = parseInt(document.getElementById('sf-ocr-roi-bottom')?.value) || 100;
+        const ocrRoiL = parseInt(document.getElementById('sf-ocr-roi-left')?.value) || 0;
+        const ocrRoiR = parseInt(document.getElementById('sf-ocr-roi-right')?.value) || 100;
+        if (ocrRoiT > 0 || ocrRoiB < 100 || ocrRoiL > 0 || ocrRoiR < 100) {
+            ocrCfg.roi = { top_percent: ocrRoiT, bottom_percent: ocrRoiB, left_percent: ocrRoiL, right_percent: ocrRoiR };
         }
         s.description = JSON.stringify(ocrCfg);
     } else if (action === 'CHECK_SCREEN') {
@@ -2726,6 +2755,85 @@ async function previewRef() {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+/* ============================================================
+   OCR ROI VISUAL SELECTOR
+   ============================================================ */
+async function selectOcrRoi() {
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    toast('Capturing photo...', 'info');
+    const r = await API.post('/api/opencv/snapshot', { arm_id: getArmId() });
+    if (r.error) { toast(r.error, 'error'); return; }
+
+    const img = new Image();
+    img.onload = () => {
+        const modal = document.getElementById('roi-modal');
+        const canvas = document.getElementById('roi-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const maxW = Math.min(window.innerWidth - 80, 500);
+        const scale = maxW / img.width;
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        modal.classList.add('active');
+        let startX, startY, dragging = false;
+
+        canvas.onmousedown = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            dragging = true;
+        };
+        canvas.onmousemove = (e) => {
+            if (!dragging) return;
+            const rect = canvas.getBoundingClientRect();
+            const curX = e.clientX - rect.left;
+            const curY = e.clientY - rect.top;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(startX, startY, curX - startX, curY - startY);
+            ctx.setLineDash([]);
+        };
+        canvas.onmouseup = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+
+            const x1 = Math.max(0, Math.min(startX, endX));
+            const y1 = Math.max(0, Math.min(startY, endY));
+            const x2 = Math.min(canvas.width, Math.max(startX, endX));
+            const y2 = Math.min(canvas.height, Math.max(startY, endY));
+
+            const topPct = Math.round(y1 / canvas.height * 100);
+            const bottomPct = Math.round(y2 / canvas.height * 100);
+            const leftPct = Math.round(x1 / canvas.width * 100);
+            const rightPct = Math.round(x2 / canvas.width * 100);
+
+            document.getElementById('sf-ocr-roi-top').value = topPct;
+            document.getElementById('sf-ocr-roi-bottom').value = bottomPct;
+            document.getElementById('sf-ocr-roi-left').value = leftPct;
+            document.getElementById('sf-ocr-roi-right').value = rightPct;
+
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(233,69,96,0.2)';
+            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+            document.getElementById('roi-info').textContent =
+                `ROI: top=${topPct}% bottom=${bottomPct}% left=${leftPct}% right=${rightPct}%`;
+            toast(`ROI set: ${topPct}-${bottomPct}% / ${leftPct}-${rightPct}%`);
+        };
+    };
+    img.src = 'data:image/jpeg;base64,' + r.image;
+}
 
 /* ============================================================
    SETTINGS — bank_apps, arms, stations, phones

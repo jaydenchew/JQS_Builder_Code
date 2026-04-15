@@ -61,6 +61,18 @@ async def capture_reference(data: dict):
     return {"success": True, "filename": "%s/%s.jpg" % (bank_code, name), "name": name, "preview": b64}
 
 
+@router.post("/snapshot")
+async def snapshot(data: dict):
+    """Capture a rotated frame and return as base64 JPEG (no file saved)."""
+    cam = _get_cam(data.get("arm_id"))
+    frame = cam.capture_rotated()
+    if frame is None:
+        return {"error": "Camera not available"}
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    b64 = base64.b64encode(buf).decode("utf-8")
+    return {"success": True, "image": b64, "width": frame.shape[1], "height": frame.shape[0]}
+
+
 @router.get("/references/{bank_code}")
 async def list_references(bank_code: str, arm_id: int = None):
     arm_name = await _get_arm_name(arm_id)

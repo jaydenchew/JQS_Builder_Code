@@ -48,6 +48,12 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### OCR ROI Visual Selector
+- **OCR Region of Interest**: OCR_VERIFY steps now support ROI cropping — only the selected area of the phone screen is sent to OCR, reducing noise and improving accuracy.
+- **Visual ROI selector in Builder**: "Select on Photo" button captures a snapshot, displays it in a modal with crosshair cursor. User draws a rectangle to define the OCR region. Percentages auto-calculated and filled into the form.
+- **Backend**: `ocr.py verify_configurable` crops the rotated frame by ROI percentages before running OCR. Full screenshot is still saved for debugging.
+- **Snapshot endpoint**: New `POST /api/opencv/snapshot` returns base64 JPEG without saving to disk.
+
 ### Camera Concurrency + OCR Matching
 - **Camera release after capture**: `capture_fresh()` now closes the camera immediately after reading a frame, reducing the exclusive lock window from "entire task duration" to ~400ms. Multi-arm concurrent photo requests no longer block for minutes.
 - **Account number leading-zero match**: OCR verification now also tries matching the account number with leading zeros stripped (e.g., `012501402` also matches as `12501402`). Fixes false failures when bank apps display accounts without leading zeros or with space formatting.
