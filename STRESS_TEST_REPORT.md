@@ -75,6 +75,80 @@ When one arm stalls, all its queued tasks are auto-rejected (status=4 to PAS). T
 - PAS disables the bank group for the stalled arm, preventing new tasks
 - Human operator resumes arm after inspection → PAS re-enables bank group
 
+## All Transactions (56)
+
+| PID | Bank | Amount | To Account | To Name | Status | Note |
+|-----|------|--------|------------|---------|--------|------|
+| 86 | WINGBANK | $36.12 | 102084337 | Kimhout Houn | success | |
+| 87 | ABA | $5.31 | 008139773 | Chat Channy | success | |
+| 88 | ACLEDA | $37.86 | 0965040668 | Chat Channy | success | |
+| 89 | WINGBANK | $22.91 | 102575960 | Chat Channy | success | |
+| 90 | ABA | $6.38 | 012501402 | Yee Saory | stall | OCR misread 9.19 as 9.9 |
+| 91 | ACLEDA | $25.58 | 21000587530123 | Yee Saory | failed | auto-rejected (ARM-01 stalled) |
+| 92 | WINGBANK | $13.82 | 101882950 | Yee Saory | stall | OCR verification failed |
+| 93 | ABA | $38.43 | 003121034 | Doung Vivheka | failed | auto-rejected |
+| 94 | ACLEDA | $30.00 | 21000594130523 | Doung Vivheka | failed | auto-rejected |
+| 95 | WINGBANK | $20.62 | 102084329 | Doung Vivheka | failed | auto-rejected |
+| 96 | ABA | $38.40 | 005155137 | Lay Sav Lenh | failed | auto-rejected |
+| 97 | ACLEDA | $28.85 | 21000599280723 | Lay Sav Lenh | failed | auto-rejected |
+| 98 | WINGBANK | $9.60 | 102621285 | Lay Sav Lenh | failed | auto-rejected |
+| 99 | ABA | $17.31 | 013142782 | Chat Sombo | failed | auto-rejected |
+| 100 | ACLEDA | $12.23 | 21000586189828 | Chat Sombo | failed | auto-rejected |
+| 101 | WINGBANK | $33.82 | 101853652 | Chat Sombo | failed | auto-rejected |
+| 102 | ABA | $16.13 | 011126831 | Ros Vanhong | failed | auto-rejected |
+| 103 | WINGBANK | $24.30 | 102084337 | Kimhout Houn | success | |
+| 104 | ABA | $27.48 | 008139773 | Chat Channy | success | |
+| 105 | ACLEDA | $8.50 | 0965040668 | Chat Channy | success | |
+| 106 | WINGBANK | $11.92 | 102575960 | Chat Channy | success | |
+| 107 | ABA | $11.31 | 012501402 | Yee Saory | success | |
+| 108 | ACLEDA | $11.34 | 21000587530123 | Yee Saory | success | |
+| 109 | WINGBANK | $5.50 | 101882950 | Yee Saory | success | |
+| 110 | ABA | $19.90 | 003121034 | Doung Vivheka | success | |
+| 111 | ACLEDA | $12.07 | 21000594130523 | Doung Vivheka | success | |
+| 112 | WINGBANK | $22.97 | 102084329 | Doung Vivheka | success | |
+| 113 | ABA | $23.22 | 005155137 | Lay Sav Lenh | success | |
+| 114 | ACLEDA | $25.42 | 21000599280723 | Lay Sav Lenh | stall | CHECK_SCREEN handler error |
+| 115 | WINGBANK | $27.60 | 102621285 | Lay Sav Lenh | failed | auto-rejected (ARM-02 stalled) |
+| 116 | ABA | $14.57 | 013142782 | Chat Sombo | failed | auto-rejected |
+| 117 | ACLEDA | $9.30 | 21000586189828 | Chat Sombo | failed | auto-rejected |
+| 118 | WINGBANK | $15.46 | 101853652 | Chat Sombo | failed | auto-rejected |
+| 119 | ABA | $5.59 | 011126831 | Ros Vanhong | success | |
+| 120 | ACLEDA | $29.59 | 0965944090 | Pos Vanhong | failed | auto-rejected |
+| 121 | WINGBANK | $17.02 | 102602708 | Ros Vanhong | failed | auto-rejected |
+| 122 | ABA | $10.31 | 013810868 | Sreysouna Kot | success | |
+| 123 | ACLEDA | $13.04 | 0965066523 | Sreysouna Kot | failed | auto-rejected |
+| 124 | WINGBANK | $16.80 | 102210810 | Sreysouna Kot | failed | auto-rejected |
+| 125 | ABA | $9.19 | 008658930 | Kimhout Houn | stall | OCR misread 9.19 as 9.9 |
+| 126 | ACLEDA | $24.18 | 21000594031417 | Kimhout Houn | failed | auto-rejected (ARM-01 stalled) |
+| 127 | WINGBANK | $17.33 | 102084337 | Kimhout Houn | failed | auto-rejected |
+| 128 | WINGBANK | $22.35 | 102084337 | Kimhout Houn | success | |
+| 129 | WINGBANK | $27.20 | 102084337 | Kimhout Houn | success | |
+| 130 | ABA | $29.71 | 008139773 | Chat Channy | success | |
+| 131 | ACLEDA | $25.21 | 0965040668 | Chat Channy | success | |
+| 132 | WINGBANK | $16.52 | 102575960 | Chat Channy | success | |
+| 133 | ABA | $10.10 | 012501402 | Yee Saory | success | |
+| 134 | ACLEDA | $24.38 | 21000587530123 | Yee Saory | stall | Camera conflict with Recorder stream |
+| 135 | WINGBANK | $7.83 | 101882950 | Yee Saory | success | |
+| 136 | ABA | $16.47 | 003121034 | Doung Vivheka | success | |
+| 137 | ACLEDA | $9.01 | 21000594130523 | Doung Vivheka | success | |
+| 138 | WINGBANK | $17.69 | 102084329 | Doung Vivheka | success | |
+| 139 | ABA | $9.71 | 005155137 | Lay Sav Lenh | success | |
+| 140 | ACLEDA | $8.68 | 21000599280723 | Lay Sav Lenh | stall | Camera 1 reopen failed (Recorder conflict) |
+| 141 | WINGBANK | $15.03 | 102621285 | Lay Sav Lenh | failed | auto-rejected (ARM-02 stalled) |
+
+## Successful Transfers by Recipient
+
+| Recipient | Account | Txns | Total Received |
+|-----------|---------|------|----------------|
+| Chat Channy | 008139773 | 9 | $185.42 |
+| Doung Vivheka | 003121034 | 6 | $98.11 |
+| Kimhout Houn | 102084337 | 4 | $109.97 |
+| Lay Sav Lenh | 005155137 | 2 | $32.93 |
+| Yee Saory | 012501402 | 5 | $46.08 |
+| Ros Vanhong | 011126831 | 1 | $5.59 |
+| Sreysouna Kot | 013810868 | 1 | $10.31 |
+| **Total** | | **28** | **$488.41** |
+
 ## Recommendations
 
 1. **Do not open Builder Recorder during production runs** — it blocks camera for all arms
