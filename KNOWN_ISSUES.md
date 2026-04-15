@@ -41,6 +41,14 @@
 
 ## Backlog (Real issues, lower priority)
 
+- [ ] **N2. `asyncio.get_event_loop()` deprecated in Python 3.10+**
+  - Files: `app/actions.py`, `app/arm_worker.py`, `app/keyboard_engine.py`, `app/routers/monitor.py` (5 occurrences)
+  - Should be `asyncio.get_running_loop()`. Works fine on Python 3.11, but will warn/fail on 3.12+. Fix all 5 at once when upgrading Python.
+
+- [ ] **N3. `worker._executor` accessed from route handler (encapsulation leak)**
+  - File: `app/routers/monitor.py` L120-121
+  - Route directly accesses worker's private thread pool. Should expose a public method on ArmWorker. Code hygiene issue, not a runtime risk.
+
 - [ ] **M2. OCR receipt keyword priority can cause misjudgment**
   - Scenario: Bank receipt screen simultaneously shows "Review" and "Failed" text. Keywords checked in order success→review→failed, first match wins. Could report "review" when it should be "failed".
   - Action: collect real receipt screenshots from different banks to verify. Fix if confirmed.

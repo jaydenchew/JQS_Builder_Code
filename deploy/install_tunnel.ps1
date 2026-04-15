@@ -11,7 +11,9 @@
 $ErrorActionPreference = "Stop"
 $HOSTNAME = "wa.evolution-x.io"
 $SERVICE_NAME = "CF-Tunnel"
-$CF_EXE = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
+$CF_EXE = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
+if (-not $CF_EXE) { $CF_EXE = "C:\Program Files (x86)\cloudflared\cloudflared.exe" }
+if (-not $CF_EXE) { $CF_EXE = "C:\Program Files\cloudflared\cloudflared.exe" }
 $NSSM = Join-Path $PSScriptRoot "nssm.exe"
 $CF_DIR = Join-Path $env:USERPROFILE ".cloudflared"
 

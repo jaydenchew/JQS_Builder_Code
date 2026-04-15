@@ -48,6 +48,10 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Code Review Fixes (Claude Round 2)
+- **Transactions "All" fix**: Selecting "All" now sends `limit=0`, backend treats 0 as "no limit" (capped at 5000). Previously "All" silently returned only 50 rows.
+- **install_tunnel.ps1 path fallback**: cloudflared path now auto-detected via `Get-Command`, falls back to Program Files (x86) then Program Files.
+
 ### Deployment
 - **FastAPI binds to 127.0.0.1**: External access only through Cloudflare Tunnel. Localhost-only prevents LAN exposure of unauthenticated management endpoints.
 - **Cloudflare Tunnel via NSSM**: `cloudflared service install` has LocalSystem config path issues. Tunnel now runs as NSSM service (`CF-Tunnel`) under user account, reading config from `~/.cloudflared/config.yml`. See DD-015.

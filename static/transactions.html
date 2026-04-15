@@ -137,7 +137,7 @@
         const dateFrom = document.getElementById('filter-date-from').value;
         const dateTo = document.getElementById('filter-date-to').value;
         const pageSize = document.getElementById('filter-pagesize').value;
-        const params = pageSize ? ['limit=' + pageSize] : [];
+        const params = pageSize ? ['limit=' + pageSize] : ['limit=0'];
         if (status) params.push('status=' + status);
         if (bank) params.push('bank=' + bank);
         if (toBank) params.push('to_bank=' + toBank);

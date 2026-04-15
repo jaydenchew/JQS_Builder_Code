@@ -152,6 +152,7 @@ async def list_transactions(status: str = None, bank: str = None, to_bank: str =
         params.append(date_to + " 23:59:59")
 
     where_sql = " AND ".join(where) if where else "1=1"
+    actual_limit = min(limit, 5000) if limit > 0 else 5000
     rows = await database.fetchall(
         "SELECT t.id, t.process_id, t.pay_from_bank_code, t.pay_to_bank_code, t.amount, t.status, "
         "t.created_at, t.started_at, t.finished_at, t.error_message, t.station_id, "
@@ -160,7 +161,7 @@ async def list_transactions(status: str = None, bank: str = None, to_bank: str =
         "LEFT JOIN stations s ON t.station_id = s.id "
         "LEFT JOIN arms a ON s.arm_id = a.id "
         "WHERE " + where_sql + " ORDER BY t.created_at DESC LIMIT %s OFFSET %s",
-        (*params, limit, offset)
+        (*params, actual_limit, offset)
     )
     for r in rows:
         for k in ("created_at", "started_at", "finished_at"):
