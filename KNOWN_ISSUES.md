@@ -50,6 +50,12 @@
   - File: `app/routers/monitor.py` L120-121
   - Route directly accesses worker's private thread pool. Should expose a public method on ArmWorker. Code hygiene issue, not a runtime risk.
 
+- [ ] **Recorder MJPEG stream blocks other cameras (CRITICAL for multi-arm)**
+  - Scenario: Operator opens Builder Recorder to debug ARM-01 (Camera 0 stream starts). Meanwhile ARM-02/ARM-03 are running tasks. When they need to capture photos (PHOTO/OCR_VERIFY/CHECK_SCREEN), Camera 1/2 cannot open because DSHOW only allows one camera active at a time on some USB controllers. Result: "Camera reopen failed" → stall.
+  - Also affects CHECK_SCREEN accuracy: concurrent camera access can produce incorrect frames, causing reference image mismatch and false stalls.
+  - Root cause: Recorder stream uses `capture_frame` (keeps camera open continuously) while worker uses `capture_fresh` (open→capture→close). The stream holds Camera 0 for the entire Builder session.
+  - Proposed fix: Recorder stream should pause/release camera when worker needs to capture, or worker capture should force-release any streaming camera first.
+
 - [ ] **OCR failure should not stall — new status code + branch step**
   - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
   - Proposed: OCR failure returns new status (e.g., status=5 "OCR mismatch") to PAS. Arm does NOT pause, continues next queued task. Builder configures which step to jump to on OCR failure (e.g., skip confirm, go straight to photo).
