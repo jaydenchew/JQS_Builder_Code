@@ -110,9 +110,17 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
             continue
 
         if field == "pay_to_account_no":
-            stripped = expected.lstrip("0")
-            if expected not in text_digits and expected not in text_clean \
-               and stripped not in text_digits and stripped not in text_clean:
+            found_account = False
+            candidates = [expected, expected.lstrip("0")]
+            for i in range(len(expected)):
+                suffix = expected[i:]
+                if len(suffix) >= 6:
+                    candidates.append(suffix)
+            for candidate in candidates:
+                if candidate and (candidate in text_digits or candidate in text_clean):
+                    found_account = True
+                    break
+            if not found_account:
                 failures.append("account '%s' not found" % expected)
 
         elif field == "amount":
