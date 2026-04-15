@@ -133,7 +133,9 @@ class Camera:
     def capture_fresh(self):
         """Capture a guaranteed live frame by reopening the camera.
         DSHOW buffers frames internally and there is no reliable way to
-        flush them, so we close + reopen to get a clean real-time frame."""
+        flush them, so we close + reopen to get a clean real-time frame.
+        Camera is released immediately after capture to minimize the
+        exclusive lock window for multi-arm concurrency."""
         with self._lock:
             if self._camera is not None:
                 self._camera.release()
@@ -149,8 +151,10 @@ class Camera:
                 time.sleep(0.15)
                 for _ in range(self.warmup):
                     self._camera.read()
-                Camera._active_instance = self
                 ret, frame = self._camera.read()
+                self._camera.release()
+                self._camera = None
+                Camera._active_instance = None
         if not ret:
             return None
         self._consecutive_failures = 0

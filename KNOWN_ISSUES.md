@@ -50,6 +50,16 @@
   - File: `app/routers/monitor.py` L120-121
   - Route directly accesses worker's private thread pool. Should expose a public method on ArmWorker. Code hygiene issue, not a runtime risk.
 
+- [ ] **OCR failure should not stall — new status code + branch step**
+  - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
+  - Proposed: OCR failure returns new status (e.g., status=5 "OCR mismatch") to PAS. Arm does NOT pause, continues next queued task. Builder configures which step to jump to on OCR failure (e.g., skip confirm, go straight to photo).
+  - Requires: PAS protocol change (new status code), arm_worker execution logic, Builder UI for branch config, API_SPEC update.
+
+- [ ] **Name verification with word-order independence**
+  - PAS sends "SAORY Yee" but bank displays "Yee SAORY". Current name matching does exact substring match which would fail on reordered names.
+  - Proposed: split name into words, check each word appears in OCR text regardless of order.
+  - Depends on enabling name verification in flow config (currently only account + amount are checked).
+
 - [ ] **M2. OCR receipt keyword priority can cause misjudgment**
   - Scenario: Bank receipt screen simultaneously shows "Review" and "Failed" text. Keywords checked in order success→review→failed, first match wins. Could report "review" when it should be "failed".
   - Action: collect real receipt screenshots from different banks to verify. Fix if confirmed.

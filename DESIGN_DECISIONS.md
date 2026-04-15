@@ -82,6 +82,8 @@ Architectural and design decisions that may look like bugs to someone unfamiliar
 
 **capture_frame() still exists**: Used only for MJPEG streaming where frames are read continuously (no buffer buildup).
 
+**Release after capture**: `capture_fresh()` closes the camera immediately after reading a frame, not at task end. This reduces the exclusive lock window from minutes (entire task) to ~400ms (open→read→close). Multi-arm concurrent photo steps no longer block waiting for each other's tasks to finish.
+
 ---
 
 ## DD-009: SAME/INTER Flows Use _inter Suffix

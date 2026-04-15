@@ -48,6 +48,10 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Camera Concurrency + OCR Matching
+- **Camera release after capture**: `capture_fresh()` now closes the camera immediately after reading a frame, reducing the exclusive lock window from "entire task duration" to ~400ms. Multi-arm concurrent photo requests no longer block for minutes.
+- **Account number leading-zero match**: OCR verification now also tries matching the account number with leading zeros stripped (e.g., `012501402` also matches as `12501402`). Fixes false failures when bank apps display accounts without leading zeros or with space formatting.
+
 ### Code Review Fixes (Claude Round 2)
 - **Transactions "All" fix**: Selecting "All" now sends `limit=0`, backend treats 0 as "no limit" (capped at 5000). Previously "All" silently returned only 50 rows.
 - **install_tunnel.ps1 path fallback**: cloudflared path now auto-detected via `Get-Command`, falls back to Program Files (x86) then Program Files.
