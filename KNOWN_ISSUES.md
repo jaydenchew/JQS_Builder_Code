@@ -11,6 +11,7 @@
 - **H2. Tool scripts hardcode DB password** — These are local utility scripts for data migration, not production code. DB password is also in `.env` on the same machine.
 - **H3. `list_bank_apps` returns plaintext password/pin** — Intentional. Employees need to see credentials in Settings page for configuration and troubleshooting. System is internal-only (localhost).
 - **H1. Dashboard innerHTML XSS** — Internal network only (DD-001). Attacker = employee with Builder access = already has full system access anyway.
+- **N4. NSSM CF-Tunnel service account has no password set** — NSSM `ObjectName ".\username"` without password. Tested and verified: service starts successfully on current machine. NSSM handles passwordless user accounts for non-interactive services. If a future machine requires a password, the operator can set it via `nssm set CF-Tunnel ObjectName ".\username" "password"`.
 
 ---
 
