@@ -73,9 +73,36 @@ def _ocr_frame(rotated_frame):
         return " ".join(results)
 
 
-def _ocr_field(cropped_frame, field_name):
+def _quick_match(text, field_name, expected):
+    """Quick check if OCR text matches expected value for a field."""
+    if field_name == "pay_to_account_no":
+        text_digits = re.sub(r'[^0-9]', '', text)
+        text_clean = re.sub(r'\s+', '', text)
+        candidates = [expected, expected.lstrip("0")]
+        for i in range(len(expected)):
+            suffix = expected[i:]
+            if len(suffix) >= 6:
+                candidates.append(suffix)
+        return any(c and (c in text_digits or c in text_clean) for c in candidates)
+    elif field_name == "amount":
+        numbers = extract_numbers(text)
+        amt_norm = str(float(expected))
+        if amt_norm.endswith('.0'):
+            amt_norm = amt_norm[:-2]
+        for num in numbers:
+            n = str(float(num)) if '.' in num else num
+            if n.endswith('.0'):
+                n = n[:-2]
+            if n == amt_norm or num == expected:
+                return True
+        return False
+    return False
+
+
+def _ocr_field(cropped_frame, field_name, expected=None):
     """OCR a single cropped field region with targeted engine.
     Numeric fields (account, amount) → Tesseract + digit whitelist + multi-preprocessing.
+    If expected is provided, continues trying methods until match found.
     Text fields (name, receipt_status) → EasyOCR.
     All fields get CLAHE + 3x upscale preprocessing."""
     gray = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
@@ -104,27 +131,34 @@ def _ocr_field(cropped_frame, field_name):
             cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 5),
             cv2.threshold(upscaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
         ]
+        best_text = None
         for proc in methods:
             bordered = cv2.copyMakeBorder(proc, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
             for psm in [6, 7]:
                 text = pytesseract.image_to_string(bordered,
                     config="--psm %d -c tessedit_char_whitelist=%s" % (psm, whitelist)).strip()
                 if text and any(c.isdigit() for c in text):
-                    return text
+                    if expected is None or _quick_match(text, field_name, expected):
+                        return text
+                    if best_text is None:
+                        best_text = text
 
-        # Fallback to EasyOCR if Tesseract fails — use 4x for better digit recognition
+        # Tesseract didn't match — try EasyOCR fallback
         reader = get_reader()
         if reader and reader != "tesseract":
             upscaled_4x = cv2.resize(enhanced, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
             results = reader.readtext(upscaled_4x, detail=0)
             text = " ".join(results)
-            if text:
+            if text and (expected is None or _quick_match(text, field_name, expected)):
                 return text
-            # Last resort: try inverted 4x
             inverted_4x = cv2.resize(cv2.bitwise_not(enhanced), None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
             results = reader.readtext(inverted_4x, detail=0)
-            return " ".join(results)
-        return ""
+            text = " ".join(results)
+            if text and (expected is None or _quick_match(text, field_name, expected)):
+                return text
+
+        # Nothing matched — return best Tesseract result or EasyOCR result for logging
+        return best_text or text or ""
 
     else:
         reader = get_reader()
@@ -192,7 +226,7 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
             return None
         return rotated_frame[y1:y2, x1:x2]
 
-    def _get_text_for_field(field):
+    def _get_text_for_field(field, expected=None):
         """Get OCR text for a field: field_rois > single roi > fullscreen."""
         if field_rois and field in field_rois:
             roi_cfg = field_rois[field]
@@ -200,7 +234,7 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
             if cropped is None:
                 return None
             logger.info("Field ROI [%s]: %s -> crop %dx%d", field, roi_cfg, cropped.shape[1], cropped.shape[0])
-            text = _ocr_field(cropped, field)
+            text = _ocr_field(cropped, field, expected=expected)
             logger.info("Field OCR [%s]: '%s'", field, text[:100])
             return text
         return None
@@ -261,7 +295,7 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         if not expected:
             continue
 
-        field_text = _get_text_for_field(field)
+        field_text = _get_text_for_field(field, expected=str(expected))
         text = field_text if field_text is not None else _get_fallback_text()
         all_ocr_texts[field] = text
 

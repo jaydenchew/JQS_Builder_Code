@@ -52,6 +52,11 @@
 - **Scan Cameras button in Settings**: Detects all connected USB cameras (index 0-9), shows preview image for each. Cameras occupied by active arms shown as "Occupied (ARM-XX)". Helps operators identify which camera index corresponds to which phone.
 - **capture_fresh releases other camera**: Before opening its own camera, `capture_fresh` now releases any other Camera instance holding hardware (matching `camera_open` logic). Fixes "Camera reopen failed" when Recorder stream or another arm was occupying a different camera.
 
+### OCR Smart Match — Tesseract retry + EasyOCR fallback
+- **Expected-aware Tesseract**: `_ocr_field` now accepts `expected` parameter. When Tesseract reads a result that doesn't match expected, it continues trying remaining preprocessing methods instead of returning immediately. Previously, first result with any digit was returned even if wrong (e.g., `012801402` instead of `012501402` — `5` misread as `8`).
+- **EasyOCR fallback on mismatch**: After all 12 Tesseract methods fail to match, falls back to EasyOCR (4x upscale + inverted). EasyOCR result also checked against expected before accepting.
+- **`_quick_match` helper**: Reuses existing account (leading-zero + suffix) and amount (float normalization) matching logic for inline validation during OCR.
+
 ### Robustness Fixes
 - **capture_fresh try-finally**: Camera is now always released even if `read()` or warmup throws an exception (USB disconnect, hardware error). Prevents camera hardware lockup.
 - **Startup recovery**: On service start, scans for `status='running'` transactions (orphaned by crash) and marks them as stall + callbacks PAS status=4.
