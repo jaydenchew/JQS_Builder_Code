@@ -1312,6 +1312,7 @@ function showAddStep() {
 }
 
 function renderForm(step, isNew) {
+    _roiSnapshot = null;
     document.getElementById('form-area').style.display = 'block';
 
     const kbOpts = Object.keys(S.keymaps).map(t => `<option value="${t}">${t}</option>`).join('');

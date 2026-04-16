@@ -187,6 +187,9 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         y2 = int(h * roi_dict.get("bottom_percent", 100) / 100)
         x1 = int(w * roi_dict.get("left_percent", 0) / 100)
         x2 = int(w * roi_dict.get("right_percent", 100) / 100)
+        if y1 >= y2 or x1 >= x2:
+            logger.warning("Invalid ROI: top=%d bottom=%d left=%d right=%d", y1, y2, x1, x2)
+            return None
         return rotated_frame[y1:y2, x1:x2]
 
     def _get_text_for_field(field):
@@ -194,7 +197,9 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         if field_rois and field in field_rois:
             roi_cfg = field_rois[field]
             cropped = _crop_roi(roi_cfg)
-            logger.info("Field ROI [%s]: %s → crop %dx%d", field, roi_cfg, cropped.shape[1], cropped.shape[0])
+            if cropped is None:
+                return None
+            logger.info("Field ROI [%s]: %s -> crop %dx%d", field, roi_cfg, cropped.shape[1], cropped.shape[0])
             text = _ocr_field(cropped, field)
             logger.info("Field OCR [%s]: '%s'", field, text[:100])
             return text
@@ -209,8 +214,11 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         roi = ocr_config.get("roi")
         if roi:
             cropped = _crop_roi(roi)
-            enhanced = _enhance_for_ocr(cropped)
-            _fallback_text = _ocr_frame(enhanced)
+            if cropped is not None:
+                enhanced = _enhance_for_ocr(cropped)
+                _fallback_text = _ocr_frame(enhanced)
+            else:
+                _fallback_text = _ocr_frame(rotated_frame)
         else:
             _fallback_text = _ocr_frame(rotated_frame)
         logger.info("OCR extracted text: %s", _fallback_text[:200])
@@ -274,6 +282,8 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         receipt_text = None
         if field_rois and "receipt_status" in field_rois:
             cropped = _crop_roi(field_rois["receipt_status"])
+            if cropped is None:
+                cropped = rotated_frame
             receipt_text = _ocr_field(cropped, "receipt_status")
             logger.info("Field OCR [receipt_status]: '%s'", receipt_text[:100])
         else:

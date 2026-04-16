@@ -41,6 +41,19 @@ async def lifespan(app):
     await get_pool()
     logger.info("Database connected")
 
+    stale = await database.fetchall(
+        "SELECT id, process_id FROM transactions WHERE status = 'running'")
+    if stale:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        for t in stale:
+            await database.execute(
+                "UPDATE transactions SET status = 'stall', error_message = 'Service restarted while running', finished_at = NOW() WHERE id = %s",
+                (t["id"],))
+            await pas_client.callback_result(t["process_id"], 4, now)
+            logger.warning("Recovered stale transaction: process_id=%d → stall", t["process_id"])
+        logger.info("Recovered %d stale running transactions", len(stale))
+
     await manager.start_all()
     logger.info("WA Unified System started — port 9000")
 

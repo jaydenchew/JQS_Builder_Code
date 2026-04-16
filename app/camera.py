@@ -150,14 +150,16 @@ class Camera:
                     logger.error("Camera %d: reopen failed", self.camera_id)
                     self._camera = None
                     return None
-                self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                time.sleep(0.15)
-                for _ in range(self.warmup):
-                    self._camera.read()
-                ret, frame = self._camera.read()
-                self._camera.release()
-                self._camera = None
-                Camera._active_instance = None
+                try:
+                    self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    time.sleep(0.15)
+                    for _ in range(self.warmup):
+                        self._camera.read()
+                    ret, frame = self._camera.read()
+                finally:
+                    self._camera.release()
+                    self._camera = None
+                    Camera._active_instance = None
         if not ret:
             return None
         self._consecutive_failures = 0

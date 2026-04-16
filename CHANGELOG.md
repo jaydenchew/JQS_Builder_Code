@@ -52,6 +52,13 @@
 - **Scan Cameras button in Settings**: Detects all connected USB cameras (index 0-9), shows preview image for each. Cameras occupied by active arms shown as "Occupied (ARM-XX)". Helps operators identify which camera index corresponds to which phone.
 - **capture_fresh releases other camera**: Before opening its own camera, `capture_fresh` now releases any other Camera instance holding hardware (matching `camera_open` logic). Fixes "Camera reopen failed" when Recorder stream or another arm was occupying a different camera.
 
+### Robustness Fixes
+- **capture_fresh try-finally**: Camera is now always released even if `read()` or warmup throws an exception (USB disconnect, hardware error). Prevents camera hardware lockup.
+- **Startup recovery**: On service start, scans for `status='running'` transactions (orphaned by crash) and marks them as stall + callbacks PAS status=4.
+- **OCR config parse warning**: JSON parse errors in step description now logged instead of silently swallowed.
+- **Error screenshot warning**: Failure to capture error screenshot now logged.
+- **ROI boundary validation**: `_crop_roi` checks `top < bottom` and `left < right`, returns None + warning on invalid config instead of crashing.
+
 ### Field-level OCR ROI + Tesseract Tuning
 - **Per-field ROI**: Each verify field (account, amount, name) and receipt_status can have its own ROI region. Cropped area is sent to targeted OCR engine for higher accuracy.
 - **Tesseract for digits**: Account and amount fields use Tesseract with digit whitelist (`0123456789.`) + PSM 7 (single line) + multi-preprocessing (CLAHE, adaptive threshold, OTSU). Falls back to EasyOCR if Tesseract fails.

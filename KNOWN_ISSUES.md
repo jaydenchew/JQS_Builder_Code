@@ -54,6 +54,38 @@
   - `capture_fresh` now calls `prev._release_hw()` to release any other camera instance before opening its own (same logic as `camera_open`). Recorder stream gets interrupted momentarily but resumes on next frame. Worker can always open its camera regardless of what else is streaming.
   - Remaining edge case: after force-releasing Recorder's camera and immediately opening a different one, the first frame may be blank/dark if warmup is insufficient. This was observed once but is rare.
 
+- [x] **capture_fresh missing try-finally — camera leak on hardware exception** (HIGH) — FIXED
+  - If `read()` or warmup throws (USB disconnect, hardware error), `release()` never executes. Camera hardware locked until service restart. Same class of issue that caused multi-arm stalls.
+  - Fix: wrap the open→read→release block in try-finally.
+
+- [x] **_crop_roi no validation — empty array crash on bad config** (MEDIUM) — FIXED
+  - If `top_percent > bottom_percent` in Builder config, crop returns empty array. `cv2.cvtColor` crashes. Builder misconfiguration triggers runtime crash.
+  - Fix: validate y1 < y2, x1 < x2 before cropping, return None if invalid.
+
+- [x] **OCR config JSON parse error silently swallowed** (MEDIUM) — FIXED
+  - `actions.py execute_ocr_verify`: if `step["description"]` has invalid JSON, exception is caught with `pass`. No log. `field_rois` silently falls back to legacy mode. Very hard to debug.
+  - Fix: add `logger.warning` in the except block.
+
+- [x] **Error screenshot failure silently swallowed** (LOW) — FIXED
+  - `actions.py execute_step`: if capture_base64 fails in error handler, exception caught with `pass`. No log.
+  - Fix: add `logger.warning`.
+
+- [x] **Service restart leaves transactions stuck as 'running'** (MEDIUM) — FIXED
+  - No startup recovery: if service crashes mid-task, `status='running'` transactions stay forever. PAS never gets callback.
+  - Fix: on startup, scan for `status='running'` and set to `stall` + callback PAS status=4.
+
+- [ ] **CHECK_SCREEN handler_flow can recurse infinitely** (LOW)
+  - `_run_handler_flow` uses `ACTION_MAP` which includes `CHECK_SCREEN`. If handler flow contains CHECK_SCREEN with its own handler, infinite recursion. No depth limit.
+  - Actual risk: low (handlers are typically CLICK/SWIPE only). Fix: add max recursion depth (e.g., 2).
+
+- [ ] **Handler flow shares transaction context — _ocr_result can be overwritten** (LOW)
+  - Handler flow uses same `transaction` dict as main flow. If handler contains OCR_VERIFY, it overwrites `_ocr_result`. Main flow reads wrong OCR result.
+  - Actual risk: low (no handler currently has OCR_VERIFY). Fix: snapshot and restore `_ocr_result` around handler execution.
+
+- [ ] **Callback not exactly-once — no background retry for permanent failures** (MEDIUM)
+  - If all 3 retries fail (5s/15s/30s), `callback_sent_at` stays NULL. No periodic scan to retry. PAS never learns the result.
+  - Partial mitigation: PAS can query `/status/{process_id}`. But WA should have background sweep for `callback_sent_at IS NULL AND finished_at IS NOT NULL`.
+
 - [ ] **OCR failure should not stall — new status code + branch step**
   - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
   - Proposed: OCR failure returns new status (e.g., status=5 "OCR mismatch") to PAS. Arm does NOT pause, continues next queued task. Builder configures which step to jump to on OCR failure (e.g., skip confirm, go straight to photo).

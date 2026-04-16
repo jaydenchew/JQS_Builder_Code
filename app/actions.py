@@ -214,8 +214,8 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
     if step.get("description"):
         try:
             ocr_config = _json.loads(step["description"])
-        except (_json.JSONDecodeError, TypeError):
-            pass
+        except (_json.JSONDecodeError, TypeError) as e:
+            logger.warning("OCR config parse failed for step %s: %s", step.get("step_name"), e)
 
     frame = await _hw(executor, c.capture_fresh)
     start_time = time.time()
@@ -421,8 +421,8 @@ async def execute_step(step, bank_code, station_id, transaction, password, trans
         logger.error("Step %d (%s) failed: %s", step_number, step_name, e)
         try:
             screenshot_b64 = await _hw(executor, c.capture_base64)
-        except Exception:
-            pass
+        except Exception as screenshot_err:
+            logger.warning("Error screenshot capture failed: %s", screenshot_err)
 
     duration_ms = int((time.time() - start_time) * 1000)
 
