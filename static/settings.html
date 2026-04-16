@@ -53,12 +53,12 @@
 
         <!-- Camera Scan Modal -->
         <div class="modal-overlay" id="cam-scan-modal" onclick="if(event.target===this)this.classList.remove('active')">
-            <div class="modal" style="max-width:700px;">
+            <div class="modal" style="max-width:700px;max-height:85vh;overflow-y:auto;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                     <h3 style="margin:0;">Camera Scan</h3>
                     <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cam-scan-modal').classList.remove('active')">Close</button>
                 </div>
-                <div id="cam-scan-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+                <div id="cam-scan-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
                     <div style="text-align:center;color:var(--text2);grid-column:1/-1;padding:40px;">Scanning cameras...</div>
                 </div>
             </div>
@@ -217,17 +217,23 @@
         const armByCam = {};
         armsData.forEach(a => { armByCam[a.camera_id] = a.name; });
 
-        document.getElementById('cam-scan-results').innerHTML = r.cameras.map(c => {
+        const visible = r.cameras.filter(c => c.status !== 'unavailable');
+        if (!visible.length) {
+            document.getElementById('cam-scan-results').innerHTML = '<div style="text-align:center;color:var(--text2);grid-column:1/-1;padding:40px;">No cameras detected. Make sure USB cameras are connected.</div>';
+            return;
+        }
+        document.getElementById('cam-scan-results').innerHTML = visible.map(c => {
             const assigned = armByCam[c.index] ? '<div style="color:var(--accent);font-size:11px;margin-top:4px;">Assigned: ' + armByCam[c.index] + '</div>' : '';
             if (c.status === 'available') {
                 return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">' +
                     '<div style="font-weight:600;margin-bottom:4px;">Camera ' + c.index + '</div>' +
-                    '<img src="data:image/jpeg;base64,' + c.preview + '" style="width:100%;border-radius:4px;max-height:250px;object-fit:contain;">' +
+                    '<img src="data:image/jpeg;base64,' + c.preview + '" style="width:100%;border-radius:4px;max-height:180px;object-fit:contain;">' +
                     assigned + '</div>';
             } else if (c.status === 'occupied') {
+                const occArm = c.arm_name || armByCam[c.index] || '';
                 return '<div style="border:1px solid var(--warning);border-radius:8px;padding:8px;text-align:center;background:rgba(255,152,0,0.08);">' +
                     '<div style="font-weight:600;margin-bottom:4px;">Camera ' + c.index + '</div>' +
-                    '<div style="color:var(--warning);padding:30px 0;font-size:12px;">Occupied' + (armByCam[c.index] ? ' (' + armByCam[c.index] + ')' : '') + '</div>' +
+                    '<div style="color:var(--warning);padding:30px 0;font-size:12px;">Occupied' + (occArm ? ' (' + occArm + ')' : '') + '</div>' +
                     '</div>';
             } else {
                 return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;opacity:0.4;">' +

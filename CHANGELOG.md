@@ -48,6 +48,10 @@
 - **UTC time consistency**: `_fail_queued_tasks` callback timestamp changed from `datetime.now()` (local) to `datetime.now(timezone.utc)`, matching the main flow's UTC convention.
 - **Dead code removed**: `pas_client.update_account_status` and `pas_client.send_alert` deleted — never called anywhere in codebase.
 
+### Camera Scan
+- **Scan Cameras button in Settings**: Detects all connected USB cameras (index 0-9), shows preview image for each. Cameras occupied by active arms shown as "Occupied (ARM-XX)". Helps operators identify which camera index corresponds to which phone.
+- **capture_fresh releases other camera**: Before opening its own camera, `capture_fresh` now releases any other Camera instance holding hardware (matching `camera_open` logic). Fixes "Camera reopen failed" when Recorder stream or another arm was occupying a different camera.
+
 ### OCR Image Enhancement
 - **CLAHE + 2x upscale before OCR**: When ROI is configured, the cropped region is converted to grayscale, enhanced with CLAHE (Contrast Limited Adaptive Histogram Equalization), then upscaled 2x with bicubic interpolation. Sharper text edges and higher contrast improve EasyOCR accuracy, especially for small digits like `9.19` that were previously misread as `9.9`.
 

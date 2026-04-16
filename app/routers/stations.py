@@ -42,15 +42,18 @@ def _do_scan(max_index, occupied_ids):
 
 @router.post("/scan-cameras")
 async def scan_cameras(data: dict = {}):
-    occupied_ids = set()
-    for arm_id, worker in manager.workers.items():
-        if worker.camera.is_open():
-            occupied_ids.add(worker.camera.camera_id)
+    arms = await database.fetchall("SELECT camera_id, name FROM arms WHERE active = 1")
+    occupied_ids = {}
+    for a in arms:
+        occupied_ids[a["camera_id"]] = a["name"]
 
     max_index = data.get("max_index", 9)
     results = await asyncio.get_event_loop().run_in_executor(
-        _scan_executor, _do_scan, max_index, occupied_ids
+        _scan_executor, _do_scan, max_index, set(occupied_ids.keys())
     )
+    for r in results:
+        if r["status"] == "occupied" and r["index"] in occupied_ids:
+            r["arm_name"] = occupied_ids[r["index"]]
     return {"cameras": results}
 
 
