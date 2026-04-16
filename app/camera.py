@@ -144,6 +144,7 @@ class Camera:
             prev = Camera._active_instance
             if prev is not None and prev is not self:
                 prev._release_hw()
+                time.sleep(0.5)
             with self._lock:
                 self._camera = cv2.VideoCapture(self.camera_id, _BACKEND)
                 if not self._camera.isOpened():
@@ -152,8 +153,8 @@ class Camera:
                     return None
                 try:
                     self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    time.sleep(0.15)
-                    for _ in range(self.warmup):
+                    time.sleep(0.3)
+                    for _ in range(max(self.warmup, 3)):
                         self._camera.read()
                     ret, frame = self._camera.read()
                 finally:

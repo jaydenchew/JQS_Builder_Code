@@ -52,6 +52,10 @@
 - **Scan Cameras button in Settings**: Detects all connected USB cameras (index 0-9), shows preview image for each. Cameras occupied by active arms shown as "Occupied (ARM-XX)". Helps operators identify which camera index corresponds to which phone.
 - **capture_fresh releases other camera**: Before opening its own camera, `capture_fresh` now releases any other Camera instance holding hardware (matching `camera_open` logic). Fixes "Camera reopen failed" when Recorder stream or another arm was occupying a different camera.
 
+### Camera Warmup After Contention
+- **0.5s delay after releasing other camera**: When `capture_fresh` force-releases another arm's camera, waits 0.5s for DSHOW hardware to fully release before opening own camera. Fixes stale frame issue when two arms photograph simultaneously.
+- **Increased warmup**: Sleep 0.15s→0.3s, warmup frames 2→3 minimum. Prevents capturing residual sensor frames after camera switch.
+
 ### OCR Smart Match — Tesseract retry + EasyOCR fallback
 - **Expected-aware Tesseract**: `_ocr_field` now accepts `expected` parameter. When Tesseract reads a result that doesn't match expected, it continues trying remaining preprocessing methods instead of returning immediately. Previously, first result with any digit was returned even if wrong (e.g., `012801402` instead of `012501402` — `5` misread as `8`).
 - **EasyOCR fallback on mismatch**: After all 12 Tesseract methods fail to match, falls back to EasyOCR (4x upscale + inverted). EasyOCR result also checked against expected before accepting.
