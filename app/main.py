@@ -11,7 +11,7 @@ from app.routers import (
     calibration_router, stream, recorder,
     opencv_router, withdrawal, monitor,
 )
-from app import camera, arm_client, config, pas_client
+from app import camera, arm_client, config, pas_client, database
 from app.worker_manager import manager
 
 logging.basicConfig(
