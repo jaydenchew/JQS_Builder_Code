@@ -64,9 +64,8 @@
   - Proposed: split name into words, check each word appears in OCR text regardless of order.
   - Depends on enabling name verification in flow config (currently only account + amount are checked).
 
-- [ ] **M2. OCR receipt keyword priority can cause misjudgment**
-  - Scenario: Bank receipt screen simultaneously shows "Review" and "Failed" text. Keywords checked in order success→review→failed, first match wins. Could report "review" when it should be "failed".
-  - Action: collect real receipt screenshots from different banks to verify. Fix if confirmed.
+- [x] **M2. OCR receipt keyword priority can cause misjudgment** — RESOLVED
+  - Field-level ROI crops only the receipt status area, so only one keyword appears in the cropped text. Priority order no longer matters. Also changed default order to failed→review→success as extra safety.
 
 - [ ] **M4. `saveFlow()` delete-then-insert is non-transactional**
   - Scenario: Editing an 18-step flow in Builder. Frontend deletes all 18 old steps, then inserts new ones one by one. If network disconnects after inserting step 10, the flow has only 10 steps in DB. Next execution runs 10 steps then finishes — transfer may be incomplete.

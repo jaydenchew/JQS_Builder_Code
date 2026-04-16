@@ -147,3 +147,17 @@ Architectural and design decisions that may look like bugs to someone unfamiliar
 NSSM runs the service as the actual user (`ObjectName = .\username`), so it naturally reads from `C:\Users\<user>\.cloudflared\config.yml` where credentials and config are stored. This matches the manual `cloudflared tunnel run` behavior exactly.
 
 **Alternative considered**: Copying config + credentials to system profile directory. Attempted and failed due to YAML encoding issues, path escaping, and no useful error messages from the service on failure.
+
+---
+
+## DD-016: OCR Uses Tesseract for Digits, EasyOCR for Text
+
+**What**: When `field_rois` is configured, numeric fields (account_no, amount) are OCR'd with Tesseract + digit whitelist, while text fields (name, receipt_status) use EasyOCR.
+
+**Why**: EasyOCR is a general-purpose OCR that tries to recognize all characters. For fields that only contain digits (bank account numbers, amounts), this generality works against it — it may misread `1` as `l`, `0` as `O`, or miss decimal points. Tesseract with `tessedit_char_whitelist=0123456789.` constrains the search space to only digits, dramatically reducing misrecognition.
+
+For text fields (customer names, receipt status keywords), Tesseract's character-level approach is weaker than EasyOCR's neural network for mixed-case multi-word text. So each engine is used where it excels.
+
+**Preprocessing**: All field crops get CLAHE contrast enhancement + 3x bicubic upscale + white border padding. Numeric fields additionally try 3 preprocessing methods (raw enhanced, adaptive threshold, OTSU) and take the first non-empty result.
+
+**Fallback**: If Tesseract fails on all 3 methods, the system falls back to EasyOCR for that field. If no `field_rois` is configured, the old single-ROI or fullscreen EasyOCR path is used unchanged.

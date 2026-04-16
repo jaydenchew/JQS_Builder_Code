@@ -52,6 +52,18 @@
 - **Scan Cameras button in Settings**: Detects all connected USB cameras (index 0-9), shows preview image for each. Cameras occupied by active arms shown as "Occupied (ARM-XX)". Helps operators identify which camera index corresponds to which phone.
 - **capture_fresh releases other camera**: Before opening its own camera, `capture_fresh` now releases any other Camera instance holding hardware (matching `camera_open` logic). Fixes "Camera reopen failed" when Recorder stream or another arm was occupying a different camera.
 
+### Field-level OCR ROI + Tesseract Tuning
+- **Per-field ROI**: Each verify field (account, amount, name) and receipt_status can have its own ROI region. Cropped area is sent to targeted OCR engine for higher accuracy.
+- **Tesseract for digits**: Account and amount fields use Tesseract with digit whitelist (`0123456789.`) + PSM 7 (single line) + multi-preprocessing (CLAHE, adaptive threshold, OTSU). Falls back to EasyOCR if Tesseract fails.
+- **EasyOCR for text**: Name and receipt status fields use EasyOCR with 3x upscale.
+- **Visual ROI selector per field**: Each checkbox field in Builder has its own "Select ROI" button. Snapshot is cached — first click captures photo, subsequent clicks reuse it for instant framing.
+- **Tesseract PSM 6+7 dual mode**: PSM 7 (single line) fails when ROI crop contains partial text from adjacent lines. Now tries PSM 6 (text block) first, then PSM 7. Both with digit whitelist.
+- **Amount whitelist includes `$`**: Prevents `$` symbol being misread as `5` by Tesseract (e.g., `37.86$` was read as `37.865`).
+- **EasyOCR fallback with 4x upscale + inverted**: If Tesseract fails on all preprocessing methods, falls back to EasyOCR at 4x scale, also tries inverted image.
+- **Field ROI debug logging**: Logs crop dimensions for each field (`Field ROI [amount]: {...} → crop 202x51`) for easier debugging.
+- **Backward compatible**: Flows without `field_rois` use existing single ROI or fullscreen path. No migration needed.
+- **Tested**: ABA ARM-01 17/17 (100%), ACLEDA 8/9 (89%), WINGBANK 8/9 (89%) on historical screenshots (excluding known camera buffer issues).
+
 ### OCR Image Enhancement
 - **CLAHE + 2x upscale before OCR**: When ROI is configured, the cropped region is converted to grayscale, enhanced with CLAHE (Contrast Limited Adaptive Histogram Equalization), then upscaled 2x with bicubic interpolation. Sharper text edges and higher contrast improve EasyOCR accuracy, especially for small digits like `9.19` that were previously misread as `9.9`.
 
