@@ -86,6 +86,15 @@
   - If all 3 retries fail (5s/15s/30s), `callback_sent_at` stays NULL. No periodic scan to retry. PAS never learns the result.
   - Partial mitigation: PAS can query `/status/{process_id}`. But WA should have background sweep for `callback_sent_at IS NULL AND finished_at IS NOT NULL`.
 
+- [ ] **coordinates.py keymaps batch — non-atomic delete+insert** (LOW)
+  - Same class as M4 (saveFlow). DELETE all old keymaps then INSERT new ones with autocommit=True. If INSERT fails mid-way, old data deleted but new data incomplete. Probability: very low (Builder localhost operation).
+
+- [ ] **withdrawal.py — queued task arm may go offline between check and insert** (LOW)
+  - If admin sets arm offline between the status check and INSERT, task stays queued forever. Probability: extremely low. Mitigation: startup recovery handles `running`, but not `queued` with offline arm.
+
+- [ ] **arm_client.py call_arm — no return value validation** (LOW)
+  - motor_lock, move, press, lift all ignore call_arm return value. If arm service disconnects, commands silently fail. Errors surface later in other steps.
+
 - [ ] **OCR failure should not stall — new status code + branch step**
   - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
   - Proposed: OCR failure returns new status (e.g., status=5 "OCR mismatch") to PAS. Arm does NOT pause, continues next queued task. Builder configures which step to jump to on OCR failure (e.g., skip confirm, go straight to photo).

@@ -64,8 +64,11 @@ def compare_screen(current_frame, reference, threshold=0.85, roi=None):
         y2 = int(h * roi.get("bottom_percent", 100) / 100)
         x1 = int(w * roi.get("left_percent", 0) / 100)
         x2 = int(w * roi.get("right_percent", 100) / 100)
-        current_frame = current_frame[y1:y2, x1:x2]
-        reference = reference[y1:y2, x1:x2]
+        if y1 < y2 and x1 < x2:
+            current_frame = current_frame[y1:y2, x1:x2]
+            reference = reference[y1:y2, x1:x2]
+        else:
+            logger.warning("Invalid CHECK_SCREEN ROI: top=%d bottom=%d left=%d right=%d, using full image", y1, y2, x1, x2)
 
     gray_cur = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
     gray_ref = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)

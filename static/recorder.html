@@ -1515,6 +1515,7 @@ function renderForm(step, isNew) {
                     <input id="sf-roi-left" type="number" min="0" max="100" value="${cfg.roi?.left_percent ?? 0}" style="width:55px;">
                     <span style="font-size:11px;">Right:</span>
                     <input id="sf-roi-right" type="number" min="0" max="100" value="${cfg.roi?.right_percent ?? 100}" style="width:55px;">
+                    <button class="btn btn-sm btn-primary" onclick="selectFieldRoi('_checkscreen')" type="button">Select on Photo</button>
                 </div>
                 <span style="font-size:10px;color:var(--text2);">Example: Top=0, Bottom=70 → only compare upper 70% (ignore bottom notices)</span>
             </div>`;
@@ -2855,6 +2856,11 @@ async function selectFieldRoi(fieldName) {
                     document.getElementById('sf-ocr-roi-bottom').value = bottomPct;
                     document.getElementById('sf-ocr-roi-left').value = leftPct;
                     document.getElementById('sf-ocr-roi-right').value = rightPct;
+                } else if (fieldName === '_checkscreen') {
+                    document.getElementById('sf-roi-top').value = topPct;
+                    document.getElementById('sf-roi-bottom').value = bottomPct;
+                    document.getElementById('sf-roi-left').value = leftPct;
+                    document.getElementById('sf-roi-right').value = rightPct;
                 } else {
                     document.getElementById('sf-froi-' + fieldName + '-top').value = topPct;
                     document.getElementById('sf-froi-' + fieldName + '-bottom').value = bottomPct;
