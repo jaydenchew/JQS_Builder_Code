@@ -141,6 +141,9 @@ class Camera:
                 self._camera.release()
                 self._camera = None
         with Camera._init_lock:
+            prev = Camera._active_instance
+            if prev is not None and prev is not self:
+                prev._release_hw()
             with self._lock:
                 self._camera = cv2.VideoCapture(self.camera_id, _BACKEND)
                 if not self._camera.isOpened():
