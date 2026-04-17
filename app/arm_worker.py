@@ -113,10 +113,16 @@ class ArmWorker:
                 await asyncio.sleep(2)
                 continue
 
+            # Clear BEFORE fetch to close the race window: if notify_worker() fires
+            # between fetch and wait, the event will be set and wait() returns
+            # immediately. Clearing after fetch would wipe that signal and force
+            # the worker to wait the full 30s timeout.
+            if self._task_event is not None:
+                self._task_event.clear()
+
             task = await self._fetch_next_task()
             if not task:
                 if self._task_event is not None:
-                    self._task_event.clear()
                     try:
                         await asyncio.wait_for(self._task_event.wait(), timeout=30)
                     except asyncio.TimeoutError:
