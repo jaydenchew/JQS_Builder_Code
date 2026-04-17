@@ -1,6 +1,7 @@
 """OCR verification - configurable field checking + receipt status support"""
 import os
 import re
+import time
 import logging
 import cv2
 import base64
@@ -99,16 +100,40 @@ def _quick_match(text, field_name, expected):
     return False
 
 
+METHOD_NAMES = [
+    "inverted",
+    "adapt_inv",
+    "otsu_inv",
+    "direct",
+    "adapt_direct",
+    "otsu_direct",
+]
+
+
 def _ocr_field(cropped_frame, field_name, expected=None):
     """OCR a single cropped field region with targeted engine.
-    Numeric fields (account, amount) → Tesseract + digit whitelist + multi-preprocessing.
-    If expected is provided, continues trying methods until match found.
+
+    Returns dict: {"text": str, "method": str, "engine": str, "attempts": int, "latency_ms": int}
+
+    Numeric fields (account, amount) → Tesseract + digit whitelist + multi-preprocessing (6 methods × 2 PSM).
+    If expected is provided, continues trying methods until a matching result is found.
     Text fields (name, receipt_status) → EasyOCR.
-    All fields get CLAHE + 3x upscale preprocessing."""
+    All fields get CLAHE + 3x upscale preprocessing.
+    """
+    t0 = time.time()
     gray = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     upscaled = cv2.resize(enhanced, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+
+    def _done(text, method, engine, attempts):
+        return {
+            "text": text or "",
+            "method": method,
+            "engine": engine,
+            "attempts": attempts,
+            "latency_ms": int((time.time() - t0) * 1000),
+        }
 
     if field_name in ("pay_to_account_no", "amount"):
         import pytesseract
@@ -132,43 +157,56 @@ def _ocr_field(cropped_frame, field_name, expected=None):
             cv2.threshold(upscaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
         ]
         best_text = None
-        for proc in methods:
+        best_method = None
+        attempts = 0
+        for idx, proc in enumerate(methods):
             bordered = cv2.copyMakeBorder(proc, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
             for psm in [6, 7]:
+                attempts += 1
+                method_name = "%s_psm%d" % (METHOD_NAMES[idx], psm)
                 text = pytesseract.image_to_string(bordered,
                     config="--psm %d -c tessedit_char_whitelist=%s" % (psm, whitelist)).strip()
                 if text and any(c.isdigit() for c in text):
                     if expected is None or _quick_match(text, field_name, expected):
-                        return text
+                        return _done(text, method_name, "tesseract", attempts)
                     if best_text is None:
                         best_text = text
+                        best_method = method_name
 
         # Tesseract didn't match — try EasyOCR fallback
         reader = get_reader()
+        last_easy_text = None
         if reader and reader != "tesseract":
             upscaled_4x = cv2.resize(enhanced, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+            attempts += 1
             results = reader.readtext(upscaled_4x, detail=0)
             text = " ".join(results)
+            last_easy_text = text
             if text and (expected is None or _quick_match(text, field_name, expected)):
-                return text
+                return _done(text, "easyocr_4x_direct", "easyocr", attempts)
             inverted_4x = cv2.resize(cv2.bitwise_not(enhanced), None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+            attempts += 1
             results = reader.readtext(inverted_4x, detail=0)
             text = " ".join(results)
+            last_easy_text = text or last_easy_text
             if text and (expected is None or _quick_match(text, field_name, expected)):
-                return text
+                return _done(text, "easyocr_4x_inverted", "easyocr", attempts)
 
-        # Nothing matched — return best Tesseract result or EasyOCR result for logging
-        return best_text or text or ""
+        # Nothing matched — return best Tesseract result or last EasyOCR result for logging
+        if best_text:
+            return _done(best_text, best_method or "best_tesseract", "tesseract", attempts)
+        return _done(last_easy_text or "", "none", "easyocr" if last_easy_text else "tesseract", attempts)
 
     else:
         reader = get_reader()
         if reader is None:
-            return ""
+            return _done("", "no_engine", "none", 0)
         if reader == "tesseract":
             import pytesseract
-            return pytesseract.image_to_string(upscaled).strip()
+            text = pytesseract.image_to_string(upscaled).strip()
+            return _done(text, "direct", "tesseract", 1)
         results = reader.readtext(upscaled, detail=0)
-        return " ".join(results)
+        return _done(" ".join(results), "direct", "easyocr", 1)
 
 
 def extract_numbers(text):
@@ -199,11 +237,13 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         "pay_to_account_name": "John Doe"
     }
 
-    Returns (success, ocr_text, screenshot_b64, receipt_result)
+    Returns (success, ocr_text, screenshot_b64, receipt_result, ocr_meta)
     receipt_result: "success"/"review"/"failed"/None
+    ocr_meta: {"fields": {<field>: {method, engine, attempts, latency_ms}}, "total_latency_ms": int}
     """
+    t_total = time.time()
     if frame is None:
-        return False, "Frame is None", None, None
+        return False, "Frame is None", None, None, None
 
     rotated_frame = rotate_frame(frame)
     h, w = rotated_frame.shape[:2]
@@ -215,6 +255,7 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
     verify_fields = ocr_config.get("verify_fields", [])
     failures = []
     all_ocr_texts = {}
+    ocr_meta_fields = {}
 
     def _crop_roi(roi_dict):
         y1 = int(h * roi_dict.get("top_percent", 0) / 100)
@@ -227,15 +268,24 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         return rotated_frame[y1:y2, x1:x2]
 
     def _get_text_for_field(field, expected=None):
-        """Get OCR text for a field: field_rois > single roi > fullscreen."""
+        """Get OCR text for a field: field_rois > single roi > fullscreen.
+        Also populates ocr_meta_fields[field] with engine/method/attempts/latency."""
         if field_rois and field in field_rois:
             roi_cfg = field_rois[field]
             cropped = _crop_roi(roi_cfg)
             if cropped is None:
                 return None
             logger.info("Field ROI [%s]: %s -> crop %dx%d", field, roi_cfg, cropped.shape[1], cropped.shape[0])
-            text = _ocr_field(cropped, field, expected=expected)
-            logger.info("Field OCR [%s]: '%s'", field, text[:100])
+            result = _ocr_field(cropped, field, expected=expected)
+            ocr_meta_fields[field] = {
+                "method": result["method"],
+                "engine": result["engine"],
+                "attempts": result["attempts"],
+                "latency_ms": result["latency_ms"],
+            }
+            text = result["text"]
+            logger.info("Field OCR [%s]: '%s' (method=%s attempts=%d %dms)",
+                        field, text[:100], result["method"], result["attempts"], result["latency_ms"])
             return text
         return None
 
@@ -318,8 +368,16 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
             cropped = _crop_roi(field_rois["receipt_status"])
             if cropped is None:
                 cropped = rotated_frame
-            receipt_text = _ocr_field(cropped, "receipt_status")
-            logger.info("Field OCR [receipt_status]: '%s'", receipt_text[:100])
+            result = _ocr_field(cropped, "receipt_status")
+            ocr_meta_fields["receipt_status"] = {
+                "method": result["method"],
+                "engine": result["engine"],
+                "attempts": result["attempts"],
+                "latency_ms": result["latency_ms"],
+            }
+            receipt_text = result["text"]
+            logger.info("Field OCR [receipt_status]: '%s' (method=%s %dms)",
+                        receipt_text[:100], result["method"], result["latency_ms"])
         else:
             receipt_text = _get_fallback_text()
 
@@ -337,10 +395,16 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
 
     ocr_summary = " | ".join("%s='%s'" % (k, v[:80]) for k, v in all_ocr_texts.items()) if all_ocr_texts else _get_fallback_text()[:300]
 
+    ocr_meta = {
+        "fields": ocr_meta_fields,
+        "total_latency_ms": int((time.time() - t_total) * 1000),
+    }
+
     if failures:
         msg = "OCR FAILED: " + " | ".join(failures) + " | raw: " + ocr_summary
         logger.warning("OCR verification FAILED: %s", msg)
-        return False, msg, screenshot_b64, receipt_result
+        return False, msg, screenshot_b64, receipt_result, ocr_meta
     else:
-        logger.info("OCR verification PASSED: fields=%s receipt=%s", verify_fields, receipt_result)
-        return True, ocr_summary, screenshot_b64, receipt_result
+        logger.info("OCR verification PASSED: fields=%s receipt=%s total=%dms",
+                    verify_fields, receipt_result, ocr_meta["total_latency_ms"])
+        return True, ocr_summary, screenshot_b64, receipt_result, ocr_meta

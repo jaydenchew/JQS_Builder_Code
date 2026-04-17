@@ -60,7 +60,7 @@ class ArmWorker:
     """Independent worker for one mechanical arm"""
 
     def __init__(self, arm_id: int, name: str, com_port: str, service_url: str,
-                 z_down: int, camera_id: int):
+                 z_down: int, camera_id: int, task_event: asyncio.Event = None):
         self.arm_id = arm_id
         self.name = name
         self.arm_client = ArmClient(com_port=com_port, service_url=service_url, z_down=z_down)
@@ -71,6 +71,8 @@ class ArmWorker:
         self._current_step = None
         self._task_count = 0
         self._last_error = None
+        self._stall_reason = None
+        self._task_event = task_event
 
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=name)
 
@@ -79,11 +81,31 @@ class ArmWorker:
         self._log_handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
         logging.getLogger("app").addHandler(self._log_handler)
 
+    @staticmethod
+    def _classify_stall_reason(error_msg: str) -> str:
+        """Map error message to a stall category for Dashboard display."""
+        if not error_msg:
+            return "unknown"
+        lower = error_msg.lower()
+        if "port open failed" in lower or "not responding" in lower:
+            return "arm_hw_error"
+        if "no active flow" in lower or "no flow steps" in lower:
+            return "flow_not_found"
+        if "ocr" in lower:
+            return "ocr_mismatch"
+        if "check_screen" in lower or "screen does not match" in lower:
+            return "screen_mismatch"
+        if "camera" in lower or "capture" in lower:
+            return "camera_fail"
+        return "step_failed"
+
     async def run(self):
         """Main loop: fetch and process tasks assigned to this arm."""
         self._running = True
         self.camera.camera_enable()
-        await database.execute("UPDATE arms SET status = 'idle' WHERE id = %s", (self.arm_id,))
+        await database.execute(
+            "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+            (self.arm_id,))
         logger.info("[%s] Worker started (arm_id=%d)", self.name, self.arm_id)
 
         while self._running:
@@ -93,7 +115,14 @@ class ArmWorker:
 
             task = await self._fetch_next_task()
             if not task:
-                await asyncio.sleep(2)
+                if self._task_event is not None:
+                    self._task_event.clear()
+                    try:
+                        await asyncio.wait_for(self._task_event.wait(), timeout=30)
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(2)
                 continue
 
             await self._process_task(task)
@@ -197,6 +226,7 @@ class ArmWorker:
                 else:
                     error_msg = "Step execution failed"
             self._last_error = error_msg
+            self._stall_reason = self._classify_stall_reason(error_msg)
 
             stall_screenshot = await self._capture_stall_photo(station_id)
             if not receipt_b64 and stall_screenshot:
@@ -216,12 +246,17 @@ class ArmWorker:
         await self._cleanup_arm()
 
         if not success:
-            await database.execute("UPDATE arms SET status = 'offline' WHERE id = %s", (self.arm_id,))
+            stall_detail = "Step %s: %s" % (self._current_step or "?", error_msg or "unknown")
+            await database.execute(
+                "UPDATE arms SET status = 'offline', stall_reason = %s, stall_details = %s WHERE id = %s",
+                (self._stall_reason, stall_detail, self.arm_id))
             await self._fail_queued_tasks("ARM %s stalled — previous task failed, queued tasks auto-rejected" % self.name)
             self._paused = True
-            logger.warning("[%s] ARM PAUSED — needs manual inspection", self.name)
+            logger.warning("[%s] ARM PAUSED — reason=%s detail=%s", self.name, self._stall_reason, stall_detail)
         else:
-            await database.execute("UPDATE arms SET status = 'idle' WHERE id = %s", (self.arm_id,))
+            await database.execute(
+                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+                (self.arm_id,))
 
         self._current_task = None
         self._current_step = None
@@ -355,6 +390,7 @@ class ArmWorker:
     def resume(self):
         self._paused = False
         self._last_error = None
+        self._stall_reason = None
         logger.info("[%s] Resumed", self.name)
 
     def stop(self):
@@ -381,6 +417,7 @@ class ArmWorker:
             "current_step": self._current_step,
             "task_count": self._task_count,
             "last_error": self._last_error,
+            "stall_reason": self._stall_reason,
         }
 
     def get_logs(self, limit: int = 200) -> list:

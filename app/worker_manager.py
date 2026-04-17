@@ -24,6 +24,7 @@ class WorkerManager:
     def __init__(self):
         self.workers: dict[int, ArmWorker] = {}
         self._tasks: dict[int, asyncio.Task] = {}
+        self._events: dict[int, asyncio.Event] = {}
         self._lock = asyncio.Lock()
 
     async def start_all(self):
@@ -57,7 +58,14 @@ class WorkerManager:
             return True
 
     async def _create_worker(self, arm: dict):
-        """Instantiate ArmWorker and schedule its run() task. Caller must hold _lock."""
+        """Instantiate ArmWorker and schedule its run() task. Caller must hold _lock.
+
+        Creates a dedicated asyncio.Event per worker for event-driven task wakeup
+        (replaces the old 2s polling loop). Event must be bound here so that both
+        start_all() and add_worker() paths get the same treatment.
+        """
+        evt = asyncio.Event()
+        self._events[arm["id"]] = evt
         worker = ArmWorker(
             arm_id=arm["id"],
             name=arm["name"],
@@ -65,6 +73,7 @@ class WorkerManager:
             service_url=arm["service_url"],
             z_down=arm["z_down"],
             camera_id=arm["camera_id"],
+            task_event=evt,
         )
         self.workers[arm["id"]] = worker
         task = asyncio.create_task(worker.run())
@@ -95,6 +104,8 @@ class WorkerManager:
                 logger.error("Cleanup error during removal (arm %d): %s", arm_id, e)
             worker.stop()
 
+        self._events.pop(arm_id, None)
+
     async def stop_all(self):
         """Stop all workers gracefully: cancel → cleanup → stop executor."""
         async with self._lock:
@@ -107,6 +118,17 @@ class WorkerManager:
 
     def get_worker(self, arm_id: int) -> ArmWorker | None:
         return self.workers.get(arm_id)
+
+    def notify_worker(self, arm_id: int):
+        """Wake up a worker's run() loop when a new task is inserted.
+
+        Safe to call from any coroutine — asyncio.Event.set() is thread-safe
+        when invoked from the event loop that owns the Event. Missing events
+        are silently ignored (worker may have been removed).
+        """
+        evt = self._events.get(arm_id)
+        if evt:
+            evt.set()
 
     def pause(self, arm_id: int):
         worker = self.workers.get(arm_id)

@@ -99,7 +99,9 @@ async def pause_arm(arm_id: int):
 async def resume_arm(arm_id: int):
     ok = await manager.resume(arm_id)
     if ok:
-        await database.execute("UPDATE arms SET active = 1, status = 'idle' WHERE id = %s", (arm_id,))
+        await database.execute(
+            "UPDATE arms SET active = 1, status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+            (arm_id,))
     return {"success": ok}
 
 
@@ -274,7 +276,8 @@ async def websocket_monitor(ws: WebSocket):
     try:
         while True:
             worker_status = manager.get_all_status()
-            db_arms = await database.fetchall("SELECT id, name, com_port, camera_id, active, status FROM arms ORDER BY id")
+            db_arms = await database.fetchall(
+                "SELECT id, name, com_port, camera_id, active, status, stall_reason, stall_details FROM arms ORDER BY id")
             queue = await database.fetchone("SELECT COUNT(*) as cnt FROM transactions WHERE status = 'queued'")
 
             arms = []
@@ -292,6 +295,8 @@ async def websocket_monitor(ws: WebSocket):
                     "current_step": info["current_step"] if info else None,
                     "task_count": info["task_count"] if info else 0,
                     "last_error": info["last_error"] if info else None,
+                    "stall_reason": info.get("stall_reason") if info else arm.get("stall_reason"),
+                    "stall_details": arm.get("stall_details"),
                 })
 
             payload = {

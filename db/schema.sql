@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS arms (
     camera_id INT NOT NULL DEFAULT 0 COMMENT 'OpenCV camera device index',
     active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'false = paused/debug, worker skips this arm',
     status ENUM('idle', 'busy', 'offline') NOT NULL DEFAULT 'idle',
+    stall_reason VARCHAR(50) NULL COMMENT 'Classified stall reason: ocr_mismatch/screen_mismatch/camera_fail/arm_hw_error/flow_not_found/step_failed/unknown',
+    stall_details TEXT NULL COMMENT 'Stall step name + error message',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;

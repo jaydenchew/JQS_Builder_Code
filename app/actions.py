@@ -228,7 +228,7 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
             "amount": str(transaction.get("amount", "")),
             "pay_to_account_name": str(transaction.get("pay_to_account_name", "")),
         }
-        success, ocr_text, screenshot_b64, receipt_result = await _hw(
+        success, ocr_text, screenshot_b64, receipt_result, ocr_meta = await _hw(
             executor, ocr.verify_configurable, frame, ocr_config, tx_values
         )
         expected_str = "fields=%s" % ocr_config.get("verify_fields", [])
@@ -237,12 +237,20 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
     else:
         expected_account = str(transaction["pay_to_account_no"])
         expected_amount = str(transaction["amount"])
-        success, ocr_text, screenshot_b64, receipt_result = await _hw(
+        success, ocr_text, screenshot_b64, receipt_result, ocr_meta = await _hw(
             executor, ocr.verify_transfer_from_frame, frame, expected_account, expected_amount
         )
         expected_str = "account=%s amount=%s" % (expected_account, expected_amount)
 
     duration_ms = int((time.time() - start_time) * 1000)
+
+    # Persist ocr_meta JSON to transaction_logs.message for observability.
+    # On failure we still prepend the raw ocr_text so operators can grep for it.
+    meta_json = _json.dumps(ocr_meta) if ocr_meta else None
+    if success:
+        message_value = meta_json
+    else:
+        message_value = "%s | meta=%s" % (ocr_text, meta_json) if meta_json else ocr_text
 
     await database.execute(
         """INSERT INTO transaction_logs 
@@ -251,7 +259,7 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
         VALUES (%s, %s, %s, 'OCR_VERIFY', %s, %s, %s, %s, %s, %s)""",
         (transaction["id"], step["step_number"], step["step_name"],
          "ok" if success else "fail", duration_ms, screenshot_b64, ocr_text,
-         expected_str, None if success else ocr_text),
+         expected_str, message_value),
     )
 
     transaction["_ocr_result"] = {
@@ -260,6 +268,7 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
         "screenshot_b64": screenshot_b64,
         "ocr_text": ocr_text,
         "is_receipt_check": is_receipt_check,
+        "ocr_meta": ocr_meta,
     }
 
     if not success:

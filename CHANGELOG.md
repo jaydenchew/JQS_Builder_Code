@@ -1,5 +1,31 @@
 # Changelog
 
+## Event-driven Worker Wakeup, Stall Reason Classification, OCR Observability (2026-04-16)
+
+### Optimization #2: Event-driven Worker Wakeup
+- **Problem**: `ArmWorker.run()` used `await asyncio.sleep(2)` when queue was empty, so newly submitted tasks waited up to 2 seconds before the worker noticed them.
+- **Fix**: `WorkerManager` now creates a dedicated `asyncio.Event` per worker and passes it into `ArmWorker.__init__(task_event=evt)`. When `/process-withdrawal` successfully inserts a `queued` task, it calls `manager.notify_worker(arm_id)` which sets the event, immediately waking the worker. A 30-second `wait_for` timeout remains as a safety net.
+- **Files**: `app/worker_manager.py`, `app/arm_worker.py`, `app/routers/withdrawal.py`.
+- **Scope**: `notify_worker` is only called for the final queued INSERT; the two failure-path INSERTs (bank_app not found, arm offline) skip it since they don't produce queueable tasks. Event binding happens in `_create_worker()` so both `start_all()` and `add_worker()` (dynamic arm creation) get it.
+- **Effect**: New-task latency drops from 0–2s to near zero.
+
+### Optimization #3: Stall Reason Classification
+- **Problem**: When an arm stalled, `arms.status = 'offline'` was all we knew. Operators had to grep `service_stderr.log` to figure out why.
+- **Fix**: `arms` table gains two new columns: `stall_reason VARCHAR(50)` and `stall_details TEXT`. `ArmWorker._classify_stall_reason()` categorizes the error message into one of: `arm_hw_error`, `flow_not_found`, `ocr_mismatch`, `screen_mismatch`, `camera_fail`, `step_failed`, `unknown`. The Dashboard WebSocket (`/api/monitor/ws`) exposes both fields.
+- **Files**: `db/schema.sql`, `app/arm_worker.py`, `app/routers/monitor.py`.
+- **Clear timing**: Stored on stall; cleared on worker startup, on successful task completion, and on `resume_arm`.
+- **Migration required** (existing installs): `ALTER TABLE arms ADD COLUMN stall_reason VARCHAR(50) NULL AFTER status, ADD COLUMN stall_details TEXT NULL AFTER stall_reason;`
+- **Backward compatibility**: Columns are NULL-able with no default, so existing INSERTs and `SELECT *` callers keep working.
+
+### Optimization #5: OCR Observability
+- **Problem**: `_ocr_field` returned a plain string. We had no idea which of the 12 Tesseract preprocessing variants actually matched, how many attempts were needed, or how long each field took. Impossible to optimize.
+- **Fix**: `_ocr_field` now returns `{"text": str, "method": str, "engine": str, "attempts": int, "latency_ms": int}`. `verify_configurable` collects per-field meta into `ocr_meta = {"fields": {...}, "total_latency_ms": int}` and returns it as a 5th tuple element. `execute_ocr_verify` JSON-encodes the meta into `transaction_logs.message`, viewable via `/api/monitor/transactions/{id}/logs`.
+- **Files**: `app/ocr.py`, `app/actions.py`.
+- **Method naming**: Tesseract methods are named `<preproc>_psm<n>` (e.g. `inverted_psm6`, `otsu_inv_psm7`). EasyOCR fallbacks are named `easyocr_4x_direct` / `easyocr_4x_inverted`.
+- **Callers updated**: Both `verify_configurable` call sites in `actions.py` (ocr_config path and legacy `verify_transfer_from_frame` path) unpack the new 5-tuple.
+
+---
+
 ## Camera Buffer Fix, UI Element Redesign, Keyboard Space, Stall Queue Handling (2026-04-13)
 
 ### Camera: Real-time Frame Capture

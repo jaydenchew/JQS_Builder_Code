@@ -161,3 +161,41 @@ For text fields (customer names, receipt status keywords), Tesseract's character
 **Preprocessing**: All field crops get CLAHE contrast enhancement + 3x bicubic upscale + white border padding. Numeric fields additionally try 3 preprocessing methods (raw enhanced, adaptive threshold, OTSU) and take the first non-empty result.
 
 **Fallback**: If Tesseract fails on all 3 methods, the system falls back to EasyOCR for that field. If no `field_rois` is configured, the old single-ROI or fullscreen EasyOCR path is used unchanged.
+
+---
+
+## DD-017: ArmWorker Wakeup Is Event-driven, Not Polled
+
+**What**: `ArmWorker.run()` uses `asyncio.Event` to wait for new tasks. `/process-withdrawal` calls `manager.notify_worker(arm_id)` after a successful `queued` INSERT, which sets the event and immediately wakes the worker. A 30-second `wait_for` timeout is kept as a safety net.
+
+**Why**: The previous implementation slept 2 seconds between queue polls. At low volume this meant every new task waited 0–2 seconds before the worker noticed it — pure wasted latency. Event-driven wakeup drops this to near zero.
+
+**Why keep the 30s timeout**: `notify_worker` is only called from `/process-withdrawal`. If the service is restarted while tasks exist in the queue (e.g., from the startup recovery path), no notify will fire. The 30s fallback ensures the worker still picks up pre-existing tasks after at most 30 seconds.
+
+**Event lifecycle**: Events are created in `WorkerManager._create_worker()` (covering both `start_all()` startup and dynamic `add_worker()` paths) and removed in `_remove_worker()`. `notify_worker()` silently no-ops if the arm has no event (worker was removed).
+
+**Why not just call `notify_worker` anywhere a task status changes**: The only source of new queueable tasks is `/process-withdrawal`. `_fail_queued_tasks` is called from within the worker's own loop — no external wakeup needed. Simpler contract = fewer bugs.
+
+---
+
+## DD-018: Stall Reason Is Classified by Keyword Matching
+
+**What**: `ArmWorker._classify_stall_reason(error_msg)` maps free-text error messages to one of 7 categories (`arm_hw_error`, `flow_not_found`, `ocr_mismatch`, `screen_mismatch`, `camera_fail`, `step_failed`, `unknown`) using case-insensitive substring matching.
+
+**Why**: The error messages are produced by many different code paths (hardware client, OCR, screen checker, flow loader, action executor). Adding structured exception types everywhere would touch ~20 files. Keyword matching on the final error string is a single point of classification that catches all current and future error paths, at the cost of being slightly brittle if error messages are reworded.
+
+**Match order matters**: Most specific patterns first (`port open failed`, `no active flow`), then topic keywords (`ocr`, `screen does not match`, `camera`). This prevents a hardware error whose message happens to contain "camera" from being misclassified as `camera_fail`.
+
+**Why not store the full stacktrace**: `stall_details` already stores `Step <name>: <error_msg>`. Full traces belong in `service_stderr.log`. The DB column is meant for at-a-glance Dashboard display, not forensic debugging.
+
+---
+
+## DD-019: OCR Meta Is Stored in transaction_logs.message as JSON
+
+**What**: `_ocr_field` returns `{"text", "method", "engine", "attempts", "latency_ms"}`. `verify_configurable` aggregates per-field meta into a single dict. `execute_ocr_verify` JSON-serializes it into `transaction_logs.message`.
+
+**Why `message` column (not a new column)**: `message` was previously used to store the raw OCR text on failure (`None` on success). Success writes were wasted space. Repurposing the column for structured meta JSON on success (and `ocr_text | meta=<json>` on failure) gives us observability for free without a schema change.
+
+**Why not a separate `ocr_meta` column**: The data is already transaction-log-scoped (one row per OCR_VERIFY step). Adding a column means a migration and breaks the symmetry with other action types that also use `message`. JSON in TEXT is good enough for occasional manual inspection or future log-mining scripts.
+
+**Backward compatibility**: Old logs (before this change) have `message=None` on success and `message=<ocr_text>` on failure. New code handles both: failure meta is prefixed with the OCR text so grep still works, and JSON-parsing code should guard against non-JSON values.

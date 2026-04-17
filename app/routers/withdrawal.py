@@ -8,6 +8,7 @@ from pymysql.err import IntegrityError
 from app.models import WithdrawalRequest, StandardResponse, HealthResponse, StatusResponse
 from app.auth import verify_api_key
 from app import database
+from app.worker_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,6 +84,8 @@ async def process_withdrawal(req: WithdrawalRequest):
         if e.args[0] == 1062:
             return StandardResponse(status=False, message="Duplicate process_id")
         raise
+
+    manager.notify_worker(bank_app["arm_id"])
 
     logger.info("Withdrawal queued: process_id=%d bank=%s station=%d arm=%d",
                 req.process_id, req.pay_from_bank_code, bank_app["station_id"], bank_app["arm_id"])
