@@ -158,9 +158,15 @@ NSSM runs the service as the actual user (`ObjectName = .\username`), so it natu
 
 For text fields (customer names, receipt status keywords), Tesseract's character-level approach is weaker than EasyOCR's neural network for mixed-case multi-word text. So each engine is used where it excels.
 
-**Preprocessing**: All field crops get CLAHE contrast enhancement + 3x bicubic upscale + white border padding. Numeric fields additionally try 3 preprocessing methods (raw enhanced, adaptive threshold, OTSU) and take the first non-empty result.
+**Preprocessing**: All field crops get CLAHE contrast enhancement + 3x bicubic upscale + white border padding. Numeric fields additionally iterate through 6 preprocessing variants × 2 Tesseract PSM modes (6 and 7) = 12 Tesseract attempts:
+- `inverted`, `adapt_inv`, `otsu_inv` (inverted + adaptive/OTSU threshold)
+- `direct`, `adapt_direct`, `otsu_direct` (non-inverted equivalents)
 
-**Fallback**: If Tesseract fails on all 3 methods, the system falls back to EasyOCR for that field. If no `field_rois` is configured, the old single-ROI or fullscreen EasyOCR path is used unchanged.
+**Smart match (not first-non-empty)**: When `expected` value is provided, the loop keeps trying until a method produces text that matches the expected account/amount (using the same match function the verifier will use). This prevents picking up the first noisy-but-nonempty result and failing verification. If no method matches, the first non-empty Tesseract result is kept for logging.
+
+**Fallback**: If all 12 Tesseract attempts fail to match, EasyOCR is tried with 4x upscale in both direct and inverted variants (2 attempts). If still no match, the best Tesseract result (or last EasyOCR result) is returned so the failure log shows what was seen.
+
+**No `field_rois` path**: The old single-ROI or fullscreen EasyOCR path is used unchanged — meta is not collected for this path (see DD-019).
 
 ---
 
