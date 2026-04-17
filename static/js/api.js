@@ -56,11 +56,71 @@ function navHTML() {
             ${links.map(([href, label]) =>
                 `<a href="${href}" class="${path === href ? 'active' : ''}">${label}</a>`
             ).join('')}
+            <span class="nav-spacer"></span>
+            <div class="nav-svc" id="nav-svc" title="Loading services…">
+                <span class="nav-svc-dot loading"></span>
+                <span class="nav-svc-text">Services</span>
+            </div>
+            <div class="nav-svc-pop" id="nav-svc-pop"></div>
         </nav>
     `;
 }
 
+const SVC_LABELS = {
+    mysql: 'MySQL',
+    arm_wcf: 'Arm WCF',
+    cloudflare_tunnel: 'Tunnel',
+    wa_service: 'WA Service',
+};
+
+async function loadNavServices() {
+    const wrap = document.getElementById('nav-svc');
+    const pop = document.getElementById('nav-svc-pop');
+    if (!wrap || !pop) return;
+    let data;
+    try { data = await API.get('/api/monitor/services'); }
+    catch (e) { data = null; }
+    if (!data || data.error) {
+        wrap.innerHTML = '<span class="nav-svc-dot off"></span><span class="nav-svc-text">Services</span>';
+        wrap.title = 'Service check unavailable';
+        pop.innerHTML = '<div class="nav-svc-pop-row" style="color:var(--danger)">Service check unavailable</div>';
+        return;
+    }
+    const entries = Object.entries(data);
+    const allOnline = entries.every(([, s]) => s.online);
+    const offCount = entries.filter(([, s]) => !s.online).length;
+    const summaryDot = allOnline ? 'on' : 'off';
+    const summaryTxt = allOnline ? 'Services' : `Services (${offCount} down)`;
+    wrap.innerHTML = `<span class="nav-svc-dot ${summaryDot}"></span><span class="nav-svc-text">${summaryTxt}</span>`;
+    wrap.title = entries.map(([k, s]) => `${SVC_LABELS[k] || k}: ${s.online ? 'OK' : 'DOWN'} (${s.detail})`).join('\n');
+    pop.innerHTML = entries.map(([k, s]) => `
+        <div class="nav-svc-pop-row">
+            <span class="nav-svc-dot ${s.online ? 'on' : 'off'}"></span>
+            <span class="nav-svc-pop-name">${SVC_LABELS[k] || k}</span>
+            <span class="nav-svc-pop-detail">${s.detail}</span>
+        </div>
+    `).join('');
+}
+
+function _bindNavSvcToggle() {
+    const wrap = document.getElementById('nav-svc');
+    const pop = document.getElementById('nav-svc-pop');
+    if (!wrap || !pop) return;
+    wrap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pop.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+        if (!pop.contains(e.target) && e.target !== wrap) pop.classList.remove('open');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const nav = document.getElementById('nav');
-    if (nav) nav.innerHTML = navHTML();
+    if (nav) {
+        nav.innerHTML = navHTML();
+        _bindNavSvcToggle();
+        loadNavServices();
+        setInterval(loadNavServices, 30000);
+    }
 });

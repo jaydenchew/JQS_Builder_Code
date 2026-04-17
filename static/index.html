@@ -19,13 +19,16 @@
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         .btn-warning { background: var(--warning); color: #000; }
         .btn-warning:hover { background: #e68a00; }
-        .svc-panel { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-        .svc-card { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 12px; min-width: 150px; }
-        .svc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-        .svc-dot.on { background: var(--success); }
-        .svc-dot.off { background: var(--danger); }
-        .svc-name { font-weight: 600; }
-        .svc-detail { color: var(--text2); margin-left: auto; }
+        .cam-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); margin-bottom: 8px; }
+        .cam-row .cam-btn { padding: 1px 6px; font-size: 11px; line-height: 1.4; cursor: pointer; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 4px; }
+        .cam-row .cam-btn:hover { color: var(--accent); border-color: var(--accent); }
+        .cam-row .cam-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .cam-panel { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px; margin-bottom: 10px; font-size: 11px; }
+        .cam-panel img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 4px; background: #000; }
+        .cam-panel .cam-hint { color: var(--text2); margin: 6px 0; line-height: 1.4; }
+        .cam-panel .cam-swap-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+        .cam-panel select { font-size: 11px; padding: 2px 4px; flex: 1; min-width: 0; }
+        .cam-panel .cam-err { color: var(--danger); padding: 12px 4px; text-align: center; }
     </style>
 </head>
 <body>
@@ -34,11 +37,6 @@
         <h2 style="margin-bottom: 20px;">Dashboard</h2>
 
         <div class="grid grid-5" id="stats"></div>
-
-        <h3 style="margin-top:24px;margin-bottom:12px;">Services</h3>
-        <div class="svc-panel" id="svc-panel">
-            <div class="svc-card"><span class="svc-dot"></span><span class="svc-name">Loading...</span></div>
-        </div>
 
         <h3 style="margin-top:24px;margin-bottom:12px;">Machine Status</h3>
         <div class="grid grid-4" id="arm-cards">
@@ -67,43 +65,23 @@
     <script>
     let ws = null;
 
-    const SVC_LABELS = {
-        mysql: 'MySQL',
-        arm_wcf: 'Arm WCF',
-        cloudflare_tunnel: 'Tunnel',
-        wa_service: 'WA Service',
-    };
-
-    async function loadServices() {
-        try {
-            const data = await API.get('/api/monitor/services');
-            const panel = document.getElementById('svc-panel');
-            panel.innerHTML = Object.entries(data).map(([key, svc]) => `
-                <div class="svc-card">
-                    <span class="svc-dot ${svc.online ? 'on' : 'off'}"></span>
-                    <span class="svc-name">${SVC_LABELS[key] || key}</span>
-                    <span class="svc-detail">${svc.detail}</span>
-                </div>
-            `).join('');
-        } catch (e) {
-            document.getElementById('svc-panel').innerHTML = '<div class="svc-card"><span class="svc-dot off"></span><span class="svc-name">Error loading services</span></div>';
-        }
+    async function loadStats() {
+        let s;
+        try { s = await API.get('/api/monitor/stats/today'); }
+        catch (e) { return; }
+        if (!s || s.error) return;
+        document.getElementById('stats').innerHTML = `
+            <div class="card card-stat"><div class="num">${s.total || 0}</div><div class="label">Today Total</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--success)">${s.success || 0}</div><div class="label">Success</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--danger)">${s.failed || 0}</div><div class="label">Failed</div></div>
+            <div class="card card-stat"><div class="num" style="color:#ff9800">${s.stall || 0}</div><div class="label">Stall</div></div>
+            <div class="card card-stat"><div class="num" style="color:var(--warning)">${s.queued || 0}</div><div class="label">In Queue</div></div>
+        `;
     }
 
-    setInterval(loadServices, 30000);
-
     async function load() {
-        loadServices();
-        const todayStats = await API.get('/api/monitor/stats/today');
-
-        document.getElementById('stats').innerHTML = `
-            <div class="card card-stat"><div class="num">${todayStats.total || 0}</div><div class="label">Today Total</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--success)">${todayStats.success || 0}</div><div class="label">Success</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--danger)">${todayStats.failed || 0}</div><div class="label">Failed</div></div>
-            <div class="card card-stat"><div class="num" style="color:#ff9800">${todayStats.stall || 0}</div><div class="label">Stall</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--warning)">${todayStats.queued || 0}</div><div class="label">In Queue</div></div>
-        `;
-
+        await loadStats();
+        setInterval(loadStats, 5000);
         connectWS();
     }
 
@@ -124,8 +102,11 @@
         return arm.worker_status;
     }
 
+    let lastArms = [];
+
     function renderArmCards(arms, queued) {
         if (arms && arms.length > 0) updateLogArmSelect(arms);
+        lastArms = arms || [];
         const cards = document.getElementById('arm-cards');
         if (!arms || arms.length === 0) {
             cards.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--text2)">No machines configured. <a href="/settings">Add one in Settings</a>.</div>';
@@ -134,6 +115,7 @@
         cards.innerHTML = arms.map(a => {
             const st = getEffectiveStatus(a);
             const stLabel = {idle:'IDLE', busy:'BUSY', paused:'PAUSED', offline:'OFFLINE', no_worker:'NO WORKER'}[st] || st.toUpperCase();
+            const camSafe = (st !== 'busy');
             let btns = '';
             if (st === 'idle' || st === 'busy') {
                 btns += `<button class="btn btn-sm btn-secondary" onclick="armAction('pause',${a.arm_id})">Pause</button>`;
@@ -148,9 +130,17 @@
             }
             btns += `<button class="btn btn-sm btn-danger" onclick="armAction('reset',${a.arm_id})">Reset</button>`;
 
-            return `<div class="card arm-card">
+            const camBtnTitle = camSafe ? 'Verify physical camera matches this arm' : 'Arm is busy — wait for current task to finish';
+            const camBtnDisabled = camSafe ? '' : 'disabled';
+            const camRow = `<div class="cam-row">
+                <span>${a.com_port} | Camera ${a.camera_id}</span>
+                <button class="cam-btn" ${camBtnDisabled} title="${camBtnTitle}" onclick="toggleCamPanel(${a.arm_id})">&#x21bb; Verify</button>
+            </div>`;
+
+            return `<div class="card arm-card" id="arm-card-${a.arm_id}">
                 <div class="arm-name">${a.name}</div>
-                <div class="arm-meta">${a.com_port} | Camera ${a.camera_id}</div>
+                ${camRow}
+                <div id="cam-panel-${a.arm_id}"></div>
                 <div class="arm-status">
                     <span class="status-dot dot-${st}"></span>
                     <strong>${stLabel}</strong>
@@ -164,6 +154,118 @@
                 <div class="arm-controls">${btns}</div>
             </div>`;
         }).join('');
+
+        if (camPanelOpen.size > 0) {
+            camPanelOpen.forEach(armId => {
+                const stillExists = arms.find(a => a.arm_id === armId);
+                if (stillExists) renderCamPanel(armId);
+                else camPanelOpen.delete(armId);
+            });
+        }
+
+        if (!sessionStorage.getItem('cam_verify_shown')) {
+            sessionStorage.setItem('cam_verify_shown', '1');
+            const safeArms = arms.filter(a => getEffectiveStatus(a) !== 'busy');
+            if (safeArms.length > 0) {
+                safeArms.forEach(a => toggleCamPanel(a.arm_id));
+            }
+        }
+    }
+
+    /* ============ CAMERA VERIFY / SWAP ============
+       Preview is captured ONCE per Verify click and cached, so the 2s WS
+       re-render of arm-cards just repaints from the cache instead of
+       hammering /camera-preview (which would open+close the camera every
+       2s — that was a bug). Force a fresh capture only on:
+       - first click of Verify
+       - manual refresh button (↻)
+       - after a successful swap
+    */
+    const camPanelOpen = new Set();
+    const camPreviewCache = new Map();
+
+    function toggleCamPanel(armId) {
+        if (camPanelOpen.has(armId)) {
+            camPanelOpen.delete(armId);
+            camPreviewCache.delete(armId);
+            const el = document.getElementById('cam-panel-' + armId);
+            if (el) el.innerHTML = '';
+            return;
+        }
+        camPanelOpen.add(armId);
+        renderCamPanel(armId, true);
+    }
+
+    function _paintCamPanel(armId, result) {
+        const el = document.getElementById('cam-panel-' + armId);
+        if (!el) return;
+        const arm = lastArms.find(a => a.arm_id === armId);
+        if (!arm) return;
+
+        const others = lastArms.filter(o => {
+            if (o.arm_id === armId) return false;
+            return getEffectiveStatus(o) !== 'busy';
+        });
+        const swapOptions = others.length
+            ? others.map(o => `<option value="${o.arm_id}">${o.name} (cam ${o.camera_id})</option>`).join('')
+            : '<option value="" disabled>No non-busy arm to swap with</option>';
+
+        let body;
+        if (!result) {
+            body = `<div style="text-align:center;color:var(--text2);padding:24px 4px;">Loading camera ${arm.camera_id}…</div>`;
+        } else if (result.success) {
+            body = `<img src="data:image/jpeg;base64,${result.image}" alt="Camera ${result.camera_id}">`;
+        } else {
+            body = `<div class="cam-err">${result.error || 'Preview failed'}</div>`;
+        }
+
+        el.innerHTML = `<div class="cam-panel">
+            ${body}
+            <div class="cam-hint">Does this view match <b>${arm.name}</b>'s physical position?</div>
+            <div class="cam-swap-row">
+                <select id="cam-swap-sel-${armId}" ${others.length ? '' : 'disabled'}>${swapOptions}</select>
+                <button class="cam-btn" ${others.length ? '' : 'disabled'} onclick="doSwap(${armId})">Swap</button>
+                <button class="cam-btn" onclick="renderCamPanel(${armId}, true)" title="Recapture">&#x21bb;</button>
+                <button class="cam-btn" onclick="toggleCamPanel(${armId})">&times;</button>
+            </div>
+        </div>`;
+    }
+
+    async function renderCamPanel(armId, forceRefresh) {
+        if (!camPanelOpen.has(armId)) return;
+        if (!forceRefresh && camPreviewCache.has(armId)) {
+            _paintCamPanel(armId, camPreviewCache.get(armId));
+            return;
+        }
+        _paintCamPanel(armId, null);
+        let r;
+        try { r = await API.get(`/api/monitor/arms/${armId}/camera-preview`); }
+        catch (e) { r = { success: false, error: 'Network error' }; }
+        if (!camPanelOpen.has(armId)) return;
+        camPreviewCache.set(armId, r);
+        _paintCamPanel(armId, r);
+    }
+
+    async function doSwap(armId) {
+        const sel = document.getElementById('cam-swap-sel-' + armId);
+        if (!sel || !sel.value) return;
+        const targetId = parseInt(sel.value);
+        const a = lastArms.find(x => x.arm_id === armId);
+        const b = lastArms.find(x => x.arm_id === targetId);
+        const stA = getEffectiveStatus(a), stB = getEffectiveStatus(b);
+        const restartNote = (stA === 'idle' || stB === 'idle')
+            ? '\n\nNote: idle worker(s) will be briefly restarted. Queued tasks are preserved.'
+            : '';
+        if (!confirm(`Swap camera between ${a.name} (cam ${a.camera_id}) and ${b.name} (cam ${b.camera_id})?${restartNote}`)) return;
+        const r = await API.post('/api/monitor/arms/swap-camera', { arm_id_a: armId, arm_id_b: targetId });
+        if (r.success) {
+            toast('Cameras swapped — workers restarted');
+            camPreviewCache.delete(armId);
+            camPreviewCache.delete(targetId);
+            setTimeout(() => { renderCamPanel(armId, true); }, 1500);
+        } else {
+            toast(r.error || 'Swap failed', 'error');
+        }
     }
 
     async function armAction(action, armId) {

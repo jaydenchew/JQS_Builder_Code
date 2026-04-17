@@ -1,5 +1,29 @@
 # Changelog
 
+## Dashboard Camera Verify/Swap, Nav Service Indicator, Auto-refreshing Stats (2026-04-17)
+
+### Dashboard: Camera Verify & One-click Swap
+- **Problem**: Windows DSHOW renumbers USB camera indices on every boot, so after PC restart `arms.camera_id=0` may point at a physically different camera than yesterday. Operators had no in-app way to detect or fix this — required SQL `UPDATE arms SET camera_id=...` and service restart. Real incident: ARM-01's stream showed ARM-02's view, only diagnosed after 30+ minutes.
+- **Fix**: Each Dashboard arm-card now has a `↻ Verify` button. Clicking expands an inline preview that captures one fresh frame from that arm's currently bound camera, plus a swap dropdown listing other non-busy arms. One click swaps `camera_id` between two arms in DB and live-restarts both workers — no service restart needed.
+- **Auto-prompt on session start**: First time entering Dashboard per browser session, all non-busy arms auto-expand their preview as a "remember to check the cameras" reminder. Subsequent visits in the same session require manual click (no spam).
+- **Preview cache**: Preview is captured once per click and cached in JS. The 2-second WebSocket arm-card re-render repaints from cache, so a kept-open panel does not hammer `/camera-preview` every 2 seconds (this was a bug during development that opened+closed the camera nonstop).
+- **Files**: `app/worker_manager.py` (+`restart_worker`), `app/routers/monitor.py` (+`/arms/{id}/camera-preview`, +`/arms/swap-camera`), `static/index.html` (UI + cache logic).
+- **Safety policy**: Verify and swap only require worker to be **non-busy** (idle/paused/offline). `busy` workers are blocked at both backend and frontend (button disabled with tooltip). Idle workers are safe because `capture_fresh` shares the per-arm camera lock; restart on idle is equivalent to a quick stop+start and queued tasks are preserved.
+- **No schema change**: Reuses existing `arms.camera_id` column.
+
+### Nav: Global Service Status Indicator
+- **Problem**: The Services panel (MySQL/Arm WCF/Tunnel/WA Service) lived in the Dashboard body and took 80px of vertical space. It was also invisible from Builder/Settings/Transactions pages — operators had to bounce back to Dashboard to check.
+- **Fix**: Service status moved to the right side of the global nav bar as a compact pill: green dot + "Services" when all up, red dot + "Services (N down)" when any are down. Click expands a popover with per-service status and detail (uptime, HTTP code, error). Tooltip shows full breakdown on hover. Visible on every page.
+- **Files**: `static/js/api.js` (+`loadNavServices`), `static/css/style.css` (nav-svc styles), `static/index.html` (removed the body Services panel).
+- **Polling**: 30s interval, same as before. Silently degrades to "Services unavailable" if `/api/monitor/services` errors.
+
+### Dashboard: Auto-refreshing Stats Cards
+- **Problem**: The 5 stat cards (Today Total / Success / Failed / Stall / In Queue) only loaded once on page open. Operators had to refresh the whole page to see updated counts after transactions completed.
+- **Fix**: `loadStats()` extracted into its own function and polled every 5 seconds. WebSocket arm-card pushes are unchanged.
+- **Files**: `static/index.html`.
+
+---
+
 ## Event-driven Worker Wakeup, Stall Reason Classification, OCR Observability (2026-04-16)
 
 ### Optimization #2: Event-driven Worker Wakeup

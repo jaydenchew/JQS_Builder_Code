@@ -145,6 +145,28 @@ class WorkerManager:
             return True
         return await self.add_worker(arm_id)
 
+    async def restart_worker(self, arm_id: int) -> bool:
+        """Stop + recreate worker with fresh DB row.
+
+        Used when arm config changes (camera_id, com_port, etc.) need to take
+        effect without restarting the whole service. Returns False if arm is
+        not found in DB or is inactive.
+        """
+        async with self._lock:
+            await self._remove_worker(arm_id)
+            arm = await database.fetchone(
+                "SELECT id, name, com_port, service_url, z_down, camera_id, active FROM arms WHERE id = %s",
+                (arm_id,)
+            )
+            if not arm:
+                logger.error("restart_worker: arm %d not found in DB", arm_id)
+                return False
+            if not arm["active"]:
+                logger.warning("restart_worker: arm %d is inactive — leaving stopped", arm_id)
+                return False
+            await self._create_worker(arm)
+            return True
+
     async def set_offline(self, arm_id: int):
         """Fully stop and remove worker from memory + mark DB offline.
 

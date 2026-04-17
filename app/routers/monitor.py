@@ -1,9 +1,11 @@
 """Monitoring API + WebSocket for real-time dashboard"""
 import asyncio
+import base64
 import json
 import logging
 import subprocess
 import time
+import cv2
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import database
@@ -124,6 +126,122 @@ async def reset_arm(arm_id: int):
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _safe_states_for_camera_op(worker_status: str) -> bool:
+    """Camera verify/swap is forbidden ONLY when the worker is actively
+    processing a task (busy). Idle workers are safe: capture_fresh just
+    briefly contends on the per-arm camera lock; restart_worker on an idle
+    worker is equivalent to a quick stop+start and does not lose queued
+    tasks (they stay status='queued' and are picked up after restart)."""
+    return worker_status != "busy"
+
+
+def _capture_one_frame_blocking(camera_id: int) -> str | None:
+    """Open camera_id with DSHOW, grab one rotated JPEG (base64), then release.
+    Runs in executor — blocks for ~0.5s on DSHOW init. Returns None on failure."""
+    cap = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        return None
+    try:
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        time.sleep(0.3)
+        for _ in range(3):
+            cap.read()
+        ret, frame = cap.read()
+    finally:
+        cap.release()
+    if not ret or frame is None:
+        return None
+    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    if not ok:
+        return None
+    return base64.b64encode(buf).decode("utf-8")
+
+
+@router.get("/arms/{arm_id}/camera-preview")
+async def camera_preview(arm_id: int):
+    """Grab one fresh frame from the arm's currently bound camera.
+
+    Only allowed when worker is paused/offline (avoid stealing camera from a
+    running task). When worker is paused, asks the worker's Camera instance to
+    capture_fresh (its lock prevents conflict with worker's own captures).
+    When worker is offline (not in manager.workers), opens camera_id directly
+    via a temporary DSHOW VideoCapture — same approach as scan-cameras.
+    """
+    arm = await database.fetchone("SELECT id, camera_id FROM arms WHERE id = %s", (arm_id,))
+    if not arm:
+        return {"success": False, "error": "Arm not found"}
+
+    worker = manager.get_worker(arm_id)
+    worker_status = worker.get_status() if worker else "no_worker"
+    if not _safe_states_for_camera_op(worker_status):
+        return {"success": False,
+                "error": "Worker is %s. Pause arm first to safely preview camera." % worker_status}
+
+    loop = asyncio.get_event_loop()
+    if worker is not None:
+        frame = await loop.run_in_executor(None, worker.camera.capture_fresh)
+        if frame is None:
+            return {"success": False, "error": "Camera %d capture failed" % arm["camera_id"]}
+        rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        ok, buf = cv2.imencode(".jpg", rotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if not ok:
+            return {"success": False, "error": "JPEG encode failed"}
+        b64 = base64.b64encode(buf).decode("utf-8")
+    else:
+        b64 = await loop.run_in_executor(None, _capture_one_frame_blocking, arm["camera_id"])
+        if b64 is None:
+            return {"success": False, "error": "Camera %d not available" % arm["camera_id"]}
+
+    return {"success": True, "image": b64, "camera_id": arm["camera_id"]}
+
+
+@router.post("/arms/swap-camera")
+async def swap_camera(data: dict):
+    """Atomically swap camera_id between two arms and restart both workers.
+
+    Both arms must be paused/offline (or have no worker). Refuses on idle/busy
+    to avoid mid-task camera reassignment. Restart picks up the new camera_id
+    on the next loop iteration without a service restart.
+    """
+    arm_id_a = data.get("arm_id_a")
+    arm_id_b = data.get("arm_id_b")
+    if not arm_id_a or not arm_id_b or arm_id_a == arm_id_b:
+        return {"success": False, "error": "Provide two distinct arm_id_a and arm_id_b"}
+
+    rows = await database.fetchall(
+        "SELECT id, name, camera_id, active FROM arms WHERE id IN (%s, %s)",
+        (arm_id_a, arm_id_b))
+    if len(rows) != 2:
+        return {"success": False, "error": "One or both arms not found"}
+    by_id = {r["id"]: r for r in rows}
+    a, b = by_id[arm_id_a], by_id[arm_id_b]
+
+    for arm in (a, b):
+        worker = manager.get_worker(arm["id"])
+        status = worker.get_status() if worker else "no_worker"
+        if not _safe_states_for_camera_op(status):
+            return {"success": False,
+                    "error": "%s is %s — pause both arms first" % (arm["name"], status)}
+
+    new_a, new_b = b["camera_id"], a["camera_id"]
+    await database.execute("UPDATE arms SET camera_id = %s WHERE id = %s", (new_a, a["id"]))
+    await database.execute("UPDATE arms SET camera_id = %s WHERE id = %s", (new_b, b["id"]))
+    logger.warning("Camera swap: %s camera %d->%d, %s camera %d->%d",
+                   a["name"], a["camera_id"], new_a, b["name"], b["camera_id"], new_b)
+
+    if a["active"]:
+        await manager.restart_worker(a["id"])
+    if b["active"]:
+        await manager.restart_worker(b["id"])
+
+    return {"success": True,
+            "swapped": [
+                {"arm_id": a["id"], "name": a["name"], "camera_id": new_a},
+                {"arm_id": b["id"], "name": b["name"], "camera_id": new_b},
+            ]}
 
 
 @router.get("/transactions")

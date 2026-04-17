@@ -205,3 +205,33 @@ For text fields (customer names, receipt status keywords), Tesseract's character
 **Why not a separate `ocr_meta` column**: The data is already transaction-log-scoped (one row per OCR_VERIFY step). Adding a column means a migration and breaks the symmetry with other action types that also use `message`. JSON in TEXT is good enough for occasional manual inspection or future log-mining scripts.
 
 **Backward compatibility**: Old logs (before this change) have `message=None` on success and `message=<ocr_text>` on failure. New code handles both: failure meta is prefixed with the OCR text so grep still works, and JSON-parsing code should guard against non-JSON values.
+
+---
+
+## DD-020: Camera Verify/Swap Allowed on Idle Workers (Not Just Paused/Offline)
+
+**What**: `/api/monitor/arms/{id}/camera-preview` and `/api/monitor/arms/swap-camera` accept any worker state except `busy`. The Dashboard `↻ Verify` button is enabled for `idle`, `paused`, `offline`, `no_worker` and only disabled for `busy`.
+
+**Why**: Workers auto-start to `idle` on every service start. If verify required `paused/offline`, the post-restart "auto-expand all previews to remind operators to check camera mapping" feature would never trigger after a normal startup — defeating the entire reason the feature exists. The original conservative `paused/offline only` policy was a planning mistake corrected after testing.
+
+**Why idle is safe for `capture_fresh`**: `Camera.capture_fresh()` acquires the per-instance `_lock` plus the class-level `_init_lock`. If a queued task arrives during the ~0.5s capture window, the worker's own camera operations wait on the same lock and run after — no corruption, just a sub-second serial delay.
+
+**Why idle is safe for `restart_worker`**: An idle worker has no `_current_task`, so cancelling its asyncio task only interrupts the `wait_for(event, 30)` wakeup loop. Queued tasks remain `status='queued'` in the DB and are picked up by the freshly recreated worker on its first `_fetch_next_task` iteration. The only observable effect is a sub-second gap in arm availability.
+
+**Why busy is forbidden**: Mid-task `capture_fresh` from outside the worker would corrupt camera state during, e.g., an `OCR_VERIFY` step. Mid-task `restart_worker` would cancel the running task with no clean rollback (transaction would be left `status='running'`). Both cases would cause real data loss.
+
+**Alternative considered**: A "pause both → swap → resume both" wrapper button that auto-orchestrates state transitions. Rejected because the swap endpoint already does the moral equivalent atomically (idle worker is "as good as paused" from the perspective of cancellation safety).
+
+---
+
+## DD-021: Service Status Indicator Lives in the Global Nav, Not Per-Page
+
+**What**: The MySQL/Arm WCF/Cloudflare Tunnel/WA Service status block is rendered by `loadNavServices()` in `static/js/api.js` and injected into the shared nav bar by every page that uses `<div id="nav">`. The Dashboard body no longer has its own copy.
+
+**Why a single global indicator**: Operators need to know if the underlying services are up no matter which page they're on. Previously, only the Dashboard showed this — going to Builder/Settings/Transactions hid the indicator, forcing a navigation back to Dashboard just to check status. Worse, the per-page approach meant if we ever added the panel to other pages, each would need its own copy of `loadServices` + interval timer.
+
+**Why polling is in `api.js`, not in each page**: The nav is rendered by `api.js` already (`navHTML()` + `DOMContentLoaded` handler). Adding the polling there guarantees that any page including `<script src="/static/js/api.js">` gets the indicator for free. Pages that use a custom nav (e.g., Flow Builder's `builder-nav`) opt out simply by not having `<div id="nav">` — `loadNavServices` early-returns if the element doesn't exist.
+
+**Why click-to-expand instead of always-visible details**: The summary pill ("Services" with one dot) takes ~80px of nav width. Showing all 4 services inline would push the nav past 600px and crowd page navigation links. Click-to-expand keeps the nav lean while preserving full detail one click away. Hover tooltip provides a quick read without a click.
+
+**Why 30s polling, not WebSocket push**: Service status changes infrequently (a tunnel/MySQL going down is rare). `/api/monitor/services` runs four short health checks (DB query, HTTP HEAD, sc.exe query, in-process uptime) — cheap to run but pointless to push more often than needed. WebSocket would also need every page to maintain the connection just to show 4 dots, which is wasteful.
