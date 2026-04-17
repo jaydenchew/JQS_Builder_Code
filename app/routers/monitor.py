@@ -9,6 +9,7 @@ import cv2
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import database
+from app.camera import Camera
 from app.worker_manager import manager
 from app.config import ARM_SERVICE_URL
 
@@ -138,20 +139,16 @@ def _safe_states_for_camera_op(worker_status: str) -> bool:
 
 
 def _capture_one_frame_blocking(camera_id: int) -> str | None:
-    """Open camera_id with DSHOW, grab one rotated JPEG (base64), then release.
-    Runs in executor — blocks for ~0.5s on DSHOW init. Returns None on failure."""
-    cap = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        return None
-    try:
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        time.sleep(0.3)
-        for _ in range(3):
-            cap.read()
-        ret, frame = cap.read()
-    finally:
-        cap.release()
-    if not ret or frame is None:
+    """Capture one rotated JPEG (base64) from camera_id, going through the
+    Camera class so the global Camera._init_lock + _active_instance exclusive
+    model is honored. Without this, a direct cv2.VideoCapture call could race
+    with another worker's camera operation on Windows DSHOW.
+
+    Used only when the arm has no live worker (worker is None). Blocks ~0.5s
+    on DSHOW init — caller must run in executor. Returns None on failure."""
+    cam = Camera(camera_id=camera_id)
+    frame = cam.capture_fresh()
+    if frame is None:
         return None
     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -227,8 +224,11 @@ async def swap_camera(data: dict):
                     "error": "%s is %s — pause both arms first" % (arm["name"], status)}
 
     new_a, new_b = b["camera_id"], a["camera_id"]
-    await database.execute("UPDATE arms SET camera_id = %s WHERE id = %s", (new_a, a["id"]))
-    await database.execute("UPDATE arms SET camera_id = %s WHERE id = %s", (new_b, b["id"]))
+    await database.execute(
+        "UPDATE arms SET camera_id = CASE id WHEN %s THEN %s WHEN %s THEN %s END "
+        "WHERE id IN (%s, %s)",
+        (a["id"], new_a, b["id"], new_b, a["id"], b["id"])
+    )
     logger.warning("Camera swap: %s camera %d->%d, %s camera %d->%d",
                    a["name"], a["camera_id"], new_a, b["name"], b["camera_id"], new_b)
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## Camera Verify/Swap Hardening — Post-review Fixes (2026-04-17)
+
+Follow-up to commit `6f69568` addressing three concerns raised in code review:
+
+### Fix 1: Preview now honors the global camera exclusive lock
+- **Problem**: `_capture_one_frame_blocking` (used when the target arm has no live worker) called `cv2.VideoCapture(camera_id, CAP_DSHOW)` directly, bypassing the `Camera._init_lock` + `_active_instance` serialization model. If another worker on a different camera was mid-capture, DSHOW could race on USB hub arbitration and either fail the preview or disturb the other worker.
+- **Fix**: `_capture_one_frame_blocking` now instantiates a `Camera` object and calls `capture_fresh()`, which participates in the global lock like any other worker camera op. No new hardware contention paths are introduced.
+- **Files**: `app/routers/monitor.py`.
+
+### Fix 2: Swap DB update is now atomic
+- **Problem**: `swap_camera` issued two separate `UPDATE arms SET camera_id=...` statements. If the second one failed (DB error, connection drop between statements), both arms would end up bound to the same `camera_id` — a state the system cannot self-heal from.
+- **Fix**: Replaced with a single `UPDATE arms SET camera_id = CASE id WHEN %s THEN %s WHEN %s THEN %s END WHERE id IN (%s, %s)` statement. MySQL guarantees single-statement atomicity, so either both arms swap or neither does.
+- **Files**: `app/routers/monitor.py`.
+
+### Fix 3: Swap follow-up waits for worker readiness instead of fixed 1.5s
+- **Problem**: After swap, the frontend used `setTimeout(renderCamPanel, 1500)` to refresh the preview. But `restart_worker` has to cancel the old task (up to ~0.8s if mid-`capture_fresh`), tear down the old worker, create the new one, and wait for `run()` to set `_running=True`. Under worst case, 1.5s is not enough and the refresh either hits `no_worker` error or races an `offline` worker.
+- **Fix**: Replaced fixed timeout with `_waitForWorkerReady([armId, targetId], 8000)` — polls the WebSocket-pushed `worker_status` of both arms at 500ms intervals and proceeds only when both are past `offline`/`no_worker`. Caps at 8s to avoid hanging the UI if something goes wrong.
+- **Files**: `static/index.html`.
+
+---
+
 ## Dashboard Camera Verify/Swap, Nav Service Indicator, Auto-refreshing Stats (2026-04-17)
 
 ### Dashboard: Camera Verify & One-click Swap

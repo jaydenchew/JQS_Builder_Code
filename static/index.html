@@ -246,6 +246,27 @@
         _paintCamPanel(armId, r);
     }
 
+    /* Wait until both arms' workers are back up after restart_worker.
+       Polls lastArms (refreshed by 2s WS push) at 500ms intervals.
+       Worker is "ready" when worker_status is set and not 'no_worker'/'offline'
+       (initial state of a freshly created worker before run() executes its
+       first line is 'offline'; once run() sets _running=True it becomes
+       'idle'). Caps wait at maxMs to avoid hanging the UI. */
+    async function _waitForWorkerReady(armIds, maxMs = 8000) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxMs) {
+            const allReady = armIds.every(id => {
+                const arm = lastArms.find(a => a.arm_id === id);
+                return arm && arm.worker_status &&
+                       arm.worker_status !== 'no_worker' &&
+                       arm.worker_status !== 'offline';
+            });
+            if (allReady) return true;
+            await new Promise(r => setTimeout(r, 500));
+        }
+        return false;
+    }
+
     async function doSwap(armId) {
         const sel = document.getElementById('cam-swap-sel-' + armId);
         if (!sel || !sel.value) return;
@@ -258,14 +279,16 @@
             : '';
         if (!confirm(`Swap camera between ${a.name} (cam ${a.camera_id}) and ${b.name} (cam ${b.camera_id})?${restartNote}`)) return;
         const r = await API.post('/api/monitor/arms/swap-camera', { arm_id_a: armId, arm_id_b: targetId });
-        if (r.success) {
-            toast('Cameras swapped — workers restarted');
-            camPreviewCache.delete(armId);
-            camPreviewCache.delete(targetId);
-            setTimeout(() => { renderCamPanel(armId, true); }, 1500);
-        } else {
+        if (!r.success) {
             toast(r.error || 'Swap failed', 'error');
+            return;
         }
+        toast('Cameras swapped — workers restarting…');
+        camPreviewCache.delete(armId);
+        camPreviewCache.delete(targetId);
+        if (camPanelOpen.has(armId)) _paintCamPanel(armId, null);
+        await _waitForWorkerReady([armId, targetId], 8000);
+        if (camPanelOpen.has(armId)) await renderCamPanel(armId, true);
     }
 
     async function armAction(action, armId) {
