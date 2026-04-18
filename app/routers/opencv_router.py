@@ -118,9 +118,12 @@ async def compare_screen(data: dict):
         return {"error": "Reference not found: %s/%s" % (bank_code, name)}
 
     cam = _get_cam(data.get("arm_id"))
-    current = cam.capture_rotated()
-    if current is None:
+    # 必须和 actions.execute_check_screen 走同一条路径：capture_fresh() 关闭并重开相机，
+    # 绕过 DSHOW 内部 buffer 的旧帧，保证 Builder "Test Compare" 的分数等于运行时分数。
+    frame = cam.capture_fresh()
+    if frame is None:
         return {"error": "Camera not available"}
+    current = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
     result = screen_checker.compare_screen(current, reference, threshold, roi)
     return {
