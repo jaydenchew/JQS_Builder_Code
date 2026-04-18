@@ -6,10 +6,13 @@ and runtime CHECK_SCREEN share one implementation (ORB align + masked SSIM).
 """
 import os
 import base64
+import logging
 import cv2
 from fastapi import APIRouter
 from app import camera, screen_checker
 from app.worker_manager import manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/opencv", tags=["opencv"])
 
@@ -126,6 +129,12 @@ async def compare_screen(data: dict):
     current = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
     result = screen_checker.compare_screen(current, reference, threshold, roi)
+    logger.info(
+        "Test Compare: bank=%s ref=%s arm=%s ssim=%.4f inliers=%d rot=%.2fdeg scale=%.3f valid=%.2f ms=%.0f reason=%s threshold=%.2f match=%s",
+        bank_code, name, arm_name or "-", result["ssim"], result["inliers"],
+        result["rot_deg"], result["scale"], result["valid_ratio"], result["ms"],
+        result["reason"], threshold, result["pass"],
+    )
     return {
         **result,
         "match": result["pass"],
