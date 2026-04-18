@@ -1498,7 +1498,7 @@ function renderForm(step, isNew) {
             <div id="sf-handler-steps" class="form-group full" style="display:none;"></div>
             <div class="form-group">
                 <label>Match Threshold (0-1)</label>
-                <input id="sf-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.70}" style="width:80px;">
+                <input id="sf-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.80}" style="width:80px;">
             </div>
             <div class="form-group">
                 <label>Max Retries</label>
@@ -1664,7 +1664,7 @@ function readForm() {
         s.description = JSON.stringify({
             reference: document.getElementById('sf-ref')?.value || '',
             handler_flow: document.getElementById('sf-handler')?.value || '',
-            threshold: parseFloat(document.getElementById('sf-threshold')?.value) || 0.70,
+            threshold: parseFloat(document.getElementById('sf-threshold')?.value) || 0.80,
             max_retries: parseInt(document.getElementById('sf-retries')?.value) || 3,
             roi,
         });
@@ -2105,7 +2105,7 @@ async function testOne(i) {
                 const retries = cfg.max_retries || 3;
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     const r = await API.post('/api/opencv/compare', {
-                        bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.70, roi: cfg.roi || null, arm_id: getArmId(),
+                        bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.80, roi: cfg.roi || null, arm_id: getArmId(),
                     });
                     if (r.error) { toast('Compare error: ' + r.error, 'error'); return; }
                     if (r.match) {
@@ -2195,7 +2195,7 @@ async function testAll() {
                         let matched = false;
                         for (let attempt = 1; attempt <= retries && !matched && !runAbort; attempt++) {
                             const cmp = await API.post('/api/opencv/compare', {
-                                bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.70, roi: cfg.roi || null, arm_id: getArmId(),
+                                bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.80, roi: cfg.roi || null, arm_id: getArmId(),
                             });
                             if (cmp.error) { addLog(log, `  compare error: ${cmp.error}`, 'error'); break; }
                             if (cmp.match) {
@@ -2759,7 +2759,7 @@ async function captureRef() {
 async function testCompare() {
     const ref = document.getElementById('sf-ref')?.value;
     if (!ref) { toast('Select a reference image first', 'error'); return; }
-    const threshold = parseFloat(document.getElementById('sf-threshold')?.value) || 0.70;
+    const threshold = parseFloat(document.getElementById('sf-threshold')?.value) || 0.80;
     const roiT = parseInt(document.getElementById('sf-roi-top')?.value) || 0;
     const roiB = parseInt(document.getElementById('sf-roi-bottom')?.value) || 100;
     const roiL = parseInt(document.getElementById('sf-roi-left')?.value) || 0;

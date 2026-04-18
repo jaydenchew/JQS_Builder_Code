@@ -1,30 +1,58 @@
 """屏幕检查模块 — CHECK_SCREEN action type 的执行引擎
 
-功能：
+算法：ORB 特征 + Similarity 对齐 + 对齐后 SSIM（三层门禁）
   1. 移动到拍照位，拍一张当前屏幕截图
-  2. 用 SSIM + 边缘相似度与参考图片比对
-  3. 如果匹配 → 屏幕正确，继续 flow
-  4. 如果不匹配 → 可能有弹窗，执行 handler flow 关闭弹窗，再重试
-  5. 超过最大重试次数 → 失败
+  2. ORB 在全图上提取关键点 → BFMatcher + Lowe ratio → estimateAffinePartial2D
+  3. 用 Similarity 矩阵把当前帧 warp 到参考帧坐标系
+  4. 在可选 ROI 内对已对齐的两张图做 masked SSIM
+  5. 通过条件：inliers >= MIN_INLIERS AND aligned_ssim >= threshold AND valid_ratio >= MIN_VALID_RATIO
 
 配置存储在 flow_steps.description 字段，JSON 格式：
 {
     "reference": "homepage",
     "handler_flow": "BANK__template_id",
-    "threshold": 0.85,
-    "max_retries": 3
+    "threshold": 0.80,
+    "max_retries": 3,
+    "roi": {"top_percent": 25, "bottom_percent": 90, "left_percent": 20, "right_percent": 87}
 }
+
+threshold 语义：对齐后 SSIM（0.0–1.0）。POC 验证：正例 min=0.95, 异常 max=0.60。
+min_inliers / valid_ratio 作为模块常量，不暴露到 UI。
 """
 import cv2
 import numpy as np
 import os
 import json
+import time
 import logging
 
 logger = logging.getLogger(__name__)
 
 REFERENCES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "references")
 os.makedirs(REFERENCES_DIR, exist_ok=True)
+
+
+ORB_NFEATURES = 2000
+MIN_INLIERS = 25
+DEFAULT_SSIM_THRESHOLD = 0.80
+MIN_VALID_RATIO = 0.60
+RATIO_TEST = 0.75
+SCALE_TOLERANCE = (0.85, 1.15)
+
+
+def _empty_result(reason: str, elapsed_ms: float, inliers: int = 0,
+                  rot_deg: float = 0.0, scale: float = 0.0,
+                  valid_ratio: float = 0.0, ssim: float = 0.0):
+    return {
+        "pass": False,
+        "ssim": round(ssim, 4),
+        "inliers": int(inliers),
+        "rot_deg": round(rot_deg, 2),
+        "scale": round(scale, 3),
+        "valid_ratio": round(valid_ratio, 3),
+        "ms": round(elapsed_ms, 1),
+        "reason": reason,
+    }
 
 
 def get_reference_path(bank_code: str, name: str, arm_name: str = None):
@@ -37,7 +65,7 @@ def get_reference_path(bank_code: str, name: str, arm_name: str = None):
 
 
 def load_reference(bank_code: str, name: str, arm_name: str = None):
-    """加载参考图片（支持中文路径，优先 arm 目录）"""
+    """加载参考图片（支持中文路径，优先 arm 目录）。返回 BGR ndarray 或 None。"""
     path = get_reference_path(bank_code, name, arm_name)
     if not os.path.exists(path):
         path = get_reference_path(bank_code, name)
@@ -51,44 +79,152 @@ def load_reference(bank_code: str, name: str, arm_name: str = None):
     return img
 
 
-def compare_screen(current_frame, reference, threshold=0.85, roi=None):
-    """比较当前屏幕和参考图片 (SSIM + 边缘相似度)
-    roi: {"top_percent", "bottom_percent", "left_percent", "right_percent"}
-    """
-    if current_frame is None or reference is None:
-        return False, 0.0
+def _align_similarity(ref_gray: np.ndarray, cur_gray: np.ndarray):
+    """ORB + RANSAC Similarity 对齐 current→reference 坐标系。
 
+    返回 (aligned_gray, mask_valid, inliers, rot_deg, scale) 或 None（无法对齐）。
+    """
+    if ref_gray.shape != cur_gray.shape:
+        cur_gray = cv2.resize(cur_gray, (ref_gray.shape[1], ref_gray.shape[0]))
+
+    orb = cv2.ORB_create(nfeatures=ORB_NFEATURES, scaleFactor=1.2, nlevels=8)
+    kp1, des1 = orb.detectAndCompute(ref_gray, None)
+    kp2, des2 = orb.detectAndCompute(cur_gray, None)
+
+    if des1 is None or des2 is None or len(kp1) < 10 or len(kp2) < 10:
+        return None
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    knn = bf.knnMatch(des1, des2, k=2)
+
+    good = []
+    for pair in knn:
+        if len(pair) < 2:
+            continue
+        m, n = pair
+        if m.distance < RATIO_TEST * n.distance:
+            good.append(m)
+
+    if len(good) < 4:
+        return None
+
+    src = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+
+    M, mask = cv2.estimateAffinePartial2D(
+        src, dst,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=5.0,
+        maxIters=2000,
+        confidence=0.995,
+    )
+    if M is None or mask is None:
+        return None
+
+    inliers = int(mask.sum())
+
+    a, b = float(M[0, 0]), float(M[0, 1])
+    scale = float(np.sqrt(a * a + b * b))
+    rot_deg = float(np.degrees(np.arctan2(b, a)))
+
+    h, w = ref_gray.shape
+    aligned_gray = cv2.warpAffine(cur_gray, M, (w, h), flags=cv2.INTER_LINEAR)
+    mask_valid = cv2.warpAffine(
+        np.ones_like(cur_gray, dtype=np.uint8) * 255, M, (w, h),
+        flags=cv2.INTER_NEAREST,
+    )
+    return aligned_gray, mask_valid, inliers, rot_deg, scale
+
+
+def compare_screen(current_frame, reference, threshold: float = DEFAULT_SSIM_THRESHOLD, roi=None):
+    """比较当前屏幕与参考图片（ORB 对齐 + masked SSIM）。
+
+    参数：
+        current_frame: BGR ndarray，相机捕获并已旋转的当前帧
+        reference:     BGR ndarray，来自 load_reference()
+        threshold:     对齐后 SSIM 阈值（0.0–1.0），默认 DEFAULT_SSIM_THRESHOLD
+        roi:           dict {top_percent, bottom_percent, left_percent, right_percent} 或 None
+
+    返回：dict，字段：
+        pass (bool), ssim (float), inliers (int), rot_deg (float),
+        scale (float), valid_ratio (float), ms (float),
+        reason (str)  — "match" | "popup_detected" | "wrong_screen" | "alignment_failed"
+    """
+    t0 = time.perf_counter()
+
+    if current_frame is None or reference is None:
+        return _empty_result("alignment_failed", (time.perf_counter() - t0) * 1000)
+
+    gray_ref = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+    gray_cur = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+
+    aligned = _align_similarity(gray_ref, gray_cur)
+    if aligned is None:
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.warning("CHECK_SCREEN align failed (ORB/RANSAC returned None)")
+        return _empty_result("alignment_failed", elapsed)
+
+    aligned_gray, mask_valid, inliers, rot_deg, scale = aligned
+
+    if scale < SCALE_TOLERANCE[0] or scale > SCALE_TOLERANCE[1]:
+        logger.warning(
+            "CHECK_SCREEN scale out of tolerance: scale=%.3f (expected %.2f..%.2f) — 对齐可能不稳，仅告警",
+            scale, SCALE_TOLERANCE[0], SCALE_TOLERANCE[1],
+        )
+
+    ref_roi = gray_ref
+    aligned_roi = aligned_gray
+    mask_roi = mask_valid
     if roi:
-        h, w = current_frame.shape[:2]
+        h, w = gray_ref.shape
         y1 = int(h * roi.get("top_percent", 0) / 100)
         y2 = int(h * roi.get("bottom_percent", 100) / 100)
         x1 = int(w * roi.get("left_percent", 0) / 100)
         x2 = int(w * roi.get("right_percent", 100) / 100)
         if y1 < y2 and x1 < x2:
-            current_frame = current_frame[y1:y2, x1:x2]
-            reference = reference[y1:y2, x1:x2]
+            ref_roi = gray_ref[y1:y2, x1:x2]
+            aligned_roi = aligned_gray[y1:y2, x1:x2]
+            mask_roi = mask_valid[y1:y2, x1:x2]
         else:
-            logger.warning("Invalid CHECK_SCREEN ROI: top=%d bottom=%d left=%d right=%d, using full image", y1, y2, x1, x2)
+            logger.warning(
+                "Invalid CHECK_SCREEN ROI: top=%d bottom=%d left=%d right=%d, using full image",
+                y1, y2, x1, x2,
+            )
 
-    gray_cur = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-    gray_ref = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+    valid_ratio = float((mask_roi > 0).mean()) if mask_roi.size > 0 else 0.0
 
-    if gray_ref.shape != gray_cur.shape:
-        gray_cur = cv2.resize(gray_cur, (gray_ref.shape[1], gray_ref.shape[0]))
+    if mask_roi.sum() > 0:
+        ref_masked = cv2.bitwise_and(ref_roi, ref_roi, mask=mask_roi)
+        aligned_masked = cv2.bitwise_and(aligned_roi, aligned_roi, mask=mask_roi)
+        ssim_score = _ssim(ref_masked, aligned_masked)
+    else:
+        ssim_score = 0.0
 
-    h = 320
-    w = int(h * gray_ref.shape[1] / gray_ref.shape[0])
-    r = cv2.resize(gray_ref, (w, h))
-    c = cv2.resize(gray_cur, (w, h))
+    elapsed = (time.perf_counter() - t0) * 1000
 
-    ssim = _ssim(r, c)
-    edge = _edge_similarity(r, c)
+    inliers_ok = inliers >= MIN_INLIERS
+    ssim_ok = ssim_score >= threshold
+    valid_ok = valid_ratio >= MIN_VALID_RATIO
 
-    score = 0.6 * max(0, ssim) + 0.4 * max(0, edge)
-    score = min(1.0, score)
+    if inliers_ok and ssim_ok and valid_ok:
+        reason = "match"
+    elif not inliers_ok:
+        reason = "wrong_screen"
+    elif not ssim_ok:
+        reason = "popup_detected"
+    else:
+        reason = "wrong_screen"
 
-    is_match = score >= threshold
-    return is_match, round(score, 4)
+    return {
+        "pass": bool(inliers_ok and ssim_ok and valid_ok),
+        "ssim": round(float(ssim_score), 4),
+        "inliers": int(inliers),
+        "rot_deg": round(rot_deg, 2),
+        "scale": round(scale, 3),
+        "valid_ratio": round(valid_ratio, 3),
+        "ms": round(elapsed, 1),
+        "reason": reason,
+    }
 
 
 def _ssim(img1, img2):
@@ -113,25 +249,6 @@ def _ssim(img1, img2):
     ssim_map = ((2 * mu12 + C1) * (2 * s12 + C2)) / \
                ((mu1_sq + mu2_sq + C1) * (s1_sq + s2_sq + C2))
     return float(ssim_map.mean())
-
-
-def _edge_similarity(img1, img2):
-    e1 = cv2.Canny(img1, 50, 150)
-    e2 = cv2.Canny(img2, 50, 150)
-
-    both = np.sum((e1 > 0) & (e2 > 0))
-    total = max(np.sum(e1 > 0) + np.sum(e2 > 0), 1)
-    iou = 2.0 * both / total
-
-    return float(iou)
-
-
-def capture_rotated_from(camera_instance):
-    """Capture a rotated frame from a given camera instance"""
-    frame = camera_instance.capture_frame()
-    if frame is None:
-        return None
-    return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
 
 def parse_check_config(description: str):

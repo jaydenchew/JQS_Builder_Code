@@ -235,3 +235,37 @@ For text fields (customer names, receipt status keywords), Tesseract's character
 **Why click-to-expand instead of always-visible details**: The summary pill ("Services" with one dot) takes ~80px of nav width. Showing all 4 services inline would push the nav past 600px and crowd page navigation links. Click-to-expand keeps the nav lean while preserving full detail one click away. Hover tooltip provides a quick read without a click.
 
 **Why 30s polling, not WebSocket push**: Service status changes infrequently (a tunnel/MySQL going down is rare). `/api/monitor/services` runs four short health checks (DB query, HTTP HEAD, sc.exe query, in-process uptime) — cheap to run but pointless to push more often than needed. WebSocket would also need every page to maintain the connection just to show 4 dots, which is wasteful.
+
+---
+
+## DD-022: CHECK_SCREEN Uses ORB+Similarity Align, Not Homography, Pure ORB, or OCR
+
+**What**: `screen_checker.compare_screen()` uses **ORB feature match → RANSAC Similarity transform (4 DoF) → warpAffine → masked SSIM**. A three-tier gate (`inliers >= 25 AND aligned_ssim >= threshold AND valid_ratio >= 0.60`) decides pass/fail. `reason` ∈ `{"match", "popup_detected", "wrong_screen", "alignment_failed"}` is attached to every result for diagnosis.
+
+**Why align-then-compare instead of direct SSIM/edge** (the old implementation): Real-world phone-rack photos drift a few pixels between pick-up/put-down even in a fixed cradle. Pixel-locked SSIM penalizes that drift linearly, so a correctly-displayed page reads SSIM ~0.5 on a good day, ~0.3 on a bad day. POC on 21 real rack photos: old algorithm passed 0/21, new algorithm passed 18/18 and correctly rejected 3/3 wrong pages. The algorithm change is not a tuning adjustment — it's an algorithmic correction for a physical reality the old algorithm couldn't compensate for.
+
+**Why Similarity (4 DoF), not Homography (8 DoF)**: The physical setup is a fixed camera on a fixed mount pointing at a phone in a fixed cradle. The only possible displacement modes are:
+- Translation (phone shifted a few mm in cradle) — 2 DoF
+- Rotation (phone picked up tilted then replaced) — 1 DoF
+- Uniform scale (camera/phone distance changed microscopically) — 1 DoF
+
+Perspective distortion requires the camera plane to rotate relative to the phone plane, which cannot happen in this rig. Homography fits 4 extra DoF the data cannot support; on noisy ORB matches it produces trapezoidal distortions that warp a correct phone screen into a quadrilateral and blow up `valid_ratio`. POC observation: on a deliberately-wrong `test06`, Homography warped the phone image into a clearly non-physical shape while Similarity cleanly refused to fit (low inliers), which is the correct outcome.
+
+**Why three gates, not just inliers**: Pure ORB+RANSAC inliers is robust to movement but fooled by two structurally-similar pages. POC negative case: a different in-app screen on the same phone hit 41 inliers (would PASS at `MIN_INLIERS=25`). Adding the SSIM gate on the aligned images cleanly catches it (SSIM = 0.58, rejected). Conversely, pure SSIM even on aligned images is fooled by popups that preserve most of the page pixels. So each gate has an irreducible job:
+- `inliers >= 25` — "this is the correct page" (structure)
+- `aligned_ssim >= threshold` — "the correct page isn't obscured" (content)
+- `valid_ratio >= 0.60` — "alignment covered enough of the ROI to trust the SSIM result" (quality check)
+
+Any single-gate approach has a known failure mode; the dual-gate (inliers + SSIM) matches the two operational failure modes we see in practice (wrong page vs popup). `valid_ratio` is a cheap third safety net, mostly guarding against degenerate transforms.
+
+**Why not OCR as a CHECK_SCREEN signal**: POC `test07` was a correct page with a popup overlay. OCR read un-obscured background text (the popup covered ~35% of the page, text outside still matched the expected keywords) and returned PASS. The whole point of `CHECK_SCREEN` is catching popups before the robot arm clicks through them; a signal that silently accepts popups is worse than useless. OCR stays for `OCR_VERIFY` (explicit text-content check) — it's the wrong tool for "is this the right unobstructed page".
+
+**Why ORB runs on the full image, not inside the ROI**: Counterintuitive but measured. The phone bezel and fixed UI chrome (status bar, nav bar) are the most reliable alignment anchors — they don't change between screens. User-configurable ROI is the interesting content region, typically the middle 65% of the page, which in negative cases has nearly-identical structure to the reference. Extracting ORB features only inside the ROI cuts keypoints by ~70% and makes RANSAC unstable. The algorithm runs ORB on the full image, applies the Similarity transform to the full image, and only scopes the SSIM comparison to the ROI. This way ROI still does its job (ignore dynamic zones) without starving the aligner.
+
+**Why thresholds are module constants, not DB/UI fields** (`MIN_INLIERS=25`, `MIN_VALID_RATIO=0.60`, `RATIO_TEST=0.75`, `SCALE_TOLERANCE=(0.85, 1.15)`): They are engineering invariants of the algorithm, not operational knobs. An operator tuning `min_inliers` to 5 because "it keeps failing" would be defeating the wrong-screen gate entirely and is almost certainly the wrong fix. The only operator-tunable knob is `threshold` (aligned SSIM), because that's the one threshold that genuinely varies per-page (a text-heavy page rests around 0.95, a mostly-blank page can dip to 0.85). Everything else is either a RANSAC parameter or a sanity check on the algorithm's output.
+
+**Why return a rich dict instead of (bool, float)**: The tuple loses diagnostics that are expensive to recover after the fact. `inliers` distinguishes "wrong page" from "correct page, popup on top" — same SSIM, different reasons, different operator response. `rot_deg` is a leading indicator of the cradle drifting (if rot creeps from 0.1° to 2° over a week, the cradle needs re-seating; catch it before it breaks). `ms` is free performance monitoring. The dict is self-documenting, the tuple unpacking at call sites was only marginally shorter, and only 2 call sites had to change. HTTP response keeps `match`/`score`/`threshold` aliases so frontend JS is zero-touch.
+
+**What this does NOT change**: `execute_check_screen` control flow is identical — still retries up to `max_retries`, still calls `handler_flow` between retries, still raises `RuntimeError` on final failure. `reason` is logged and stored but does not branch. Smarter stall classification (e.g., route `reason=popup_detected` to handler-retry but `reason=wrong_screen` straight to stall) is a future, opt-in change on top of the data now being captured.
+
+**Rollback**: Single-file revert of `app/screen_checker.py` + `app/actions.py` unpacker + `app/routers/opencv_router.py` delegate + `static/recorder.html` defaults. No schema, env var, or API contract changes. Stored `flow_steps.description` JSON is forward-compatible (old `threshold=0.70` still works, just overly loose, which CHANGELOG flags).

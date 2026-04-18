@@ -1,5 +1,56 @@
 # Changelog
 
+## CHECK_SCREEN: ORB Align + Masked SSIM replaces SSIM+edge (2026-04-18)
+
+### Problem
+Production `CHECK_SCREEN` used full-image SSIM (0.6) + Canny edge IoU (0.4). On real phone-rack photos SSIM drops to ~0.5 because of physical-world factors the algorithm can't compensate for:
+- Phone moves a few pixels between pick-up/put-down (even in fixed cradle)
+- Moire patterns from camera-to-LCD, varying with micro-angle shifts
+- Ambient light fluctuations between morning/afternoon
+- Edge IoU amplifies pixel-level jitter instead of smoothing it
+
+Field symptom: runs stalled at `screen mismatch after 3 attempts (best score=0.52)` even when the page was visually correct. User turned off ROI because "putting the phone back even slightly offset kills it". ROI narrower than full image made it worse, not better.
+
+### Fix
+Replaced the algorithm with **ORB feature match → RANSAC Similarity transform → warp → masked SSIM** (three-tier gate):
+
+1. **ORB (2000 features) on full image** — phone bezel and fixed UI chrome are the best alignment anchors, never crop before feature extraction
+2. **BFMatcher + Lowe ratio 0.75 → `cv2.estimateAffinePartial2D`** — Similarity (4 DoF: tx/ty/rot/uniform scale), not Homography, because the physical setup is a fixed cradle + fixed camera, perspective distortion is impossible
+3. **`cv2.warpAffine` current → reference coords** with a parallel mask warp for the valid-pixel region
+4. **ROI applied AFTER alignment**, only to scope the SSIM comparison region
+5. **Gate**: `inliers >= 25 AND aligned_ssim >= threshold AND valid_ratio >= 0.60`
+
+### Return value upgrade: tuple → dict
+`screen_checker.compare_screen()` now returns a rich dict:
+```python
+{"pass": bool, "ssim": float, "inliers": int, "rot_deg": float,
+ "scale": float, "valid_ratio": float, "ms": float, "reason": str}
+```
+`reason` ∈ `{"match", "popup_detected", "wrong_screen", "alignment_failed"}` — diagnostic only for now (not driving new control flow), but unblocks future smarter stall classification.
+
+HTTP response at `/api/opencv/compare` keeps `match` / `score` / `threshold` aliases so `recorder.html` JS consumers (`r.match`, `r.score`, `r.threshold`) stay zero-touch.
+
+### POC validation (21 real phone-rack photos in `ORB+OCR/`)
+- Old SSIM+edge: 0/21 pass rate (SSIM ~0.52 on correct page)
+- New Align+Diff: 18/18 correct-page pass, 3/3 wrong-page reject — including 1° and 3° rotation perturbations simulating pick-up/put-down
+- Median runtime: ~31 ms per compare (faster than old edge+SSIM due to aggressive ORB keypoint cap)
+- Wrong-page detection is now dual-gate: `test06` (different page, 22 inliers) rejects on inliers gate; popup cases reject on SSIM gate with `reason=popup_detected`
+
+### Operator action required after deploy
+The `threshold` semantic changed from "0.6×SSIM + 0.4×edge composite" to "aligned SSIM". Old `threshold=0.70` values will still work but are overly loose (negatives can slip through at 0.60). **Recommended: re-save any existing CHECK_SCREEN steps in Builder or manually change stored thresholds to 0.80** (the new default).
+
+### Files
+- `app/screen_checker.py` — full rewrite of `compare_screen`, added `_align_similarity`, 6 module constants (`ORB_NFEATURES=2000`, `MIN_INLIERS=25`, `DEFAULT_SSIM_THRESHOLD=0.80`, `MIN_VALID_RATIO=0.60`, `RATIO_TEST=0.75`, `SCALE_TOLERANCE=(0.85, 1.15)`), removed dead `_edge_similarity` and `capture_rotated_from`
+- `app/actions.py` — `execute_check_screen` default threshold 0.85→`screen_checker.DEFAULT_SSIM_THRESHOLD`, dict unpack, enriched log (`ssim=X.XXXX inliers=N rot=X.XXdeg reason=...`), `transaction_logs.message` now stores JSON with 9 fields (same pattern as OCR observability, since table has no `details` column)
+- `app/routers/opencv_router.py` — `/compare` now delegates to `screen_checker.compare_screen`; removed 4 local dupes (`_compare_grayscale` / `_ssim` / `_edge_similarity` / `_crop_roi`); default threshold aligned to module constant. Fixes a pre-existing inconsistency where Builder "Test Compare" used 0.8/0.2 SSIM/edge weights while runtime used 0.6/0.4
+- `static/recorder.html` — 5 threshold defaults 0.70→0.80 (lines 1501/1667/2108/2198/2762). No field ID / JSON schema changes
+- `DESIGN_DECISIONS.md` — added DD-022
+- `ARCHITECTURE_PLAN.md` — tech-stack line updated
+
+### No schema change, no env var, no UI field change — single `git revert` rolls back.
+
+---
+
 ## Camera Verify/Swap Hardening — Post-review Fixes (2026-04-17)
 
 Follow-up to commit `6f69568` addressing three concerns raised in code review:

@@ -209,7 +209,7 @@ Builder_JQS_Code/
 │   │
 │   ├── actions.py             步骤执行器 (全部非阻塞, executor 参数)
 │   ├── keyboard_engine.py     智能键盘引擎 (非阻塞)
-│   ├── screen_checker.py      屏幕比对 (SSIM + 边缘)
+│   ├── screen_checker.py      屏幕比对 (ORB 对齐 + SSIM diff)
 │   ├── ocr.py                 可配置 OCR (字段可选 + receipt status)
 │   ├── (stall_detector.py 已删除 — 零调用，stall 由 arm_worker OCR 分支处理)
 │   ├── pas_client.py          PAS HTTP 回调

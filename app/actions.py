@@ -280,6 +280,7 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
 
 
 async def execute_check_screen(step, bank_code, station_id, transaction, password, arm=None, cam=None, executor=None):
+    import json as _json
     from app import screen_checker
 
     a = _arm(arm)
@@ -291,7 +292,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
         return True
 
     ref_name = config["reference"]
-    threshold = config.get("threshold", 0.85)
+    threshold = config.get("threshold", screen_checker.DEFAULT_SSIM_THRESHOLD)
     max_retries = config.get("max_retries", 3)
     handler_flow = config.get("handler_flow", "")
     roi = config.get("roi")
@@ -307,6 +308,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
 
     start_time = time.time()
     score = 0.0
+    last_result = None
 
     for attempt in range(1, max_retries + 1):
         frame = await _hw(executor, c.capture_fresh)
@@ -316,18 +318,35 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
             continue
 
         current = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        is_match, score = screen_checker.compare_screen(current, reference, threshold, roi)
-        logger.info("CHECK_SCREEN: attempt %d/%d, score=%.4f, threshold=%.2f, match=%s",
-                     attempt, max_retries, score, threshold, is_match)
+        result = screen_checker.compare_screen(current, reference, threshold, roi)
+        last_result = result
+        is_match = result["pass"]
+        score = result["ssim"]
+        logger.info(
+            "CHECK_SCREEN: attempt %d/%d, ssim=%.4f inliers=%d rot=%.2fdeg valid=%.2f reason=%s threshold=%.2f match=%s",
+            attempt, max_retries, result["ssim"], result["inliers"], result["rot_deg"],
+            result["valid_ratio"], result["reason"], threshold, is_match,
+        )
 
         if is_match:
             duration_ms = int((time.time() - start_time) * 1000)
+            ok_msg = _json.dumps({
+                "ssim": result["ssim"],
+                "inliers": result["inliers"],
+                "rot_deg": result["rot_deg"],
+                "scale": result["scale"],
+                "valid_ratio": result["valid_ratio"],
+                "ms": result["ms"],
+                "reason": result["reason"],
+                "attempt": attempt,
+                "threshold": threshold,
+            })
             await database.execute(
                 """INSERT INTO transaction_logs
                 (transaction_id, step_number, step_name, action_type, result, duration_ms, message)
                 VALUES (%s, %s, %s, 'CHECK_SCREEN', 'ok', %s, %s)""",
                 (transaction["id"], step["step_number"], step["step_name"],
-                 duration_ms, "score=%.4f (attempt %d)" % (score, attempt))
+                 duration_ms, ok_msg)
             )
             return True
 
@@ -343,16 +362,33 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
 
     duration_ms = int((time.time() - start_time) * 1000)
     fail_screenshot = await _hw(executor, c.capture_base64)
+    fail_meta = {
+        "best_ssim": score,
+        "attempts": max_retries,
+        "threshold": threshold,
+    }
+    if last_result is not None:
+        fail_meta.update({
+            "inliers": last_result["inliers"],
+            "rot_deg": last_result["rot_deg"],
+            "scale": last_result["scale"],
+            "valid_ratio": last_result["valid_ratio"],
+            "ms": last_result["ms"],
+            "reason": last_result["reason"],
+        })
+    fail_msg = _json.dumps(fail_meta)
     await database.execute(
         """INSERT INTO transaction_logs
         (transaction_id, step_number, step_name, action_type, result, duration_ms, screenshot_base64, message)
         VALUES (%s, %s, %s, 'CHECK_SCREEN', 'fail', %s, %s, %s)""",
         (transaction["id"], step["step_number"], step["step_name"],
-         duration_ms, fail_screenshot,
-         "screen mismatch after %d attempts (best score=%.4f)" % (max_retries, score))
+         duration_ms, fail_screenshot, fail_msg)
     )
-    raise RuntimeError("CHECK_SCREEN failed: screen does not match '%s' after %d attempts (score=%.4f)"
-                       % (ref_name, max_retries, score))
+    reason = last_result["reason"] if last_result else "no_frame"
+    raise RuntimeError(
+        "CHECK_SCREEN failed: screen does not match '%s' after %d attempts (best_ssim=%.4f reason=%s)"
+        % (ref_name, max_retries, score, reason)
+    )
 
 
 async def _run_handler_flow(handler_flow_ref: str, bank_code: str, station_id: int,
