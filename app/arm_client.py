@@ -99,16 +99,20 @@ class ArmClient:
     def swipe(self, sx, sy, ex, ey):
         self.move(sx, sy)
         self.press()
-        time.sleep(0.1)
-        # 终点移动与抬笔合并成一条指令 "x<ex>y<ey>z0"，笔尖必须在滑动的同一瞬间抬起，
-        # 否则触屏会把"到终点 → 停顿 → 抬起"识别成长按/拖拽而不是 swipe，导致 gesture 失败。
+        # 按下后停 500ms，让屏幕完成 touch-down 识别（原来 100ms 太短，屏幕来不及注册就开始滑动）
+        time.sleep(0.5)
+        # 终点移动 + 抬笔：两条指令连发，中间不 Python-sleep。固件有命令队列，
+        # z0 会在 x/y 到位的那一瞬间被 pop 出来执行，既保证笔物理到达终点（slide-to-confirm
+        # 等末端敏感控件需要），又没有 Python 侧停顿窗口（swipe gesture 要求抬起前仍在动）。
+        # 注意不能用合并指令 "x<ex>y<ey>z0"，那是三轴同步运动，z 会在 x/y 到终点前就上升。
         fx, fy = float(ex), float(ey)
-        self.call_arm(0, self.get_resource(), "x%sy%sz0" % (ex, ey))
+        self.call_arm(0, self.get_resource(), "x%sy%s" % (ex, ey))
+        self.call_arm(0, self.get_resource(), "z0")
         dist = math.sqrt((fx - self._last_x) ** 2 + (fy - self._last_y) ** 2)
-        move_wait = max(self.move_delay, dist * 0.015)
+        wait = max(self.move_delay, dist * 0.015)
         self._pos_x, self._pos_y = fx, fy
         self._last_x, self._last_y = fx, fy
-        time.sleep(max(move_wait, self.press_delay))
+        time.sleep(wait + self.press_delay)
 
     def reset_to_origin(self):
         self.call_arm(0, self.get_resource(), "x0y0z0")
