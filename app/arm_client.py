@@ -99,8 +99,9 @@ class ArmClient:
     def swipe(self, sx, sy, ex, ey):
         self.move(sx, sy)
         self.press()
-        # 按下后停 500ms，让屏幕完成 touch-down 识别（原来 100ms 太短，屏幕来不及注册就开始滑动）
-        time.sleep(0.5)
+        # 按下后停 300ms，让屏幕完成 touch-down 识别（落在 Android TAP_TIMEOUT=100ms 与
+        # DEFAULT_LONG_PRESS_TIMEOUT=400ms 之间的安全窗口，既够识别也不会误触发长按）。
+        time.sleep(0.3)
         # 终点移动 + 抬笔：两条指令连发，中间不 Python-sleep。固件有命令队列，
         # z0 会在 x/y 到位的那一瞬间被 pop 出来执行，既保证笔物理到达终点（slide-to-confirm
         # 等末端敏感控件需要），又没有 Python 侧停顿窗口（swipe gesture 要求抬起前仍在动）。
