@@ -100,9 +100,15 @@ class ArmClient:
         self.move(sx, sy)
         self.press()
         time.sleep(0.1)
-        self.move(ex, ey)
-        time.sleep(0.1)
-        self.lift()
+        # 终点移动与抬笔合并成一条指令 "x<ex>y<ey>z0"，笔尖必须在滑动的同一瞬间抬起，
+        # 否则触屏会把"到终点 → 停顿 → 抬起"识别成长按/拖拽而不是 swipe，导致 gesture 失败。
+        fx, fy = float(ex), float(ey)
+        self.call_arm(0, self.get_resource(), "x%sy%sz0" % (ex, ey))
+        dist = math.sqrt((fx - self._last_x) ** 2 + (fy - self._last_y) ** 2)
+        move_wait = max(self.move_delay, dist * 0.015)
+        self._pos_x, self._pos_y = fx, fy
+        self._last_x, self._last_y = fx, fy
+        time.sleep(max(move_wait, self.press_delay))
 
     def reset_to_origin(self):
         self.call_arm(0, self.get_resource(), "x0y0z0")
