@@ -130,6 +130,46 @@ ngrok http 9000
 ```
 URL changes on every restart. Not suitable for production.
 
+### Multi-machine deployment (wa2 / wa3 / ...)
+
+When deploying a second (or third) machine on the same Cloudflare account, each machine needs its own tunnel and hostname. The first machine uses `wa-system` + `wa.evolution-x.io`; additional machines must use distinct names.
+
+**On the new machine (as Administrator PowerShell):**
+
+```powershell
+# 1. One-time Cloudflare auth (browser popup)
+cloudflared tunnel login
+
+# 2. Create a NEW tunnel with a distinct name (e.g., wa2-system for the 2nd machine)
+cloudflared tunnel create wa2-system
+
+# 3. Route the new hostname to the new tunnel.
+#    If wa2.evolution-x.io was previously pointed at another tunnel on your
+#    Cloudflare account (common when reusing subdomains), you MUST add
+#    --overwrite-dns or the route stays pointing at the old tunnel:
+cloudflared tunnel route dns --overwrite-dns wa2-system wa2.evolution-x.io
+```
+
+**Then edit `deploy/install_tunnel.ps1`:**
+
+Change line near the top:
+```powershell
+$HOSTNAME = "wa.evolution-x.io"
+```
+to the new host:
+```powershell
+$HOSTNAME = "wa2.evolution-x.io"
+```
+
+**Then run:** right-click `deploy/install_tunnel.bat` → Run as Administrator.
+
+Verify: `curl https://wa2.evolution-x.io/health` returns 200.
+
+**Common pitfalls:**
+- `wa2.evolution-x.io is already configured to route to your tunnel tunnelID=<old-uuid>` during step 3 means the hostname was previously routed to another tunnel on your account. Re-run with `--overwrite-dns` to force re-route.
+- `nssm.exe: Can't open service!` red text on first install is **harmless** — the install script tries to stop/remove an existing service before creating a fresh one; on a clean machine the stop/remove just has nothing to act on, but NSSM prints to stderr anyway. As long as the final line says `Service status: RUNNING`, it succeeded.
+- `Cannot establish a connection to the service control manager: Access is denied` means PowerShell wasn't launched as Administrator. Close it and open a new PowerShell with **Run as Administrator**.
+
 ## 3. Service Startup Order
 
 On machine boot, services should start in this order:
