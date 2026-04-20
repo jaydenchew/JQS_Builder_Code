@@ -9,18 +9,17 @@ db/seed_*.sql
 !db/seed.example.sql
 
 # 大文件 / 二进制
+# ngrok 是每台机器自己配（登录 token / 隧道 URL 不同），保持忽略
 ngrok.exe
 ngrok-*.zip
-models/
-references/
-arm_service/service/*.exe
-arm_service/service/*.dll
+# 下列运行时产物不跟踪：.pdb 是调试符号（安装不需要），
+# .InstallLog/.InstallState 是 InstallUtil 每次安装生成的记录
 arm_service/service/*.pdb
 arm_service/service/*.InstallLog
 arm_service/service/*.InstallState
-deploy/nssm.exe
-deploy/nssm-*.zip
-deploy/tesseract-setup.exe
+# 注意：models/、references/、arm_service/service/*.exe、*.dll、deploy/nssm.exe、
+# deploy/tesseract-setup.exe、arm_service/VC_redist.x86.exe 全部纳入跟踪，
+# 新机器 git clone 后即可直接 deploy/install_service.bat 完成安装。
 
 # Python 缓存
 __pycache__/
