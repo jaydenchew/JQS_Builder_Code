@@ -28,16 +28,16 @@ DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates 
 DELETE FROM flow_templates WHERE bank_code = 'ABA_SLIDE_RETRY' AND arm_id = @arm_id;
 
 -- Template: ABA_SLIDE_RETRY Transfer Flow (ABA_SLIDE_RETRY)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('ABA_SLIDE_RETRY', @arm_id, 'ABA_SLIDE_RETRY Transfer Flow', NULL, 'always_decimal');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('ABA_SLIDE_RETRY', @arm_id, 'ABA_SLIDE_RETRY Transfer Flow', NULL, 'always_decimal', 1);
 SET @handler_1_id = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
   (@handler_1_id, 1, 'swipe_retry', 'SWIPE', NULL, NULL, 'swipe_retry', NULL, 0, 0, NULL);
 
 -- Template: ABA Same Bank Transfer Flow (ABA)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('ABA', @arm_id, 'ABA Same Bank Transfer Flow', 'SAME', 'always_decimal');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('ABA', @arm_id, 'ABA Same Bank Transfer Flow', 'SAME', 'always_decimal', 19);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES

@@ -26,8 +26,8 @@ DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates 
 DELETE FROM flow_templates WHERE bank_code = 'MBB' AND arm_id = @arm_id;
 
 -- Template: MBB Same Bank Transfer Flow (MBB)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('MBB', @arm_id, 'MBB Same Bank Transfer Flow', 'SAME', 'no_dot');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('MBB', @arm_id, 'MBB Same Bank Transfer Flow', 'SAME', 'no_dot', 27);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
@@ -60,8 +60,8 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_1, 27, 'done', 'ARM_MOVE', 'done', NULL, NULL, NULL, 0, 0, NULL);
 
 -- Template: MBB Interbank Transfer Flow (MBB)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('MBB', @arm_id, 'MBB Interbank Transfer Flow', 'INTER', 'no_dot');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('MBB', @arm_id, 'MBB Interbank Transfer Flow', 'INTER', 'no_dot', 33);
 SET @tpl_2 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES

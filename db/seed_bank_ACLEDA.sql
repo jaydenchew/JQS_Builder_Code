@@ -28,8 +28,8 @@ DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates 
 DELETE FROM flow_templates WHERE bank_code = 'ACLEDA_AFTER_POPUP' AND arm_id = @arm_id;
 
 -- Template: ACLEDA_AFTER_POPUP Transfer Flow (ACLEDA_AFTER_POPUP)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('ACLEDA_AFTER_POPUP', @arm_id, 'ACLEDA_AFTER_POPUP Transfer Flow', NULL, NULL);
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('ACLEDA_AFTER_POPUP', @arm_id, 'ACLEDA_AFTER_POPUP Transfer Flow', NULL, NULL, 2);
 SET @handler_1_id = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
@@ -37,8 +37,8 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@handler_1_id, 2, 'close_popup', 'CLICK', 'close_popup', NULL, NULL, NULL, 0, 2000, NULL);
 
 -- Template: ACLEDA Transfer Flow (ACLEDA)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('ACLEDA', @arm_id, 'ACLEDA Transfer Flow', 'SAME', 'always_decimal');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('ACLEDA', @arm_id, 'ACLEDA Transfer Flow', 'SAME', 'always_decimal', 18);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
@@ -62,8 +62,8 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_1, 18, 'done', 'ARM_MOVE', 'done', NULL, NULL, NULL, 0, 0, NULL);
 
 -- Template: ACLEDA Interbank Transfer Flow (ACLEDA)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('ACLEDA', @arm_id, 'ACLEDA Interbank Transfer Flow', 'INTER', 'always_decimal');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('ACLEDA', @arm_id, 'ACLEDA Interbank Transfer Flow', 'INTER', 'always_decimal', 24);
 SET @tpl_2 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES

@@ -26,8 +26,8 @@ DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates 
 DELETE FROM flow_templates WHERE bank_code = 'WINGBANK' AND arm_id = @arm_id;
 
 -- Template: WINGBANK Transfer Flow (WINGBANK)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('WINGBANK', @arm_id, 'WINGBANK Transfer Flow', 'SAME', 'always_decimal');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('WINGBANK', @arm_id, 'WINGBANK Transfer Flow', 'SAME', 'always_decimal', 19);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES

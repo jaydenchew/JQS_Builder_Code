@@ -64,7 +64,7 @@ def int_or_null(v):
 def fetch_template(bank_code: str, arm_id: int):
     """Return list of templates (dicts) for a given bank+arm."""
     raw = run_mysql(
-        "SELECT id, name, transfer_type, amount_format "
+        "SELECT id, name, transfer_type, amount_format, total_steps "
         "FROM flow_templates WHERE bank_code='%s' AND arm_id=%d ORDER BY id;"
         % (bank_code, arm_id)
     )
@@ -73,11 +73,14 @@ def fetch_template(bank_code: str, arm_id: int):
         if not line.strip():
             continue
         parts = line.split("\t")
+        while len(parts) < 5:
+            parts.append("")
         templates.append({
             "id": int(parts[0]),
             "name": parts[1],
             "transfer_type": parts[2],
             "amount_format": parts[3],
+            "total_steps": parts[4],
         })
     return templates
 
@@ -139,21 +142,23 @@ def resolve_handler_template(handler_ref: str):
         return None
     src_id = int(parts[1])
     raw = run_mysql(
-        "SELECT id, bank_code, name, IFNULL(transfer_type, ''), IFNULL(amount_format, '') "
+        "SELECT id, bank_code, name, IFNULL(transfer_type, ''), IFNULL(amount_format, ''), "
+        "IFNULL(total_steps, 0) "
         "FROM flow_templates WHERE id=%d;" % src_id
     ).strip()
     if not raw:
         return None
     parts = raw.split("\t")
     # Pad in case trailing empty columns are dropped by mysql -B output
-    while len(parts) < 5:
-        parts.append("")
+    while len(parts) < 6:
+        parts.append("0")
     return {
         "id": int(parts[0]),
         "bank_code": parts[1],
         "name": parts[2],
         "transfer_type": parts[3],
         "amount_format": parts[4],
+        "total_steps": parts[5],
     }
 
 
@@ -213,13 +218,14 @@ def emit_template_block(lines, var_name, template, steps, handler_var_map):
     """Append SQL for one (template, steps) pair to `lines`."""
     lines.append("-- Template: %s (%s)" % (template["name"], template.get("bank_code", "")))
     lines.append(
-        "INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES\n"
-        "  (%s, @arm_id, %s, %s, %s);"
+        "INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES\n"
+        "  (%s, @arm_id, %s, %s, %s, %s);"
         % (
             quote(template["bank_code"]),
             quote(template["name"]),
             quote(template["transfer_type"]),
             quote(template["amount_format"]),
+            int_or_null(template.get("total_steps")),
         )
     )
     lines.append("SET %s = LAST_INSERT_ID();" % var_name)

@@ -26,8 +26,8 @@ DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates 
 DELETE FROM flow_templates WHERE bank_code = 'CIMB' AND arm_id = @arm_id;
 
 -- Template: CIMB Same Bank Transfer Flow (CIMB)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('CIMB', @arm_id, 'CIMB Same Bank Transfer Flow', 'SAME', 'no_dot');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('CIMB', @arm_id, 'CIMB Same Bank Transfer Flow', 'SAME', 'no_dot', 35);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
@@ -68,8 +68,8 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_1, 35, 'done', 'ARM_MOVE', 'done', NULL, NULL, NULL, 0, 0, NULL);
 
 -- Template: CIMB Interbank Transfer Flow (CIMB)
-INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format) VALUES
-  ('CIMB', @arm_id, 'CIMB Interbank Transfer Flow', 'INTER', 'no_dot');
+INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
+  ('CIMB', @arm_id, 'CIMB Interbank Transfer Flow', 'INTER', 'no_dot', 41);
 SET @tpl_2 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
