@@ -386,6 +386,7 @@
                 </details>
                 <div class="btn-group" style="margin-top:8px;">
                     <button class="btn btn-success btn-sm" onclick="autoFillRows()" title="Record first & last key of each row, then auto-fill the rest">Auto-fill Rows</button>
+                    <button class="btn btn-danger btn-sm" onclick="resetKb()" title="Delete all recorded keys for this keyboard and start fresh">Reset</button>
                     <button class="btn btn-primary btn-sm" onclick="saveKb()">Save & Close</button>
                     <button class="btn btn-secondary btn-sm" onclick="closeKb()">Cancel</button>
                 </div>
@@ -1381,9 +1382,9 @@ function renderForm(step, isNew) {
         extra = `<div class="form-group full">
             <label>Keyboard Name (each TYPE step uses a different keyboard)</label>
             <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
-                <select id="sf-kb" style="width:120px;"><option value="">-- existing --</option>${kbOpts}</select>
-                <input id="sf-kb-new" placeholder="or new name" style="width:110px;">
-                <select id="sf-kb-cat" style="width:170px;">
+                <select id="sf-kb" style="width:120px;" onchange="syncKbCategory()"><option value="">-- existing --</option>${kbOpts}</select>
+                <input id="sf-kb-new" placeholder="or new name" style="width:110px;" oninput="syncKbCategory()">
+                <select id="sf-kb-cat" style="width:170px;" title="Locked when editing an existing keyboard. Click Reset inside the recorder to change category.">
                     <option value="system_keypad">Simple: System Keypad</option>
                     <option value="app_keypad">Simple: App Keypad</option>
                     <option value="system_keyboard">Simple: System KB</option>
@@ -1600,6 +1601,9 @@ function renderForm(step, isNew) {
             const w = document.getElementById('sf-fixed-wrap'); if (w) w.style.display = 'block';
             const f = document.getElementById('sf-fixed-text'); if (f) f.value = step.description || '';
         }
+        // When editing an existing TYPE step, sync the category dropdown to
+        // whatever was stored for this keyboard and lock it.
+        syncKbCategory();
     }
     if (step.action_type === 'CHECK_SCREEN') {
         let cfg = {};
@@ -2474,6 +2478,78 @@ function closeKb() {
     document.getElementById('kb-cam').src = '';
 }
 
+// Wipe all recorded data for the currently-open keyboard and clear the
+// in-modal state so the operator can immediately re-record. Category is
+// re-enabled in the step-config form after reset because the keyboard no
+// longer exists in the DB.
+async function resetKb() {
+    if (!S.kbType) return;
+    if (!confirm(`Delete ALL recorded data for keyboard "${S.kbType}" and start fresh? This cannot be undone.`)) return;
+    const url = `/api/coords/keymap-full/${encodeURIComponent(S.bank)}/${S.station}/${encodeURIComponent(S.kbType)}`;
+    const r = await API.del(url);
+    if (r && r.error) { toast('Reset failed: ' + r.error, 'error'); return; }
+    delete S.keymaps[S.kbType];
+    S.kbKeys = {};
+    if (S.kbPages) {
+        for (const pn of Object.keys(S.kbPages)) {
+            S.kbPages[pn].keys = {};
+        }
+    }
+    if (S.kbMultiPage) renderKbPageTabs();
+    renderKbGrid();
+    renderKbTable();
+    autoPickNextKey();
+    syncKbCategory();
+    toast(`Keyboard "${S.kbType}" reset. Ready to re-record.`);
+}
+
+// Lock / unlock the step-form category dropdown (sf-kb-cat) based on
+// whether the selected keyboard name already exists in DB AND has a
+// category stored. Legacy keyboards recorded before the category-lock
+// feature have no category in DB; those stay unlocked so the operator
+// can pick one, and it will be persisted on the next Save (natural
+// migration). New / cleared name: re-enable.
+async function syncKbCategory() {
+    const cat = document.getElementById('sf-kb-cat');
+    const kbSel = document.getElementById('sf-kb');
+    const kbNew = document.getElementById('sf-kb-new');
+    if (!cat || !kbSel) return;
+    const existingName = kbSel.value;
+    const newName = kbNew ? kbNew.value.trim() : '';
+    if (!existingName || newName) {
+        // New keyboard or name cleared -> user picks the category fresh
+        cat.disabled = false;
+        cat.style.opacity = '';
+        return;
+    }
+    // Existing keyboard selected: try to fetch saved category.
+    let foundCategory = null;
+    try {
+        const cfg = await API.get(
+            `/api/coords/keyboard-configs/${encodeURIComponent(S.bank)}/${S.station}/${encodeURIComponent(existingName)}`
+        );
+        if (cfg && !cfg.error && cfg.config) {
+            const parsed = typeof cfg.config === 'string' ? JSON.parse(cfg.config) : cfg.config;
+            if (parsed && parsed.category) {
+                foundCategory = parsed.category;
+            }
+        }
+    } catch (e) { /* treat as "no category found" */ }
+
+    if (foundCategory) {
+        // New-schema keyboard: lock to its stored category.
+        cat.value = foundCategory;
+        cat.disabled = true;
+        cat.style.opacity = '0.6';
+    } else {
+        // Legacy keyboard with no stored category: stay unlocked so the
+        // operator can pick the right one. Next Save persists it, and
+        // subsequent opens will then be locked.
+        cat.disabled = false;
+        cat.style.opacity = '';
+    }
+}
+
 function renderKbPageTabs() {
     if (!S.kbPages) return;
     document.getElementById('kb-page-btns').innerHTML = Object.entries(S.kbPages).map(([pn, pd]) => {
@@ -2645,14 +2721,21 @@ async function saveKb() {
 async function saveKbSimple() {
     const keys = Object.entries(S.kbKeys).map(([c, p]) => ({ char: c, x: p.x, y: p.y }));
     if (!keys.length) { toast('No keys recorded', 'error'); return; }
+    // Persist the category alongside the keymap so that re-opening this
+    // keyboard in Builder can lock the category dropdown to the value
+    // originally chosen. Backend upserts keyboard_configs {category: ...}
+    // when this field is present.
+    const cat = document.getElementById('kb-cat')?.value || null;
     await API.post('/api/coords/keymaps/batch', {
         bank_code: S.bank, station_id: S.station, keyboard_type: S.kbType, keys,
+        category: cat,
     });
     S.keymaps[S.kbType] = JSON.parse(JSON.stringify(S.kbKeys));
     const sel = document.getElementById('sf-kb');
     if (sel && !sel.querySelector(`option[value="${S.kbType}"]`))
         sel.innerHTML += `<option value="${S.kbType}">${S.kbType}</option>`;
     if (sel) sel.value = S.kbType;
+    syncKbCategory();
     toast(`Keyboard "${S.kbType}" saved (${keys.length} keys)`);
     closeKb();
 }
@@ -2698,6 +2781,9 @@ async function saveKbMultiPage() {
     }
 
     const config = {
+        // Persist the category so Builder can lock the category dropdown
+        // when re-opening this keyboard for edit.
+        category: document.getElementById('kb-cat')?.value || 'multi_page',
         properties: {
             auto_capitalize_first: document.getElementById('kb-auto-cap').checked,
             shift_auto_cancel_after_one: document.getElementById('kb-shift-cancel').checked,
@@ -2715,6 +2801,7 @@ async function saveKbMultiPage() {
     if (sel && !sel.querySelector(`option[value="${S.kbType}"]`))
         sel.innerHTML += `<option value="${S.kbType}">${S.kbType}</option>`;
     if (sel) sel.value = S.kbType;
+    syncKbCategory();
 
     const totalKeys = Object.values(S.kbPages).reduce((a, p) => a + Object.keys(p.keys).length, 0);
     toast(`Multi-page keyboard "${S.kbType}" saved (${Object.keys(pages).length} pages, ${totalKeys} keys)`);

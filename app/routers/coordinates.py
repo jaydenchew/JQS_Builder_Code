@@ -70,9 +70,17 @@ async def create_keymap(data: dict):
 
 @router.post("/keymaps/batch")
 async def create_keymaps_batch(data: dict):
+    """Replace all keymaps for a given (bank, station, keyboard_type).
+
+    Optional body field `category` (e.g., "system_keypad", "app_keyboard")
+    upserts a keyboard_configs row so the Builder UI can lock the category
+    dropdown when the keyboard is re-opened for editing.
+    """
+    import json as _json
     bank_code = data["bank_code"]
     station_id = data["station_id"]
     keyboard_type = data["keyboard_type"]
+    category = data.get("category")
     await database.execute(
         "DELETE FROM keymaps WHERE bank_code=%s AND station_id=%s AND keyboard_type=%s",
         (bank_code, station_id, keyboard_type)
@@ -82,7 +90,46 @@ async def create_keymaps_batch(data: dict):
             "INSERT INTO keymaps (bank_code, station_id, keyboard_type, key_char, x, y) VALUES (%s,%s,%s,%s,%s,%s)",
             (bank_code, station_id, keyboard_type, k["char"], k["x"], k["y"])
         )
+    if category:
+        # Merge category into any existing keyboard_configs JSON so we
+        # don't overwrite multi-page/random-pin config if present.
+        existing = await database.fetchone(
+            "SELECT id, config FROM keyboard_configs WHERE bank_code=%s AND station_id=%s AND keyboard_type=%s",
+            (bank_code, station_id, keyboard_type)
+        )
+        if existing:
+            cfg = existing["config"]
+            if isinstance(cfg, str):
+                cfg = _json.loads(cfg)
+            cfg["category"] = category
+            await database.execute(
+                "UPDATE keyboard_configs SET config=%s WHERE id=%s",
+                (_json.dumps(cfg), existing["id"])
+            )
+        else:
+            await database.execute(
+                "INSERT INTO keyboard_configs (bank_code, station_id, keyboard_type, config) VALUES (%s,%s,%s,%s)",
+                (bank_code, station_id, keyboard_type, _json.dumps({"category": category}))
+            )
     return {"success": True, "count": len(data["keys"])}
+
+
+@router.delete("/keymap-full/{bank_code}/{station_id}/{keyboard_type}")
+async def delete_keymap_full(bank_code: str, station_id: int, keyboard_type: str):
+    """Wipe a keyboard completely so the operator can re-record from scratch.
+
+    Deletes both the keymap entries and the keyboard_configs row (if any).
+    Used by the Builder "Reset" button in the keyboard recording modal.
+    """
+    await database.execute(
+        "DELETE FROM keymaps WHERE bank_code=%s AND station_id=%s AND keyboard_type=%s",
+        (bank_code, station_id, keyboard_type)
+    )
+    await database.execute(
+        "DELETE FROM keyboard_configs WHERE bank_code=%s AND station_id=%s AND keyboard_type=%s",
+        (bank_code, station_id, keyboard_type)
+    )
+    return {"success": True}
 
 
 @router.put("/keymaps/{keymap_id}")

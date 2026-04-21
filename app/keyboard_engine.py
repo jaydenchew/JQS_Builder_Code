@@ -93,7 +93,15 @@ class KeyboardConfig:
 
 
 async def load_keyboard_config(bank_code: str, station_id: int, keyboard_type: str):
-    """Load keyboard config. Returns KeyboardConfig for normal keyboards, or raw dict for random_pin."""
+    """Load keyboard config. Returns KeyboardConfig for multi-page keyboards,
+    a raw dict for random_pin, or None for simple keyboards and missing entries.
+
+    When a row exists but the config only carries a category marker (e.g.,
+    `{"category": "app_keypad"}` for a simple keypad whose coords live in the
+    keymaps table), return None so execute_type falls through to lookup_keymap.
+    Without this fallthrough, the caller would build an empty KeyboardConfig
+    and crash inside type_with_intelligent_keyboard.
+    """
     row = await database.fetchone(
         "SELECT config FROM keyboard_configs WHERE bank_code = %s AND station_id = %s AND keyboard_type = %s",
         (bank_code, station_id, keyboard_type),
@@ -105,6 +113,8 @@ async def load_keyboard_config(bank_code: str, station_id: int, keyboard_type: s
         raw = json.loads(raw)
     if raw.get("type") == "random_pin":
         return raw
+    if not raw.get("pages"):
+        return None
     return KeyboardConfig(raw)
 
 
