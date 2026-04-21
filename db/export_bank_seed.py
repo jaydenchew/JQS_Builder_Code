@@ -324,9 +324,6 @@ def main():
         # {ARM_NAME} will be substituted by import_bank_seed.py before execution.
         "SET @arm_id = (SELECT id FROM arms WHERE name='{ARM_NAME}');",
         "",
-        "-- Guard: fail loudly if arm does not exist on target machine.",
-        "SELECT IFNULL(@arm_id, (SELECT 1 FROM nonexistent_arm_check)) AS ok;",
-        "",
         "-- Clear any existing flows for this bank + its handler banks (if any) on this arm.",
     ]
 

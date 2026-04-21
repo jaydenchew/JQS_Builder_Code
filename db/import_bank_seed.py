@@ -55,7 +55,23 @@ def main():
     # Substitute placeholder with the target arm name.
     sql = sql.replace("{ARM_NAME}", arm_name)
 
-    print("Importing %s for arm '%s' ..." % (os.path.basename(seed_file), arm_name))
+    # Pre-check: confirm arm exists in DB before doing anything.
+    check = subprocess.run(
+        ["docker", "exec", CONTAINER,
+         "mysql", "-u", DB_USER, "-p" + DB_PASS, "-N", "-B",
+         "-e", "SELECT id FROM %s.arms WHERE name='%s';" % (DB_NAME, arm_name)],
+        capture_output=True, timeout=15,
+    )
+    arm_id_raw = check.stdout.decode("utf-8", errors="replace").strip()
+    if not arm_id_raw:
+        print("FAILED: arm '%s' does not exist in the database." % arm_name)
+        print()
+        print("  Fix: open Builder -> Settings -> Arms and add an arm named '%s'." % arm_name)
+        print("  Then re-run this command.")
+        sys.exit(1)
+
+    print("Importing %s for arm '%s' (arm_id=%s) ..." % (
+        os.path.basename(seed_file), arm_name, arm_id_raw))
 
     proc = subprocess.run(
         ["docker", "exec", "-i", CONTAINER,
@@ -72,16 +88,6 @@ def main():
     real_errors = [l for l in stderr.splitlines() if l and "Warning" not in l]
 
     if proc.returncode != 0 or real_errors:
-        # Translate the intentional arm-guard error into a helpful message.
-        # The seed uses IFNULL(@arm_id, (SELECT 1 FROM nonexistent_arm_check))
-        # to cause a hard failure when @arm_id is NULL (arm not found).
-        if any("nonexistent_arm_check" in l for l in real_errors):
-            print("FAILED: arm '%s' does not exist in the database." % arm_name)
-            print()
-            print("  Fix: open Builder -> Settings -> Arms and add an arm named '%s'." % arm_name)
-            print("  Then re-run this command.")
-            sys.exit(1)
-
         print("FAILED (exit code %d)" % proc.returncode)
         for l in real_errors:
             print("  STDERR: %s" % l)

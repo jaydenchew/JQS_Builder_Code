@@ -18,9 +18,6 @@
 
 SET @arm_id = (SELECT id FROM arms WHERE name='{ARM_NAME}');
 
--- Guard: fail loudly if arm does not exist on target machine.
-SELECT IFNULL(@arm_id, (SELECT 1 FROM nonexistent_arm_check)) AS ok;
-
 -- Clear any existing flows for this bank + its handler banks (if any) on this arm.
 DELETE FROM flow_steps WHERE flow_template_id IN (SELECT id FROM flow_templates WHERE bank_code = 'WINGBANK' AND arm_id = @arm_id);
 DELETE FROM flow_templates WHERE bank_code = 'WINGBANK' AND arm_id = @arm_id;
