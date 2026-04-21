@@ -92,8 +92,32 @@
 - [ ] **withdrawal.py — queued task arm may go offline between check and insert** (LOW)
   - If admin sets arm offline between the status check and INSERT, task stays queued forever. Probability: extremely low. Mitigation: startup recovery handles `running`, but not `queued` with offline arm.
 
-- [ ] **arm_client.py call_arm — no return value validation** (LOW)
-  - motor_lock, move, press, lift all ignore call_arm return value. If arm service disconnects, commands silently fail. Errors surface later in other steps.
+- [ ] **arm_client.py call_arm — no return value validation** (LOW) — PARTIALLY FIXED in commit 9d84be9
+  - Remaining: motor_lock, move, press, lift all ignore call_arm return value. If arm service disconnects mid-task, commands silently fail and errors only surface when a later step tries to read a result.
+  - Fixed sub-case: `open_port()` no longer writes a garbage handle into `self._resource` when WCF returns 0 or a negative value. Previously caused the "COM in use then 2nd click says Connected but arm doesn't move" sequence in Builder. See commit message for full walkthrough.
+  - Remaining cleanup (future): make call_arm return a structured result so callers can distinguish "no response" vs "returned error code" vs "returned OK". Currently returns None on exception, string on success — ambiguous when the string itself is an error code like "0" or "-3".
+
+- [ ] **Builder Test mode handler flow only dispatches CLICK/ARM_MOVE** (MEDIUM)
+  - `testOne()` and `testAll()` in `static/recorder.html` have their OWN JS loop iterating handler-flow steps, and it hardcodes `if (hs.action_type === 'CLICK' || hs.action_type === 'ARM_MOVE')`. Any SWIPE / TYPE / OCR_VERIFY / CHECK_SCREEN step in a handler_flow is silently skipped with no log entry. User is left staring at "camera moved but nothing happened" and concluding the handler doesn't work.
+  - Production is NOT affected — `actions.py::_run_handler_flow` uses the full `ACTION_MAP` dispatch, so real transactions execute every action type correctly.
+  - Symptom encountered on ABA slide-confirm flow where the handler was `SWIPE` to retry the slide.
+  - Fix options: (a) mirror ACTION_MAP list in the JS dispatch, (b) delegate to backend via a new `/api/recorder/test-handler-flow/{flow_id}` endpoint that calls `_run_handler_flow` directly (removes the double-implementation entirely).
+
+- [ ] **Dashboard Pause does not release the arm's COM port** (LOW-to-MEDIUM)
+  - `pause()` in `app/arm_worker.py` just sets `self._paused = True`. It does not call `close_port()` or motor_unlock. So when the user pauses an arm in Dashboard and then tries to "Connect Arm" in Builder to operate it manually, the COM port may still be held by the paused worker's `_resource` handle, causing `open_port` to get back "busy" error codes from WCF.
+  - Combined with the (now-fixed) open_port pollution bug, this used to produce the "1st click COM in use, 2nd click falsely Connected" pattern.
+  - Intended workaround: use Dashboard **Set Offline** instead of **Pause** to fully release the port before Builder takeover. Set Offline closes the port cleanly.
+  - Possible fix: have Pause call `close_port()` before setting the flag, and Resume call `open_port()` before clearing it. Minor semantic change — Pause would transition worker to "not holding hardware" vs current "frozen but still holding". Needs DD review.
+
+- [ ] **Changing `arms.camera_id` in Settings does not restart the worker** (MEDIUM)
+  - `PUT /arms/{id}` (`app/routers/stations.py`) only calls `restart_worker` when the `active` flag changes. Editing just `camera_id` writes the new value to DB but the running `ArmWorker` still holds a `Camera(camera_id=<old>)` instance. Result: Builder shows the preview from the OLD camera even though DB and Settings UI both show the new ID. Very confusing during initial setup.
+  - Operational workaround documented in INSTALL.md Step 8.4: `nssm restart WA-Unified` after changing camera_id.
+  - Possible fix: detect `camera_id` delta in the PUT handler and call `manager.restart_worker(arm_id)` just like the active-flag branch does.
+
+- [ ] **Fiducial calibration assumes card axes parallel to arm axes** (LOW, algorithmic limit documented in DD-023)
+  - `_fit_fiducial_affine` computes arm coordinates for the 4 corners as `pen_arm ± (half, half)`, which only holds if the card is physically laid with printed edges parallel to the arm's X/Y axes. A 2° placement rotation introduces ~1mm error at the card corners; 5° rotation produces RMSE around 2mm and gets rejected by the `RMSE_THRESHOLD_MM = 2.0` gate.
+  - Mitigation: the UI instructions (INSTALL.md Step 9) tell the operator to align the card visually, and the RMSE gate surfaces bad placements immediately.
+  - Possible future enhancement: add an optional "second pen anchor" step (pen on TR corner as well as crosshair) that provides a second physical reference, letting the code solve for card orientation automatically. Would eliminate the manual-alignment dependency entirely.
 
 - [ ] **OCR failure should not stall — new status code + branch step**
   - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
