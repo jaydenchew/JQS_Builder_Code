@@ -43,9 +43,12 @@ class ArmClient:
         result = self.call_arm(self.com_port, 0, 0)
         if result is None:
             raise RuntimeError("Arm service not responding")
-        self._resource = int(result)
-        if self._resource <= 0:
-            raise RuntimeError("Port open failed (got %d), COM port may be in use" % self._resource)
+        # 用局部变量做校验，校验通过才写入 self._resource，避免失败时把负的/0 的错误码
+        # 污染实例状态 —— 那会让后续 is_connected() 错误地返回 True（"假连接" bug）
+        resource = int(result)
+        if resource <= 0:
+            raise RuntimeError("Port open failed (got %d), COM port may be in use" % resource)
+        self._resource = resource
         logger.info("Port opened: %s, resource=%d", self.com_port, self._resource)
         time.sleep(3)
         return self._resource
