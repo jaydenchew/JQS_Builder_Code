@@ -2106,7 +2106,11 @@ async function testTypeStep(step, log) {
     if (!text) return;
 
     const kbCfg = await API.get(`/api/coords/keyboard-configs/${S.bank}/${S.station}/${kbType}`);
-    if (kbCfg && kbCfg.config) {
+    // Only use multi-page if the config actually has a pages field (same logic as
+    // keyboard_engine.py load_keyboard_config). A category-only row like
+    // {"category": "system_keypad"} means coords are in the keymaps table, not here.
+    const _cfg = kbCfg?.config ? (typeof kbCfg.config === 'string' ? JSON.parse(kbCfg.config) : kbCfg.config) : null;
+    if (_cfg && _cfg.pages && Object.keys(_cfg.pages).length > 0) {
         await _typeMultiPage(kbCfg.config, text, log);
     } else {
         await _typeSimple(kbType, text, log);
