@@ -18,6 +18,21 @@ logger = logging.getLogger(__name__)
 
 LOG_BUFFER_SIZE = 500
 
+# Loggers whose INFO / DEBUG messages are suppressed from the Live Logs
+# WebSocket stream to keep the Dashboard terminal readable. WARNING and
+# ERROR from these loggers still pass through so real problems surface.
+# The file-based log at deploy/logs/service_stderr.log is NOT affected
+# (that is a separate NSSM-installed handler).
+#
+# Rationale: on a 5000-line sample, httpx (health-check HTTP pings) and
+# app.camera (Camera opened / stream started on every capture_fresh) made
+# up ~35% of total log volume while carrying no operator-actionable info.
+LIVE_LOG_SUPPRESS_INFO = frozenset({
+    "httpx",         # health-check HTTP request spam
+    "httpcore",      # httpx low-level request logs
+    "app.camera",    # Camera opened / closed / stream start; ERRORs still pass
+})
+
 
 class WorkerLogHandler(logging.Handler):
     """Custom logging handler that captures log records into a ring buffer.
@@ -35,6 +50,10 @@ class WorkerLogHandler(logging.Handler):
         self._drain_lock = threading.Lock()
 
     def emit(self, record):
+        # Drop noisy loggers at INFO/DEBUG level only; WARNING+ still pass
+        # so camera-open errors, network failures, etc. remain visible.
+        if record.levelno < logging.WARNING and record.name in LIVE_LOG_SUPPRESS_INFO:
+            return
         msg = self.format(record)
         thread_name = getattr(record, "threadName", "")
         if self._arm_name not in msg and not thread_name.startswith(self._arm_name):
