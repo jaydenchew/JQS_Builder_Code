@@ -444,43 +444,81 @@
 </div>
 
 <div class="modal-overlay" id="cal-modal">
-    <div class="modal" style="min-width:600px;max-width:90vw;">
+    <div class="modal" style="min-width:720px;max-width:95vw;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h3 style="margin:0;">3-Point Auto Calibration</h3>
+            <h3 style="margin:0;">Fiducial Card Calibration</h3>
             <button class="btn btn-secondary btn-sm" onclick="closeModal('cal-modal')">Close</button>
         </div>
 
         <div id="cal-step-1">
-            <p style="margin-bottom:8px;">1. Move camera above the phone so you can see a reference icon in the camera feed.</p>
-            <p style="margin-bottom:8px;">2. Enter the <strong>known arm coordinates</strong> where the pen tip should touch this reference icon:</p>
-            <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
-                <div class="form-group" style="margin:0;"><label>Ref Pen X</label><input id="cal-ref-x" type="number" step="0.1" placeholder="56.5" style="width:80px;"></div>
-                <div class="form-group" style="margin:0;"><label>Ref Pen Y</label><input id="cal-ref-y" type="number" step="0.1" placeholder="92.0" style="width:80px;"></div>
-                <div class="form-group" style="margin:0;"><label>Step (mm)</label><input id="cal-step-mm" type="number" value="10" style="width:60px;"></div>
+            <p style="margin-bottom:6px;"><strong>Step 1 of 3</strong> &mdash; Capture Photo</p>
+            <p style="margin-bottom:8px;font-size:12px;color:var(--text2);">Place the calibration card on the phone stage with its printed edges parallel to the arm's X/Y axes. Jog the arm so the camera sees the entire inner black square.</p>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:12px;">Inner square size:</label>
+                <input id="cal-card-size" type="number" value="50" step="1" style="width:70px;"> mm
+                <span style="font-size:11px;color:var(--text2);margin-left:8px;">(default 50mm; check card's printed label)</span>
             </div>
-            <p style="margin-bottom:8px;">3. Click <strong>Capture Template</strong> to take a photo. Then <strong>drag a box</strong> around the reference icon.</p>
-            <div style="margin-bottom:8px;">
-                <button class="btn btn-primary btn-sm" onclick="calCaptureTemplate()">Capture Template</button>
-                <span id="cal-tpl-status" style="margin-left:8px;font-size:12px;color:var(--text2);"></span>
-            </div>
-            <canvas id="cal-tpl-canvas" width="480" height="640" style="display:none;border:1px solid var(--border);border-radius:4px;cursor:crosshair;max-width:100%;"></canvas>
-            <div style="margin-top:12px;">
-                <button class="btn btn-success" onclick="calStartAuto()" id="cal-start-btn" disabled>Start Auto Calibration</button>
-            </div>
+            <button class="btn btn-primary" onclick="calCaptureSnapshot()">Capture Photo</button>
         </div>
 
         <div id="cal-step-2" style="display:none;">
-            <p style="margin-bottom:8px;">Template matching failed. Click the <strong>center of the reference icon</strong> in each photo:</p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;" id="cal-manual-photos"></div>
-            <div style="margin-top:12px;">
-                <button class="btn btn-success" onclick="calSubmitManual()" id="cal-manual-btn" disabled>Calculate & Save</button>
-                <span id="cal-manual-status" style="margin-left:8px;font-size:12px;"></span>
+            <p style="margin-bottom:6px;"><strong>Step 2 of 3</strong> &mdash; Click Corners</p>
+            <p style="margin-bottom:8px;font-size:12px;color:var(--text2);">Click the 4 corners of the inner black square in this order: <strong>TL &rarr; TR &rarr; BR &rarr; BL</strong>.</p>
+            <div style="margin-bottom:6px;font-size:12px;">Next to click: <strong id="cal-next-corner" style="color:var(--accent);">TL (top-left)</strong></div>
+            <canvas id="cal-click-canvas" style="cursor:crosshair;border:1px solid var(--border);border-radius:4px;max-width:100%;display:block;"></canvas>
+            <div id="cal-corner-list" style="font-size:11px;color:var(--text2);margin-top:4px;min-height:14px;"></div>
+            <div style="margin-top:10px;display:flex;gap:6px;">
+                <button class="btn btn-secondary btn-sm" onclick="calResetCorners()">Reset Clicks</button>
+                <button class="btn btn-primary" id="cal-to-step-3" onclick="calProceedToPenStep()" disabled>Next: Align Pen</button>
             </div>
         </div>
 
-        <div id="cal-result" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--radius);">
-            <h4 style="color:var(--success);">Calibration Complete</h4>
-            <pre id="cal-result-text" style="font-size:12px;color:var(--text2);"></pre>
+        <div id="cal-step-3" style="display:none;">
+            <p style="margin-bottom:6px;"><strong>Step 3 of 3</strong> &mdash; Align Pen to Crosshair</p>
+            <p style="margin-bottom:10px;font-size:12px;color:var(--text2);">Jog the pen tip over the card crosshair, lower the pen with <em>Press</em> to verify it physically touches the crosshair center, then click <em>Set Pen Reference</em>. Arrow keys also work.</p>
+            <div style="display:flex;gap:18px;align-items:flex-start;margin-bottom:8px;">
+                <div style="flex:0 0 auto;">
+                    <div style="display:flex;gap:4px;margin-bottom:6px;align-items:center;">
+                        <span style="font-size:11px;color:var(--text2);">Step:</span>
+                        <button class="btn btn-secondary btn-sm cal-jog-step-btn" data-step="0.1" onclick="calSetJogStep(0.1)" style="font-size:10px;padding:2px 6px;">0.1</button>
+                        <button class="btn btn-primary btn-sm cal-jog-step-btn" data-step="1" onclick="calSetJogStep(1)" style="font-size:10px;padding:2px 6px;">1</button>
+                        <button class="btn btn-secondary btn-sm cal-jog-step-btn" data-step="5" onclick="calSetJogStep(5)" style="font-size:10px;padding:2px 6px;">5</button>
+                        <span style="font-size:11px;color:var(--text2);margin-left:4px;">mm</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,34px);grid-template-rows:repeat(3,30px);gap:2px;">
+                        <div></div>
+                        <button class="btn btn-secondary btn-sm" onclick="calJog(0,-1)" title="Up (Y-)">&#9650;</button>
+                        <div></div>
+                        <button class="btn btn-secondary btn-sm" onclick="calJog(-1,0)" title="Left (X-)">&#9664;</button>
+                        <div style="font-size:10px;text-align:center;align-self:center;color:var(--text2);">jog</div>
+                        <button class="btn btn-secondary btn-sm" onclick="calJog(1,0)" title="Right (X+)">&#9654;</button>
+                        <div></div>
+                        <button class="btn btn-secondary btn-sm" onclick="calJog(0,1)" title="Down (Y+)">&#9660;</button>
+                        <div></div>
+                    </div>
+                    <div style="margin-top:6px;display:flex;gap:4px;">
+                        <button class="btn btn-secondary btn-sm" onclick="pressArm()" style="font-size:11px;">Press</button>
+                        <button class="btn btn-secondary btn-sm" onclick="liftArm()" style="font-size:11px;">Lift</button>
+                    </div>
+                </div>
+                <div style="flex:1;">
+                    <div style="padding:10px;background:var(--bg);border-radius:var(--radius);font-family:monospace;font-size:14px;">
+                        Current arm:<br>
+                        X = <span id="cal-pen-cur-x" style="color:var(--accent);font-weight:bold;">0</span><br>
+                        Y = <span id="cal-pen-cur-y" style="color:var(--accent);font-weight:bold;">0</span>
+                    </div>
+                    <button class="btn btn-success" style="margin-top:12px;width:100%;" onclick="calSetPenPos()">Set Pen Reference &amp; Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="cal-step-4" style="display:none;">
+            <h4 id="cal-result-header" style="margin-bottom:8px;">Calibration Result</h4>
+            <div id="cal-result-summary" style="font-family:monospace;font-size:12px;padding:10px;background:var(--bg);border-radius:var(--radius);white-space:pre-wrap;"></div>
+            <div style="margin-top:12px;display:flex;gap:6px;">
+                <button class="btn btn-primary" onclick="calReset()">Start Over</button>
+                <button class="btn btn-secondary" onclick="closeModal('cal-modal')">Done</button>
+            </div>
         </div>
     </div>
 </div>
@@ -1102,7 +1140,18 @@ function syncPos() {
 function onKey(e) {
     if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
     const map = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
-    if (map[e.key]) { e.preventDefault(); jog(...map[e.key]); }
+    if (map[e.key]) {
+        e.preventDefault();
+        // Use calJog when the calibration modal's pen-align step is visible,
+        // so the X/Y display in the modal refreshes on every keystroke.
+        const calStep3 = document.getElementById('cal-step-3');
+        const calModalActive = document.getElementById('cal-modal')?.classList.contains('active');
+        if (calModalActive && calStep3 && calStep3.style.display !== 'none') {
+            calJog(...map[e.key]);
+        } else {
+            jog(...map[e.key]);
+        }
+    }
 }
 
 /* ============================================================
@@ -3199,218 +3248,231 @@ async function delMapping(id) {
 function setStatus(m) { document.getElementById('status-log').textContent = m; }
 
 /* ============================================================
-   CALIBRATION
+   CALIBRATION (fiducial card based)
+   - Capture 1 photo via /capture-for-calibration
+   - User clicks 4 corners of the inner black square (order TL,TR,BR,BL)
+   - User jogs pen onto the card crosshair and clicks Set Pen Reference
+   - Backend fits a full 2x3 affine via lstsq and reports RMSE
    ============================================================ */
-let calTemplate = null;
-let calManualPoints = [null, null, null];
-let calPhotos = [];
-let calStartX = 0, calStartY = 0;
+const CAL_CORNER_LABELS = ['TL (top-left)', 'TR (top-right)', 'BR (bottom-right)', 'BL (bottom-left)'];
+const CAL_CORNER_COLORS = ['#e94560', '#f2a65a', '#7bd389', '#4fa3ff'];
+let calPhoto = null;       // {image_b64, raw_width, raw_height, rotated_width, rotated_height, photo_arm_x, photo_arm_y}
+let calCorners = [];       // list of {x, y} in ROTATED image coordinates, in order TL/TR/BR/BL
+let calPenArm = null;      // {x, y}
+let calCardSize = 50;
+let calCanvasImg = null;   // cached HTMLImageElement for redraws
 
 function openCalibrate() {
     if (!S.armOn) { toast('Connect arm first', 'error'); return; }
     if (!S.camOn) { toast('Open camera first', 'error'); return; }
-    document.getElementById('cal-step-1').style.display = '';
-    document.getElementById('cal-step-2').style.display = 'none';
-    document.getElementById('cal-result').style.display = 'none';
-    document.getElementById('cal-tpl-canvas').style.display = 'none';
-    document.getElementById('cal-tpl-status').textContent = '';
-    document.getElementById('cal-start-btn').disabled = true;
-    calTemplate = null;
+    if (!S.station) { toast('No station bound to this arm. Configure in Settings.', 'error'); return; }
+    calReset();
     document.getElementById('cal-modal').classList.add('active');
 }
 
-async function calCaptureTemplate() {
-    const snap = await API.get('/api/snapshot' + (S.armId ? '?arm_id=' + S.armId : ''));
-    if (snap.error) { toast('Snapshot failed', 'error'); return; }
-    const img = new Image();
-    img.onload = () => {
-        const canvas = document.getElementById('cal-tpl-canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.style.display = 'block';
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        canvas._img = img;
-        canvas._snapB64 = snap.image;
-        document.getElementById('cal-tpl-status').textContent = 'Drag a box around the reference icon...';
-
-        let sx = 0, sy = 0, dragging = false;
-        canvas.onmousedown = (e) => {
-            const r = canvas.getBoundingClientRect();
-            sx = (e.clientX - r.left) * canvas.width / r.width;
-            sy = (e.clientY - r.top) * canvas.height / r.height;
-            dragging = true;
-        };
-        canvas.onmouseup = (e) => {
-            if (!dragging) return;
-            dragging = false;
-            const r = canvas.getBoundingClientRect();
-            const ex = (e.clientX - r.left) * canvas.width / r.width;
-            const ey = (e.clientY - r.top) * canvas.height / r.height;
-            const x1 = Math.min(sx, ex), y1 = Math.min(sy, ey);
-            const w = Math.abs(ex - sx), h = Math.abs(ey - sy);
-            if (w < 10 || h < 10) return;
-
-            ctx.drawImage(img, 0, 0);
-            ctx.strokeStyle = '#e94560';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x1, y1, w, h);
-
-            const tplCanvas = document.createElement('canvas');
-            tplCanvas.width = w; tplCanvas.height = h;
-            tplCanvas.getContext('2d').drawImage(img, x1, y1, w, h, 0, 0, w, h);
-            calTemplate = tplCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
-
-            document.getElementById('cal-tpl-status').textContent =
-                `Template selected: ${Math.round(w)}x${Math.round(h)}px`;
-            document.getElementById('cal-start-btn').disabled = false;
-        };
-    };
-    img.src = 'data:image/jpeg;base64,' + snap.image;
-
-    calStartX = S.curX;
-    calStartY = S.curY;
+function calReset() {
+    calPhoto = null;
+    calCorners = [];
+    calPenArm = null;
+    calCanvasImg = null;
+    document.getElementById('cal-step-1').style.display = '';
+    document.getElementById('cal-step-2').style.display = 'none';
+    document.getElementById('cal-step-3').style.display = 'none';
+    document.getElementById('cal-step-4').style.display = 'none';
+    const sizeInput = document.getElementById('cal-card-size');
+    if (sizeInput) sizeInput.value = '50';
 }
 
-async function calStartAuto() {
-    const refX = parseFloat(document.getElementById('cal-ref-x').value);
-    const refY = parseFloat(document.getElementById('cal-ref-y').value);
-    const stepMm = parseFloat(document.getElementById('cal-step-mm').value) || 10;
-    if (isNaN(refX) || isNaN(refY)) { toast('Enter reference pen X/Y coordinates', 'error'); return; }
+async function calCaptureSnapshot() {
+    const sizeVal = parseFloat(document.getElementById('cal-card-size').value);
+    if (!sizeVal || sizeVal <= 0) { toast('Enter a valid card size (mm)', 'error'); return; }
+    calCardSize = sizeVal;
 
-    document.getElementById('cal-start-btn').disabled = true;
-    document.getElementById('cal-start-btn').textContent = 'Calibrating...';
+    const r = await API.post('/api/calibration/capture-for-calibration', { arm_id: getArmId() });
+    if (r.error) { toast('Capture failed: ' + r.error, 'error'); return; }
+    calPhoto = r;
 
-    const r = await API.post('/api/calibration/auto-calibrate', {
-        station_id: S.station,
-        arm_id: S.armId,
-        start_x: calStartX,
-        start_y: calStartY,
-        ref_arm_x: refX,
-        ref_arm_y: refY,
-        template_b64: calTemplate,
-        step_mm: stepMm,
+    // Load image into canvas and set up click handler
+    const canvas = document.getElementById('cal-click-canvas');
+    const img = new Image();
+    img.onload = () => {
+        // Display at max 520px wide, preserving aspect ratio; click coords
+        // translate back to raw rotated image pixel space.
+        const maxW = Math.min(520, window.innerWidth - 200);
+        const scale = Math.min(1, maxW / img.width);
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas._displayScale = scale;
+        canvas._imgW = img.width;
+        canvas._imgH = img.height;
+        calCanvasImg = img;
+        calRedrawCanvas();
+        canvas.onclick = calOnCanvasClick;
+    };
+    img.src = 'data:image/jpeg;base64,' + calPhoto.image_b64;
+
+    calCorners = [];
+    calUpdateCornerUI();
+    document.getElementById('cal-step-1').style.display = 'none';
+    document.getElementById('cal-step-2').style.display = '';
+}
+
+function calRedrawCanvas() {
+    const canvas = document.getElementById('cal-click-canvas');
+    if (!canvas || !calCanvasImg) return;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(calCanvasImg, 0, 0, canvas.width, canvas.height);
+    const s = canvas._displayScale || 1;
+    calCorners.forEach((c, i) => {
+        const dx = c.x * s;
+        const dy = c.y * s;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 6, 0, Math.PI * 2);
+        ctx.fillStyle = CAL_CORNER_COLORS[i];
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(CAL_CORNER_LABELS[i].substring(0, 2), dx + 8, dy - 6);
     });
-
-    document.getElementById('cal-start-btn').textContent = 'Start Auto Calibration';
-    document.getElementById('cal-start-btn').disabled = false;
-
-    if (r.status === 'ok') {
-        showCalResult(r);
-    } else if (r.status === 'need_manual') {
-        calPhotos = r.photos;
-        calManualPoints = [null, null, null];
-        showManualPointPicker(r.photos);
-    } else {
-        toast(r.error || 'Calibration failed', 'error');
+    // Draw the implied crosshair (center of 4 corners) if all 4 clicked
+    if (calCorners.length === 4) {
+        const cx = (calCorners[0].x + calCorners[1].x + calCorners[2].x + calCorners[3].x) / 4 * s;
+        const cy = (calCorners[0].y + calCorners[1].y + calCorners[2].y + calCorners[3].y) / 4 * s;
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
+        ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
+        ctx.stroke();
     }
 }
 
-function showManualPointPicker(photos) {
-    document.getElementById('cal-step-1').style.display = 'none';
-    document.getElementById('cal-step-2').style.display = '';
-    const labels = ['Position A (start)', 'Position B (Y+10mm)', 'Position C (X+10mm)'];
-    const container = document.getElementById('cal-manual-photos');
-    container.innerHTML = photos.map((b64, i) => `
-        <div style="text-align:center;">
-            <div style="font-size:12px;margin-bottom:4px;font-weight:600;">${labels[i]}</div>
-            <canvas id="cal-mp-${i}" width="240" height="320"
-                style="border:1px solid var(--border);border-radius:4px;cursor:crosshair;"
-                onclick="calClickPhoto(${i}, event)"></canvas>
-            <div id="cal-mp-label-${i}" style="font-size:11px;color:var(--text2);margin-top:2px;">Click reference point</div>
-        </div>
-    `).join('');
-
-    photos.forEach((b64, i) => {
-        const canvas = document.getElementById('cal-mp-' + i);
-        const img = new Image();
-        img.onload = () => {
-            canvas.width = img.width / 2;
-            canvas.height = img.height / 2;
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            canvas._img = img;
-            canvas._scale = 2;
-        };
-        img.src = 'data:image/jpeg;base64,' + b64;
-    });
-
-    document.getElementById('cal-manual-btn').disabled = true;
-    document.getElementById('cal-manual-status').textContent = 'Click reference point in all 3 photos';
-}
-
-function calClickPhoto(idx, event) {
-    const canvas = document.getElementById('cal-mp-' + idx);
+function calOnCanvasClick(event) {
+    if (calCorners.length >= 4) return;
+    const canvas = document.getElementById('cal-click-canvas');
     const rect = canvas.getBoundingClientRect();
     const displayX = event.clientX - rect.left;
     const displayY = event.clientY - rect.top;
-    const scaleW = canvas._img.width / rect.width;
-    const scaleH = canvas._img.height / rect.height;
-    const realX = displayX * scaleW;
-    const realY = displayY * scaleH;
-
-    calManualPoints[idx] = [realX, realY];
-
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(canvas._img, 0, 0, canvas.width, canvas.height);
-    const dotX = displayX * canvas.width / rect.width;
-    const dotY = displayY * canvas.height / rect.height;
-    ctx.beginPath();
-    ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#e94560';
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    document.getElementById('cal-mp-label-' + idx).textContent =
-        `(${Math.round(realX)}, ${Math.round(realY)})`;
-
-    if (calManualPoints.every(p => p !== null)) {
-        document.getElementById('cal-manual-btn').disabled = false;
-        document.getElementById('cal-manual-status').textContent = 'All 3 points set. Ready to calculate.';
-    }
+    // Translate display pixel → rotated image pixel
+    const scale = canvas._imgW / rect.width;  // same ratio for W and H (aspect preserved)
+    const rx = displayX * scale;
+    const ry = displayY * scale;
+    calCorners.push({ x: rx, y: ry });
+    calRedrawCanvas();
+    calUpdateCornerUI();
 }
 
-async function calSubmitManual() {
-    const refX = parseFloat(document.getElementById('cal-ref-x').value);
-    const refY = parseFloat(document.getElementById('cal-ref-y').value);
-    const stepMm = parseFloat(document.getElementById('cal-step-mm').value) || 10;
-
-    document.getElementById('cal-manual-btn').disabled = true;
-    document.getElementById('cal-manual-btn').textContent = 'Calculating...';
-
-    const r = await API.post('/api/calibration/auto-calibrate/manual-points', {
-        station_id: S.station,
-        points: calManualPoints,
-        start_x: calStartX,
-        start_y: calStartY,
-        ref_arm_x: refX,
-        ref_arm_y: refY,
-        step_mm: stepMm,
-    });
-
-    document.getElementById('cal-manual-btn').textContent = 'Calculate & Save';
-    document.getElementById('cal-manual-btn').disabled = false;
-
-    if (r.status === 'ok') {
-        showCalResult(r);
-    } else {
-        toast(r.error || 'Calculation failed', 'error');
-    }
+function calUpdateCornerUI() {
+    const nextLabel = calCorners.length < 4 ? CAL_CORNER_LABELS[calCorners.length] : 'All corners set';
+    document.getElementById('cal-next-corner').textContent = nextLabel;
+    const list = calCorners.map((c, i) =>
+        `${CAL_CORNER_LABELS[i].substring(0, 2)}=(${Math.round(c.x)},${Math.round(c.y)})`
+    ).join(' ');
+    document.getElementById('cal-corner-list').textContent = list || 'No corners clicked yet';
+    document.getElementById('cal-to-step-3').disabled = (calCorners.length !== 4);
 }
 
-function showCalResult(r) {
-    document.getElementById('cal-step-1').style.display = 'none';
+function calResetCorners() {
+    calCorners = [];
+    calRedrawCanvas();
+    calUpdateCornerUI();
+}
+
+function calProceedToPenStep() {
+    if (calCorners.length !== 4) return;
     document.getElementById('cal-step-2').style.display = 'none';
-    document.getElementById('cal-result').style.display = '';
+    document.getElementById('cal-step-3').style.display = '';
+    // Default jog step to 1mm for pen alignment; sync button highlight to S.jogStep.
+    calSetJogStep(1);
+    calRefreshPenDisplay();
+}
+
+function calRefreshPenDisplay() {
+    document.getElementById('cal-pen-cur-x').textContent = S.curX;
+    document.getElementById('cal-pen-cur-y').textContent = S.curY;
+}
+
+// Wrapper around global jog() that refreshes the modal's X/Y display after
+// every step. Global jog() already updates S.curX/Y and sends /arm/move.
+async function calJog(dx, dy) {
+    await jog(dx, dy);
+    calRefreshPenDisplay();
+}
+
+// Set S.jogStep from the calibration modal (separate from the main-page
+// setJog() which relies on event.target for highlighting). Also highlights
+// the matching step button in the modal.
+function calSetJogStep(v) {
+    S.jogStep = v;
+    document.querySelectorAll('.cal-jog-step-btn').forEach(b => {
+        const s = parseFloat(b.dataset.step);
+        b.className = (Math.abs(s - v) < 1e-9 ? 'btn btn-primary btn-sm cal-jog-step-btn' : 'btn btn-secondary btn-sm cal-jog-step-btn');
+    });
+}
+
+async function calSetPenPos() {
+    calPenArm = { x: S.curX, y: S.curY };
+    await calFinalSave();
+}
+
+async function calFinalSave() {
+    if (!calPhoto || calCorners.length !== 4 || !calPenArm) {
+        toast('Incomplete calibration data', 'error');
+        return;
+    }
+    const body = {
+        station_id: S.station,
+        photo_arm_x: calPhoto.photo_arm_x,
+        photo_arm_y: calPhoto.photo_arm_y,
+        pen_arm_x: calPenArm.x,
+        pen_arm_y: calPenArm.y,
+        corners_rotated: calCorners,
+        card_size_mm: calCardSize,
+        raw_width: calPhoto.raw_width,
+        raw_height: calPhoto.raw_height,
+    };
+    const r = await API.post('/api/calibration/fiducial-save', body);
+    if (r.error) { toast('Save failed: ' + r.error, 'error'); return; }
+
+    document.getElementById('cal-step-3').style.display = 'none';
+    document.getElementById('cal-step-4').style.display = '';
+
+    const header = document.getElementById('cal-result-header');
+    const summary = document.getElementById('cal-result-summary');
+    if (r.status === 'ok') {
+        header.textContent = 'Calibration Saved';
+        header.style.color = 'var(--success)';
+        toast(`Calibration saved (RMSE ${r.rmse_mm}mm) for Station ${S.station}`);
+    } else {
+        header.textContent = 'Poor Precision - Not Saved';
+        header.style.color = 'var(--error)';
+        toast(`Calibration rejected: RMSE ${r.rmse_mm}mm too high. Redo.`, 'error');
+    }
+
     const m = r.transform_matrix;
-    document.getElementById('cal-result-text').textContent =
-        `Scale: ${r.scale_mm_per_pixel} mm/pixel\n` +
-        `Rotation: ${r.rotation_degrees} degrees\n` +
-        `Camera Park: (${r.camera_park_pos[0]}, ${r.camera_park_pos[1]})\n` +
+    const perAnchorLines = (r.per_anchor_error_mm || [])
+        .map((e, i) => {
+            const lbl = i === 0 ? 'crosshair' : CAL_CORNER_LABELS[i - 1].substring(0, 2);
+            return `  ${lbl}: ${e}mm`;
+        })
+        .join('\n');
+    summary.textContent =
+        `Status: ${r.status.toUpperCase()}\n` +
+        `RMSE: ${r.rmse_mm} mm\n` +
+        `Per-anchor error:\n${perAnchorLines}\n` +
+        `\n` +
+        `scale_x: ${r.scale_x_mm_per_px} mm/px\n` +
+        `scale_y: ${r.scale_y_mm_per_px} mm/px\n` +
+        `anisotropy (max/min): ${r.scale_anisotropy}\n` +
+        `rotation: ${r.rotation_degrees}°\n` +
+        `camera_park: (${r.camera_park_pos[0]}, ${r.camera_park_pos[1]})\n` +
+        `\n` +
         `Matrix:\n  [${m[0].map(v => v.toFixed(6)).join(', ')}]\n  [${m[1].map(v => v.toFixed(6)).join(', ')}]`;
+
     checkCal();
-    toast('Calibration saved for Station ' + S.station);
 }
 
 /* ============================================================

@@ -8,6 +8,9 @@ db/seed.sql
 db/seed_*.sql
 !db/seed.example.sql
 
+# 数据库备份（本地 mysqldump 输出，含所有数据，不上传）
+db_backups/
+
 # 大文件 / 二进制
 # ngrok 是每台机器自己配（登录 token / 隧道 URL 不同），保持忽略
 ngrok.exe

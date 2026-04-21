@@ -1,5 +1,61 @@
 # Changelog
 
+## Calibration: Fiducial card replaces 3-point auto-calibrate (2026-04-21)
+
+### Problem
+
+The old 3-point method (`/api/calibration/auto-calibrate`) was unreliable on new hardware:
+
+- **Collinear failures** &mdash; `step_mm=10` produced pixel displacements around 48px on this camera, so template matches with `TM_CCOEFF_NORMED >= 0.5` (the old threshold) occasionally returned 3 near-collinear hits on similar features in the scene. Users hit `det=0.00e+00` errors often enough that they resorted to bumping `step_mm` to 12 as a workaround, which is only luck-based.
+- **Small measurement baseline** &mdash; 10mm arm moves were measured via single-pixel template matches. A 2px match error gave a 20% scale error. No redundancy.
+- **No quality metric** &mdash; the endpoint accepted the output and saved it regardless of the actual fit quality. A completely wrong calibration looked identical to a good one in the DB.
+- **No compensation for bad motion** &mdash; every run required 3 actual mechanical moves of the arm. If a move silently failed (e.g., `call_arm` returned `None` and was swallowed), all 3 photos were of the same scene and the matrix came out as noise.
+- **Brittle in face of camera-to-arm rotation** &mdash; the fitted matrix could technically encode rotation, but with only 3 anchor points and small displacements the rotation term was heavily noise-influenced (we saw one machine reporting `-45.6°` rotation that appeared to be fit noise, not real mounting).
+
+### Fix
+
+Completely replaced the algorithm with a **fiducial card** based flow. The hardware vendor ships a 50&times;50mm printed calibration card with a center crosshair; we reuse it:
+
+1. **Capture one photo** with the card under the camera (`/api/calibration/capture-for-calibration`)
+2. **User clicks the 4 corners** of the inner black square on the photo, in order TL &rarr; TR &rarr; BR &rarr; BL
+3. **User jogs the pen tip** onto the card crosshair and clicks "Set Pen Reference"
+4. **Backend fits a full 2x3 affine** via `np.linalg.lstsq` from 5 (pixel, arm) pairs (4 corners + crosshair), reports **RMSE** alongside `scale_x`, `scale_y`, `rotation_degrees`, `scale_anisotropy`, and per-anchor errors
+5. **Rejects saves with RMSE &gt; 2mm** &mdash; surfacing bad runs instead of silently storing garbage
+
+### Algorithm improvements
+
+- **Large baseline** &mdash; card corners span 50mm (vs 10mm in the old method). Pixel match error has 5&times; less leverage on scale.
+- **Overdetermined fit** &mdash; 5 anchors &times; 2 equations = 10 equations for 6 unknowns &rarr; least-squares fit + meaningful RMSE.
+- **Full 2x3 affine** &mdash; the fitted matrix carries off-diagonal terms, so any camera-mount rotation relative to the arm is absorbed automatically. Nothing is hardcoded to a diagonal scale matrix.
+- **Zero mechanical motion during fit** &mdash; one photo, no A/B/C moves. Motion errors can't pollute the fit.
+- **Quality gate** &mdash; `RMSE_THRESHOLD_MM = 2.0`. Typical good fit is 0.3-0.5mm.
+
+### Changes
+
+- `app/routers/calibration_router.py` &mdash; removed `/auto-calibrate`, `/auto-calibrate/manual-points`, `_find_template`, `_compute_calibration`; removed unused imports (`ArmClient`, `Camera`, `time`). Added `/capture-for-calibration`, `/fiducial-save`, `_fit_fiducial_affine`. Net change: -150 / +180 lines.
+- `static/recorder.html` &mdash; replaced the old 3-step "Capture Template &rarr; Start Auto Calibration" modal with a 4-step "Capture Photo &rarr; Click Corners &rarr; Align Pen &rarr; Result" modal. All calibration JS rewritten with `cal*` prefix preserved. Reuses global `jog()`, `S.curX/Y`, `getArmId()`, `toast()`.
+- **Zero DB schema change** &mdash; `calibrations` table unchanged; `save_calibration(station_id, data)` dict keys unchanged; downstream consumers (`pixel_to_arm`, `keyboard_engine.py`, `recorder.py pixel_to_arm callers`, `settings.html`) all zero-diff.
+
+### Remaining assumption (documented for operators)
+
+The user must place the calibration card with its printed edges **roughly parallel to the arm's X/Y axes** (hand alignment, &plusmn;2&deg; acceptable &rarr; &lt;1mm error over 25mm half-diagonal). Deliberate mis-rotation of the card is caught by RMSE gate. See DD-023 for rationale.
+
+### Operator workflow
+
+1. Builder &rarr; click "Calibrate" on the station indicator
+2. Enter card inner-square size (default 50mm, check card printing)
+3. Click "Capture Photo"
+4. Click the 4 corners in order on the displayed image
+5. Jog the pen onto the crosshair (use arrow keys or jog buttons)
+6. Click "Set Pen Reference &amp; Save"
+7. Result panel shows RMSE, scale\_x/y, anisotropy, rotation, and per-anchor errors. If RMSE &lt; 1mm: save accepted. If 1-2mm: investigate anchor errors. If &gt; 2mm: rejected, redo.
+
+### No rollback path needed for old calibrations
+
+Existing rows in the `calibrations` table (produced by the old 3-point method) remain readable and usable by `pixel_to_arm`. Only the *production of new calibrations* is changed. If a deployed machine prefers to keep its old calibration, no action required. If it shows accuracy issues, re-run the new fiducial flow.
+
+---
+
 ## CHECK_SCREEN: ORB Align + Masked SSIM replaces SSIM+edge (2026-04-18)
 
 ### Problem

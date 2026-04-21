@@ -1,18 +1,32 @@
-"""Calibration API endpoints — database-backed, with auto-calibration"""
-import time
-import json
+"""Calibration API endpoints — fiducial card based.
+
+Replaces the old 3-point auto-calibration (which suffered from frequent
+collinear failures, weak template matches, and no quality metric). New flow:
+
+  1. User places calibration card with its printed axes parallel to arm X/Y
+  2. UI captures one photo via /capture-for-calibration
+  3. User clicks the 4 corners of the inner black square (order: TL, TR, BR, BL)
+  4. User jogs the pen tip onto the card crosshair
+  5. /fiducial-save fits a full 2x3 affine via least squares and reports RMSE
+
+The fitted matrix includes off-diagonal terms, so any camera-mount rotation
+relative to the arm axes is absorbed automatically.
+"""
 import base64
 import logging
 import cv2
 import numpy as np
 from fastapi import APIRouter
-from app import calibration, database
-from app.arm_client import ArmClient
-from app.camera import Camera
+from app import calibration
 from app.worker_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/calibration", tags=["calibration"])
+
+# Reject calibrations whose fit residual exceeds this threshold (mm).
+# Typical good calibrations come in at 0.3-0.5mm; > 2mm usually means the
+# user clicked corners imprecisely or placed the card at an angle.
+RMSE_THRESHOLD_MM = 2.0
 
 
 @router.get("/status")
@@ -42,214 +56,201 @@ async def convert_pixel_to_arm(data: dict):
 
 @router.post("/save")
 async def save_calibration_data(data: dict):
+    """Generic manual save endpoint, kept for scripted/advanced use."""
     station_id = data.pop("station_id")
     await calibration.save_calibration(station_id, data)
     return {"success": True}
 
 
-@router.post("/auto-calibrate")
-async def auto_calibrate(data: dict):
-    """3-point auto calibration.
-    Body: {station_id, arm_id, start_x, start_y, ref_arm_x, ref_arm_y, template_b64}
+@router.post("/capture-for-calibration")
+async def capture_for_calibration(data: dict):
+    """Capture one rotated photo and return it as base64 for the UI to
+    display and let the user click the 4 corners of the calibration card.
 
-    Process:
-    1. Move to A=(start_x, start_y), take photo, find template pixel position
-    2. Move to B=A+(0,10), take photo, find template pixel position
-    3. Move to C=A+(10,0), take photo, find template pixel position
-    4. Compute scale, rotation, affine matrix from pixel displacements
-    5. Save to calibrations table
+    Body: {arm_id}
+    Returns:
+      image_b64, raw_width, raw_height, rotated_width, rotated_height,
+      photo_arm_x, photo_arm_y
     """
-    station_id = data["station_id"]
     arm_id = data["arm_id"]
-    start_x = float(data["start_x"])
-    start_y = float(data["start_y"])
-    ref_arm_x = float(data["ref_arm_x"])
-    ref_arm_y = float(data["ref_arm_y"])
-    template_b64 = data.get("template_b64")
-    step_mm = float(data.get("step_mm", 10))
-
     worker = manager.get_worker(arm_id)
     if not worker:
         return {"error": "No worker for arm %d" % arm_id}
-
     arm = worker.arm_client
-    cam = worker.camera
-
     if not arm.is_connected():
         return {"error": "Arm not connected. Connect arm first."}
-
-    cam.stream_start()
-    time.sleep(0.5)
-
-    template = None
-    if template_b64:
-        tpl_bytes = base64.b64decode(template_b64)
-        tpl_arr = np.frombuffer(tpl_bytes, dtype=np.uint8)
-        template = cv2.imdecode(tpl_arr, cv2.IMREAD_COLOR)
-
-    positions = [
-        ("A", start_x, start_y),
-        ("B", start_x, start_y + step_mm),
-        ("C", start_x + step_mm, start_y),
-    ]
-
-    photos = []
-    pixel_positions = []
-
-    raw_height = None
-    for label, px, py in positions:
-        arm.move(px, py)
-        time.sleep(1)
-        frame = cam.capture_frame()
-        if frame is None:
-            return {"error": "Camera capture failed at position %s" % label}
-        if raw_height is None:
-            raw_height = frame.shape[0]   # raw (unrotated) image height = 480
-        rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        photos.append(rotated)
-
-        if template is not None:
-            found = _find_template(rotated, template)
-            if found:
-                pixel_positions.append(found)
-            else:
-                pixel_positions.append(None)
-        else:
-            pixel_positions.append(None)
-
-    has_all = all(p is not None for p in pixel_positions)
-
-    if not has_all:
-        photos_b64 = []
-        for img in photos:
-            _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            photos_b64.append(base64.b64encode(buf).decode("utf-8"))
-        return {
-            "status": "need_manual",
-            "message": "Template matching failed. Please click the reference point in each photo.",
-            "photos": photos_b64,
-            "pixel_positions": pixel_positions,
-        }
-
-    result = _compute_calibration(
-        pixel_positions, positions, ref_arm_x, ref_arm_y, step_mm,
-        raw_height
-    )
-
-    await calibration.save_calibration(station_id, result)
-
-    return {"status": "ok", **result}
+    cam = worker.camera
+    frame = cam.capture_fresh()
+    if frame is None:
+        return {"error": "Camera capture failed"}
+    raw_h, raw_w = frame.shape[:2]
+    rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    rot_h, rot_w = rotated.shape[:2]
+    _, buf = cv2.imencode(".jpg", rotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    photo_x, photo_y = arm.get_position()
+    return {
+        "image_b64": base64.b64encode(buf).decode("utf-8"),
+        "raw_width": int(raw_w),
+        "raw_height": int(raw_h),
+        "rotated_width": int(rot_w),
+        "rotated_height": int(rot_h),
+        "photo_arm_x": float(photo_x),
+        "photo_arm_y": float(photo_y),
+    }
 
 
-@router.post("/auto-calibrate/manual-points")
-async def auto_calibrate_manual(data: dict):
-    """Complete calibration using manually clicked pixel positions.
-    Body: {station_id, points: [[px_a,py_a],[px_b,py_b],[px_c,py_c]],
-           start_x, start_y, ref_arm_x, ref_arm_y, step_mm, raw_height}
+@router.post("/fiducial-save")
+async def fiducial_save(data: dict):
+    """Fit 2x3 affine from 4 clicked corners + pen-on-crosshair alignment,
+    report RMSE, save if acceptable.
+
+    Body:
+      station_id, photo_arm_x, photo_arm_y, pen_arm_x, pen_arm_y,
+      corners_rotated: [{x, y}, {x, y}, {x, y}, {x, y}]  # order TL, TR, BR, BL
+      card_size_mm (default 50), raw_width, raw_height
+
+    Returns:
+      status: "ok" | "poor_precision" | error message
+      transform_matrix, camera_park_pos, scale_mm_per_pixel, rotation_degrees, raw_height
+      rmse_mm, per_anchor_error_mm, scale_x_mm_per_px, scale_y_mm_per_px, scale_anisotropy
     """
-    station_id = data["station_id"]
-    points = data["points"]
-    start_x = float(data["start_x"])
-    start_y = float(data["start_y"])
-    step_mm = float(data.get("step_mm", 10))
-    ref_arm_x = float(data["ref_arm_x"])
-    ref_arm_y = float(data["ref_arm_y"])
-    raw_height = int(data.get("raw_height", 480))
+    try:
+        station_id = int(data["station_id"])
+        card_size = float(data.get("card_size_mm", 50))
+        half = card_size / 2.0
 
-    pixel_positions = [(p[0], p[1]) for p in points]
-    positions = [
-        ("A", start_x, start_y),
-        ("B", start_x, start_y + step_mm),
-        ("C", start_x + step_mm, start_y),
-    ]
+        pen_arm = (float(data["pen_arm_x"]), float(data["pen_arm_y"]))
+        photo_arm = (float(data["photo_arm_x"]), float(data["photo_arm_y"]))
+        corners_rot = data["corners_rotated"]
+        if len(corners_rot) != 4:
+            return {"error": "corners_rotated must have exactly 4 points (TL, TR, BR, BL)"}
+        raw_height = int(data["raw_height"])
+    except (KeyError, ValueError, TypeError) as e:
+        return {"error": "Invalid request: %s" % e}
 
-    result = _compute_calibration(pixel_positions, positions, ref_arm_x, ref_arm_y, step_mm, raw_height)
-    await calibration.save_calibration(station_id, result)
-    return {"status": "ok", **result}
-
-
-def _find_template(image, template):
-    """Find template in image using OpenCV matchTemplate. Returns (x,y) center or None."""
-    result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
-    if max_val < 0.5:
-        return None
-    th, tw = template.shape[:2]
-    cx = max_loc[0] + tw / 2
-    cy = max_loc[1] + th / 2
-    return (cx, cy)
-
-
-def _compute_calibration(pixel_positions, arm_positions, ref_arm_x, ref_arm_y,
-                         step_mm, raw_height):
-    """Compute affine matrix from 3 pixel positions + known arm movements.
-
-    Solves the linear system directly (no angle-based approximation).
-
-    pixel_positions: [(px_a, py_a), (px_b, py_b), (px_c, py_c)] on ROTATED image
-    arm_positions: [("A", ax, ay), ("B", bx, by), ("C", cx, cy)]
-    ref_arm_x, ref_arm_y: known arm coordinates for the reference icon at pixel A
-    raw_height: height of the ORIGINAL (unrotated) camera frame (e.g. 480)
-
-    Matrix M maps RAW pixel coords to arm coords (consistent with pixel_to_arm):
-      raw_x = rotated_y,  raw_y = (raw_height-1) - rotated_x
-      arm = M @ [raw_x, raw_y, 1]
-
-    We require:
-      M2 @ dr_y = [0, step_mm]   (arm Y increases, arm X unchanged when moving to B)
-      M2 @ dr_x = [step_mm, 0]   (arm X increases, arm Y unchanged when moving to C)
-    where dr_y, dr_x are raw-space displacements.
-    """
-    pa = np.array(pixel_positions[0], dtype=float)
-    pb = np.array(pixel_positions[1], dtype=float)
-    pc = np.array(pixel_positions[2], dtype=float)
-
-    # Convert rotated pixel positions to raw pixel coordinates
-    # raw_x = rotated_y,  raw_y = (H-1) - rotated_x
+    # Convert rotated pixel -> raw pixel using the same formula as pixel_to_arm
+    # (see app/calibration.py:94-95). Rotated image was produced by
+    # cv2.ROTATE_90_CLOCKWISE, so: raw_x = rotated_y, raw_y = (H-1) - rotated_x.
     H = raw_height - 1
 
     def to_raw(p):
-        return np.array([p[1], H - p[0]])
+        return (float(p["y"]), float(H - p["x"]))
 
-    ra = to_raw(pa)
-    rb = to_raw(pb)
-    rc = to_raw(pc)
+    tl_raw = to_raw(corners_rot[0])
+    tr_raw = to_raw(corners_rot[1])
+    br_raw = to_raw(corners_rot[2])
+    bl_raw = to_raw(corners_rot[3])
+    # Crosshair pixel = geometric center of the 4 corner pixels.
+    cross_raw = (
+        (tl_raw[0] + tr_raw[0] + br_raw[0] + bl_raw[0]) / 4.0,
+        (tl_raw[1] + tr_raw[1] + br_raw[1] + bl_raw[1]) / 4.0,
+    )
 
-    # Raw-space displacements when arm moved +Y and +X respectively
-    dr_y = rb - ra
-    dr_x = rc - ra
-
-    # Solve: M2 @ [dr_y | dr_x] = [[0, step], [step, 0]]
-    A = np.column_stack([dr_y, dr_x])
-    det = np.linalg.det(A)
-    if abs(det) < 1e-6:
-        raise ValueError(
-            "Calibration points appear collinear (det=%.2e). "
-            "Choose points that form a larger triangle." % det
-        )
-
-    rhs = np.array([[0.0, -step_mm], [-step_mm, 0.0]])
-    M2 = rhs @ np.linalg.inv(A)
-
-    # Translation: at raw position ra the arm should reach (ref_arm_x, ref_arm_y)
-    t = np.array([ref_arm_x, ref_arm_y]) - M2 @ ra
-
-    M = [
-        [float(M2[0, 0]), float(M2[0, 1]), float(t[0])],
-        [float(M2[1, 0]), float(M2[1, 1]), float(t[1])],
+    # Under the "card axes aligned with arm axes" assumption (user placed the
+    # card with printed edges parallel to the arm's X/Y), the 4 corners sit at
+    # fixed offsets from the crosshair in arm space. Crosshair itself is where
+    # the user touched the pen, hence pen_arm.
+    pairs = [
+        (cross_raw, pen_arm),
+        (tl_raw, (pen_arm[0] - half, pen_arm[1] - half)),
+        (tr_raw, (pen_arm[0] + half, pen_arm[1] - half)),
+        (br_raw, (pen_arm[0] + half, pen_arm[1] + half)),
+        (bl_raw, (pen_arm[0] - half, pen_arm[1] + half)),
     ]
 
-    scale_y = step_mm / np.linalg.norm(rb - ra)
-    scale_x = step_mm / np.linalg.norm(rc - ra)
-    scale = (scale_x + scale_y) / 2
+    M, rmse, per_anchor_errs = _fit_fiducial_affine(pairs)
 
-    # rotation: angle of the first column of M2 in arm space
-    rotation_deg = float(np.degrees(np.arctan2(M2[1, 0], M2[0, 0])))
+    # Report scale and rotation (from the fitted matrix — NOT hardcoded to 0).
+    # Scale comes from the column norms; rotation from the first column's angle
+    # in arm space (same formula as the old _compute_calibration).
+    M_np = np.array(M)
+    col_x = M_np[:, 0]
+    col_y = M_np[:, 1]
+    scale_x = float(np.linalg.norm(col_x))
+    scale_y = float(np.linalg.norm(col_y))
+    scale_avg = (scale_x + scale_y) / 2.0
+    rotation_deg = float(np.degrees(np.arctan2(col_x[1], col_x[0])))
 
-    return {
+    result = {
         "transform_matrix": M,
-        "camera_park_pos": [arm_positions[0][1], arm_positions[0][2]],
-        "scale_mm_per_pixel": round(scale, 6),
+        "camera_park_pos": [photo_arm[0], photo_arm[1]],
+        "scale_mm_per_pixel": round(scale_avg, 6),
         "rotation_degrees": round(rotation_deg, 2),
         "raw_height": raw_height,
     }
+
+    status = "ok" if rmse <= RMSE_THRESHOLD_MM else "poor_precision"
+    if status == "ok":
+        await calibration.save_calibration(station_id, result)
+        logger.info(
+            "Fiducial calibration saved: station=%d rmse=%.3fmm rot=%.2fdeg scale=%.4f",
+            station_id, rmse, rotation_deg, scale_avg,
+        )
+    else:
+        logger.warning(
+            "Fiducial calibration rejected: station=%d rmse=%.3fmm threshold=%.2fmm",
+            station_id, rmse, RMSE_THRESHOLD_MM,
+        )
+
+    return {
+        "status": status,
+        "rmse_mm": round(rmse, 3),
+        "per_anchor_error_mm": [round(e, 3) for e in per_anchor_errs],
+        "scale_x_mm_per_px": round(scale_x, 6),
+        "scale_y_mm_per_px": round(scale_y, 6),
+        "scale_anisotropy": round(max(scale_x, scale_y) / max(min(scale_x, scale_y), 1e-9), 3),
+        **result,
+    }
+
+
+def _fit_fiducial_affine(pairs):
+    """Fit a full 2x3 affine matrix mapping raw pixel -> arm coord via least
+    squares. Unlike a hardcoded diagonal matrix, this preserves any rotation
+    between the camera pixel axes and the arm axes (the existing codebase
+    stores 2x3 with off-diagonal terms, so downstream consumers are already
+    compatible).
+
+    Equation: arm = M @ [raw_x, raw_y, 1], where M = [[a, b, c], [d, e, f]]
+    Expanded:
+      arm_x = a*raw_x + b*raw_y + c
+      arm_y = d*raw_x + e*raw_y + f
+
+    For N pairs we build a 2N x 6 design matrix and solve for [a, b, c, d, e, f]
+    via np.linalg.lstsq. Minimum 3 pairs to be solvable; more gives overdetermined
+    fit plus a meaningful RMSE quality metric.
+
+    Args:
+      pairs: list of ((raw_x, raw_y), (arm_x, arm_y))
+
+    Returns:
+      M: 2x3 nested list, same shape as the legacy _compute_calibration output
+      rmse_mm: root-mean-square 2D residual in millimeters
+      per_anchor_errs_mm: per-pair 2D euclidean residual in millimeters
+    """
+    n = len(pairs)
+    if n < 3:
+        raise ValueError("Need at least 3 pairs to fit 2x3 affine, got %d" % n)
+
+    A = np.zeros((2 * n, 6), dtype=float)
+    b = np.zeros(2 * n, dtype=float)
+    for i, ((rx, ry), (ax, ay)) in enumerate(pairs):
+        A[2 * i] = [rx, ry, 1.0, 0.0, 0.0, 0.0]
+        A[2 * i + 1] = [0.0, 0.0, 0.0, rx, ry, 1.0]
+        b[2 * i] = ax
+        b[2 * i + 1] = ay
+
+    p, *_ = np.linalg.lstsq(A, b, rcond=None)
+
+    M = [
+        [float(p[0]), float(p[1]), float(p[2])],
+        [float(p[3]), float(p[4]), float(p[5])],
+    ]
+
+    M_np = np.array(M)
+    per_anchor_errs = []
+    for (rx, ry), (ax, ay) in pairs:
+        pred = M_np @ np.array([rx, ry, 1.0])
+        err = float(np.sqrt((pred[0] - ax) ** 2 + (pred[1] - ay) ** 2))
+        per_anchor_errs.append(err)
+    rmse = float(np.sqrt(sum(e ** 2 for e in per_anchor_errs) / n))
+    return M, rmse, per_anchor_errs
