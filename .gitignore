@@ -20,7 +20,10 @@ ngrok-*.zip
 arm_service/service/*.pdb
 arm_service/service/*.InstallLog
 arm_service/service/*.InstallState
-# 注意：models/、references/、arm_service/service/*.exe、*.dll、deploy/nssm.exe、
+# CHECK_SCREEN 参考图：每台机器的相机角度、灯光、手机摆位都不一样，
+# 跨机器复用会直接导致 SSIM 对不上。每台机器自己在 Builder 里截图即可。
+references/
+# 注意：models/、arm_service/service/*.exe、*.dll、deploy/nssm.exe、
 # deploy/tesseract-setup.exe、arm_service/VC_redist.x86.exe 全部纳入跟踪，
 # 新机器 git clone 后即可直接 deploy/install_service.bat 完成安装。
 

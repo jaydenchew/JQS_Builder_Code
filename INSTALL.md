@@ -330,6 +330,14 @@ This is bank-specific business logic; not covered here in detail. In short:
 - For each flow, record the steps (CLICK / TYPE / SWIPE / PHOTO / OCR_VERIFY / CHECK_SCREEN)
 - Each CLICK / SWIPE / TYPE references a `ui_element_key` or `swipe_key` whose coordinates are per-bank per-station (Settings -> Coordinates)
 
+**Reference images for CHECK_SCREEN are per-machine.** The `references/` folder is not tracked in git (each camera's pose, lens, and lighting produce slightly different pixels, so cross-machine reuse breaks the SSIM match). For every CHECK_SCREEN step:
+
+1. In the Builder step config, click **Capture Now** with the expected screen live on the phone
+2. A JPEG is saved to `references/<arm_name>/<bank_code>/<name>.jpg` on this machine only
+3. Use **Preview** to verify the capture looks right, and **Test Compare** to confirm SSIM >= 0.80 on a live frame
+
+Existing references from a previous install on a different machine should be discarded, not copied. If you changed the camera or the phone fixture, re-capture all CHECK_SCREEN references from that arm.
+
 See [CHECK_SCREEN_OPS.md](CHECK_SCREEN_OPS.md) for the screen-verification step operations guide.
 
 ---
