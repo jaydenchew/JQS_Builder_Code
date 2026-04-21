@@ -130,45 +130,48 @@ ngrok http 9000
 ```
 URL changes on every restart. Not suitable for production.
 
-### Multi-machine deployment (wa2 / wa3 / ...)
+### Multi-machine deployment (additional machines on the same Cloudflare account)
 
-When deploying a second (or third) machine on the same Cloudflare account, each machine needs its own tunnel and hostname. The first machine uses `wa-system` + `wa.evolution-x.io`; additional machines must use distinct names.
+When deploying a second (or third) machine, each one needs its own tunnel and hostname. The first machine used whatever `<TUNNEL_NAME>` + `<HOSTNAME>` you chose in the primary setup (for example, `wa-system` + `wa.yourdomain.com`). Additional machines must pick distinct names.
 
-**On the new machine (as Administrator PowerShell):**
+Decide per machine (example naming scheme):
+- Primary:   `<TUNNEL_NAME>` = `wa-system`,  `<HOSTNAME>` = `wa.yourdomain.com`
+- Machine 2: `<TUNNEL_NAME>` = `wa2-system`, `<HOSTNAME>` = `wa2.yourdomain.com`
+- Machine 3: `<TUNNEL_NAME>` = `wa3-system`, `<HOSTNAME>` = `wa3.yourdomain.com`
+
+The naming is your own convention — any unique string on the Cloudflare account works. The code does not read these names; `install_tunnel.ps1` only reads `$HOSTNAME` and auto-discovers whichever tunnel credentials JSON is sitting in `%USERPROFILE%\.cloudflared\`.
+
+**On the new machine (Administrator PowerShell):**
 
 ```powershell
 # 1. One-time Cloudflare auth (browser popup)
 cloudflared tunnel login
 
-# 2. Create a NEW tunnel with a distinct name (e.g., wa2-system for the 2nd machine)
-cloudflared tunnel create wa2-system
+# 2. Create a NEW tunnel with your chosen distinct name
+cloudflared tunnel create <TUNNEL_NAME>
 
-# 3. Route the new hostname to the new tunnel.
-#    If wa2.evolution-x.io was previously pointed at another tunnel on your
+# 3. Route your chosen hostname to the new tunnel.
+#    If <HOSTNAME> was previously pointed at another tunnel on your
 #    Cloudflare account (common when reusing subdomains), you MUST add
 #    --overwrite-dns or the route stays pointing at the old tunnel:
-cloudflared tunnel route dns --overwrite-dns wa2-system wa2.evolution-x.io
+cloudflared tunnel route dns --overwrite-dns <TUNNEL_NAME> <HOSTNAME>
 ```
 
-**Then edit `deploy/install_tunnel.ps1`:**
+**Then edit `deploy/install_tunnel.ps1` line 20:**
 
-Change line near the top:
 ```powershell
-$HOSTNAME = "wa.evolution-x.io"
-```
-to the new host:
-```powershell
-$HOSTNAME = "wa2.evolution-x.io"
+$HOSTNAME = "<HOSTNAME>"   # your chosen hostname, e.g. wa2.yourdomain.com
 ```
 
 **Then run:** right-click `deploy/install_tunnel.bat` → Run as Administrator.
 
-Verify: `curl https://wa2.evolution-x.io/health` returns 200.
+Verify: `curl https://<HOSTNAME>/health` returns `{"status": "ok"}`.
 
 **Common pitfalls:**
-- `wa2.evolution-x.io is already configured to route to your tunnel tunnelID=<old-uuid>` during step 3 means the hostname was previously routed to another tunnel on your account. Re-run with `--overwrite-dns` to force re-route.
+- `<HOSTNAME> is already configured to route to your tunnel tunnelID=<old-uuid>` during step 3 means the hostname was previously routed to another tunnel on your account. Re-run with `--overwrite-dns` to force re-route.
 - `nssm.exe: Can't open service!` red text on first install is **harmless** — the install script tries to stop/remove an existing service before creating a fresh one; on a clean machine the stop/remove just has nothing to act on, but NSSM prints to stderr anyway. As long as the final line says `Service status: RUNNING`, it succeeded.
 - `Cannot establish a connection to the service control manager: Access is denied` means PowerShell wasn't launched as Administrator. Close it and open a new PowerShell with **Run as Administrator**.
+- `.cloudflared/` directory has multiple `.json` files from previous setups — the install script picks the first one alphabetically. If that's not the tunnel you just created, delete the stale credentials files or the config will point at the wrong tunnel.
 
 ## 3. Service Startup Order
 

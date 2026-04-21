@@ -6,6 +6,10 @@ For business context and why this system exists, see `BUSINESS_CONTEXT.md`.
 For technical architecture, see `ARCHITECTURE_PLAN.md`.
 For design decisions that may look unusual, see `DESIGN_DECISIONS.md`.
 
+**Setting up a new machine? Use [INSTALL.md](INSTALL.md)** — a detailed step-by-step
+guide with prerequisites, hardware checks, calibration, and a verification
+checklist. The condensed version below is for reference only.
+
 ## Full Installation (New Machine)
 
 ### Step 1: Install Arm WCF Service
