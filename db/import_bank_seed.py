@@ -72,6 +72,16 @@ def main():
     real_errors = [l for l in stderr.splitlines() if l and "Warning" not in l]
 
     if proc.returncode != 0 or real_errors:
+        # Translate the intentional arm-guard error into a helpful message.
+        # The seed uses IFNULL(@arm_id, (SELECT 1 FROM nonexistent_arm_check))
+        # to cause a hard failure when @arm_id is NULL (arm not found).
+        if any("nonexistent_arm_check" in l for l in real_errors):
+            print("FAILED: arm '%s' does not exist in the database." % arm_name)
+            print()
+            print("  Fix: open Builder -> Settings -> Arms and add an arm named '%s'." % arm_name)
+            print("  Then re-run this command.")
+            sys.exit(1)
+
         print("FAILED (exit code %d)" % proc.returncode)
         for l in real_errors:
             print("  STDERR: %s" % l)
