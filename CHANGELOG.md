@@ -1,5 +1,52 @@
 # Changelog
 
+## Per-bank flow seeds + import script (2026-04-22)
+
+### What
+
+New `db/` files let a new machine import the flow structure (step names, action types, delays, OCR ROIs, CHECK_SCREEN config) for any supported bank without restoring the full DB.
+
+**Files added:**
+
+| File | Purpose |
+|---|---|
+| `db/export_bank_seed.py` | Generates a seed from the live DB for a given bank+arm |
+| `db/import_bank_seed.py` | Imports a seed onto any arm by substituting the arm name at run time |
+| `db/seed_bank_ABA.sql` | ABA Same Bank (1 main + 1 handler, 20 steps) |
+| `db/seed_bank_ACLEDA.sql` | ACLEDA Same + Interbank (2 main + 1 handler, 44 steps) |
+| `db/seed_bank_WINGBANK.sql` | WINGBANK Same Bank (1 main, 19 steps) |
+| `db/seed_bank_MBB.sql` | MBB Same + Interbank (2 main, 60 steps) |
+| `db/seed_bank_CIMB.sql` | CIMB Same + Interbank (2 main, 76 steps) |
+
+### How to use
+
+```powershell
+# Import on a new machine (after adding the arm in Settings -> Arms):
+py db\import_bank_seed.py db\seed_bank_ABA.sql ARM-05
+
+# Regenerate after editing flows and commit to share with the team:
+py db\export_bank_seed.py ABA ARM-01
+```
+
+### What the seeds include / exclude
+
+Included | Excluded
+---|---
+flow_templates (name, transfer_type, amount_format) | ui_elements (X/Y coordinates)
+flow_steps (all step fields: action_type, delays, description / OCR ROI JSON, CHECK_SCREEN config JSON) | keymaps, swipe_actions
+Handler flow templates referenced by CHECK_SCREEN steps | keyboard_configs
+&nbsp; | references/ (per-machine camera captures)
+&nbsp; | calibrations (per-machine)
+
+### Technical notes
+
+- Seeds are arm-agnostic: `{ARM_NAME}` placeholder is replaced at import time, so the same `.sql` file works for ARM-01, ARM-05, etc.
+- Handler flow template IDs are resolved via `CONCAT(..., @handler_N_id, ...)` so the `handler_flow` field in CHECK_SCREEN description JSON always points at the newly-assigned ID on the target machine, not the source machine's ID.
+- Seeds are idempotent: existing flows for that bank+arm are deleted before re-insert.
+- Import guard: if the arm does not exist in the DB the import fails loudly (referencing a nonexistent table triggers a MySQL error).
+
+---
+
 ## Calibration: Fiducial card replaces 3-point auto-calibrate (2026-04-21)
 
 ### Problem

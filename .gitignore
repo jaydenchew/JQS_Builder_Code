@@ -7,6 +7,8 @@
 db/seed.sql
 db/seed_*.sql
 !db/seed.example.sql
+# 例外：per-bank flow seeds 不含凭证或坐标，可以跟踪
+!db/seed_bank_*.sql
 
 # 数据库备份（本地 mysqldump 输出，含所有数据，不上传）
 db_backups/

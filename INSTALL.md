@@ -322,13 +322,56 @@ See [DESIGN_DECISIONS.md DD-023](DESIGN_DECISIONS.md) for why this replaces the 
 
 ---
 
-## Step 10: Record flows (per bank)
+## Step 10: Import or record flows (per bank)
 
-This is bank-specific business logic; not covered here in detail. In short:
+### Option A — Import from a bank seed (recommended if flows already exist elsewhere)
+
+The repo ships ready-to-use flow seeds for each supported bank. These contain only the flow structure (templates + steps) — no coordinates, keymaps, swipe actions, calibration, or reference images. All of those are per-machine and must still be captured via Builder.
+
+Available seeds in `db/`:
+
+| File | Bank | Templates |
+|---|---|---|
+| `seed_bank_ABA.sql` | ABA | Same Bank (19 steps) + handler |
+| `seed_bank_ACLEDA.sql` | ACLEDA | Same + Interbank (18/24 steps) + handler |
+| `seed_bank_WINGBANK.sql` | WINGBANK | Same Bank (19 steps) |
+| `seed_bank_MBB.sql` | MBB | Same + Interbank (27/33 steps) |
+| `seed_bank_CIMB.sql` | CIMB | Same + Interbank (35/41 steps) |
+
+Import one or more banks using the wrapper script (replace `ARM-05` with the arm name you configured in Step 8):
+
+```powershell
+py db\import_bank_seed.py db\seed_bank_ABA.sql ARM-05
+py db\import_bank_seed.py db\seed_bank_ACLEDA.sql ARM-05
+# ... repeat for each bank you need on this arm
+```
+
+The script substitutes the arm name, pipes the SQL into the Docker container, and prints a checklist of the per-machine steps that still need to be done (coordinates, calibration, references).
+
+**After importing, the flows exist but cannot run yet** until you complete Steps 10B and 10C below.
+
+### Option B — Record coordinates (mandatory after Option A or from scratch)
+
+In Builder -> **Settings** -> **Coordinates**, for each bank on this station:
+
+- Add `ui_elements` for every `ui_element_key` referenced by CLICK / PHOTO / ARM_MOVE steps
+- Add `swipe_actions` for every `swipe_key` referenced by SWIPE steps
+- Add `keymaps` for every `keymap_type` referenced by TYPE steps (use the keyboard recorder)
+
+### Option C — Build flows from scratch
+
+If this is a new bank not in the seed library:
 
 - Builder -> **Flows** -> create a template per bank + transfer type
-- For each flow, record the steps (CLICK / TYPE / SWIPE / PHOTO / OCR_VERIFY / CHECK_SCREEN)
-- Each CLICK / SWIPE / TYPE references a `ui_element_key` or `swipe_key` whose coordinates are per-bank per-station (Settings -> Coordinates)
+- Record each step (CLICK / TYPE / SWIPE / PHOTO / OCR_VERIFY / CHECK_SCREEN)
+- Record coordinates as in Option B
+
+To update the seed after building a new flow:
+```powershell
+py db\export_bank_seed.py <BANK_CODE> <ARM_NAME>
+# e.g.: py db\export_bank_seed.py ABA ARM-05
+```
+Commit the resulting `db/seed_bank_<BANK>.sql` to share with the team.
 
 **Reference images for CHECK_SCREEN are per-machine.** The `references/` folder is not tracked in git (each camera's pose, lens, and lighting produce slightly different pixels, so cross-machine reuse breaks the SSIM match). For every CHECK_SCREEN step:
 
@@ -425,13 +468,15 @@ See [deploy/README.md - Multi-machine deployment](deploy/README.md) for full hos
 
 ## Backup & restore
 
-After the machine is configured, export the seed data periodically:
+### Full DB backup (all tables, all machines)
+
+Export periodically from the running machine:
 
 ```powershell
 py db\export_seed.py
 ```
 
-Restore on a new machine (before Step 10):
+Restore (wipes and recreates the DB volume):
 
 ```powershell
 docker-compose down -v
@@ -440,7 +485,19 @@ Start-Sleep 30
 py db\export_seed.py --import
 ```
 
-Note: `db/seed.sql` is in `.gitignore` because it contains real credentials. Transport via secure channel only.
+Note: `db/seed.sql` is in `.gitignore` (contains real credentials + all data). Transport via secure channel only.
+
+### Per-bank flow-only seed (shared via git)
+
+The `db/seed_bank_*.sql` files are tracked in git and contain only flow structure (no credentials, no coordinates). Use these when setting up a new arm for a bank that already has a working flow elsewhere.
+
+```powershell
+# Import a bank seed onto a new arm:
+py db\import_bank_seed.py db\seed_bank_ABA.sql ARM-05
+
+# Regenerate a seed after editing flows (run on source machine, then commit):
+py db\export_bank_seed.py ABA ARM-01
+```
 
 ---
 
