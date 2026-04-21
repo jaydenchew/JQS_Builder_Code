@@ -6,24 +6,106 @@
     <title>Settings — WA System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
-        .tab-btn { padding: 10px 20px; background: none; border: none; color: var(--text2); cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+        html, body { min-height: 100%; }
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
+                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
+                #0a1020;
+            color: #e8ecff;
+            overflow-x: hidden;
+        }
+        .app-shell {
+            width: 111.1112%;
+            transform: scale(0.9);
+            transform-origin: top left;
+        }
+        .container { max-width: 1520px; padding-top: 20px; }
+        .page-head { margin-bottom: 14px; }
+        .page-kicker {
+            margin: 0 0 6px;
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #93a7ff;
+        }
+        .page-title { margin: 0; font-size: 27px; color: #e6ecff; }
+        .page-subtitle { margin: 6px 0 0; color: #acb6de; font-size: 13px; }
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(109, 127, 206, 0.3);
+            padding-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .tab-btn {
+            padding: 10px 18px;
+            background: rgba(27, 42, 85, 0.65);
+            border: 1px solid rgba(109, 127, 206, 0.32);
+            color: #a8b4df;
+            cursor: pointer;
+            font-size: 13px;
+            border-radius: 999px;
+            margin-bottom: 0;
+        }
+        .tab-btn.active {
+            color: #f3f6ff;
+            border-color: rgba(151, 170, 255, 0.72);
+            font-weight: 600;
+            background: linear-gradient(160deg, rgba(58, 81, 156, 0.85), rgba(44, 63, 130, 0.85));
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+        }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; padding: 16px; background: var(--bg); border-radius: var(--radius); border: 1px solid var(--border); }
+        .inline-form {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding: 16px;
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+        }
         .inline-form .form-group { margin-bottom: 0; }
         .inline-form input, .inline-form select { min-width: 100px; }
-        .edit-input { background: var(--bg); border: 1px solid var(--accent); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 120px; }
+        .inline-form .btn { border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
+        .tab-content .card {
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        .tab-content .card table { margin: 0; }
+        .tab-content .card th { background: rgba(38, 53, 102, 0.6); color: #b8c5f1; }
+        .tab-content .card td { border-bottom-color: rgba(96, 117, 191, 0.2); }
         table input, table select { min-width: 0; width: auto; }
         td .badge { cursor: default; }
         .active-toggle { cursor: pointer; }
+        .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .modal-head h3 { margin: 0; }
+        .cam-scan-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill,minmax(160px,1fr));
+            gap: 10px;
+        }
+        .empty-tip { color: var(--text2); }
+        .cam-tip { text-align: center; color: var(--text2); grid-column: 1 / -1; padding: 40px; }
     </style>
 </head>
 <body>
+    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
-        <h2 style="margin-bottom: 20px;">Settings</h2>
+        <div class="page-head">
+            <p class="page-kicker">Operations Console</p>
+            <h2 class="page-title">Settings</h2>
+            <p class="page-subtitle">Manage arms, stations, phones, and bank app mappings.</p>
+        </div>
 
         <div class="tab-bar">
             <button class="tab-btn active" onclick="switchTab('arms')">Arms</button>
@@ -48,19 +130,6 @@
                     <thead><tr><th>ID</th><th>Name</th><th>COM Port</th><th>Camera</th><th>Z Down</th><th>Active</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="arms-table"></tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- Camera Scan Modal -->
-        <div class="modal-overlay" id="cam-scan-modal" onclick="if(event.target===this)this.classList.remove('active')">
-            <div class="modal" style="max-width:700px;max-height:85vh;overflow-y:auto;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <h3 style="margin:0;">Camera Scan</h3>
-                    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cam-scan-modal').classList.remove('active')">Close</button>
-                </div>
-                <div id="cam-scan-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
-                    <div style="text-align:center;color:var(--text2);grid-column:1/-1;padding:40px;">Scanning cameras...</div>
-                </div>
             </div>
         </div>
 
@@ -113,6 +182,20 @@
                     <thead><tr><th>ID</th><th>Arm</th><th>Station</th><th>Phone</th><th>Bank</th><th>Account</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="bank-apps-table"></tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Camera Scan Modal -->
+    <div class="modal-overlay" id="cam-scan-modal" onclick="if(event.target===this)this.classList.remove('active')">
+        <div class="modal" style="max-width:700px;max-height:85vh;overflow-y:auto;">
+            <div class="modal-head">
+                <h3>Camera Scan</h3>
+                <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cam-scan-modal').classList.remove('active')">Close</button>
+            </div>
+            <div id="cam-scan-results" class="cam-scan-results">
+                <div class="cam-tip">Scanning cameras...</div>
             </div>
         </div>
     </div>
@@ -169,7 +252,7 @@
                 <button class="btn btn-sm btn-primary" onclick="saveArm(${a.id})">Save</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteArm(${a.id})">Del</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="8" style="color:var(--text2)">No arms</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="8" class="empty-tip">No arms</td></tr>';
     }
 
     async function addArm() {
@@ -210,7 +293,7 @@
     async function scanCameras() {
         document.getElementById('cam-scan-modal').classList.add('active');
         document.getElementById('cam-scan-results').innerHTML =
-            '<div style="text-align:center;color:var(--text2);grid-column:1/-1;padding:40px;">Scanning cameras (this takes ~10 seconds)...</div>';
+            '<div class="cam-tip">Scanning cameras (this takes ~10 seconds)...</div>';
         const r = await API.post('/api/stations/scan-cameras', { max_index: 9 });
         if (!r.cameras) { document.getElementById('cam-scan-results').innerHTML = '<div style="color:var(--danger)">Scan failed</div>'; return; }
 
@@ -219,7 +302,7 @@
 
         const visible = r.cameras.filter(c => c.status !== 'unavailable');
         if (!visible.length) {
-            document.getElementById('cam-scan-results').innerHTML = '<div style="text-align:center;color:var(--text2);grid-column:1/-1;padding:40px;">No cameras detected. Make sure USB cameras are connected.</div>';
+            document.getElementById('cam-scan-results').innerHTML = '<div class="cam-tip">No cameras detected. Make sure USB cameras are connected.</div>';
             return;
         }
         document.getElementById('cam-scan-results').innerHTML = visible.map(c => {
@@ -272,7 +355,7 @@
                 <button class="btn btn-sm btn-primary" onclick="saveStation(${s.id})">Save</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteStation(${s.id})">Del</button>
             </td>
-        </tr>`}).join('') || '<tr><td colspan="8" style="color:var(--text2)">No stations</td></tr>';
+        </tr>`}).join('') || '<tr><td colspan="8" class="empty-tip">No stations</td></tr>';
     }
 
     async function addStation() {
@@ -324,7 +407,7 @@
                 <button class="btn btn-sm btn-primary" onclick="savePhone(${p.id})">Save</button>
                 <button class="btn btn-sm btn-danger" onclick="deletePhone(${p.id})">Del</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="6" style="color:var(--text2)">No phones</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="6" class="empty-tip">No phones</td></tr>';
     }
 
     async function addPhone() {
@@ -374,7 +457,7 @@
                 <button class="btn btn-sm btn-primary" onclick="saveBankApp(${b.id})">Save</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteBankApp(${b.id})">Del</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="9" style="color:var(--text2)">No bank apps</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="9" class="empty-tip">No bank apps</td></tr>';
     }
 
     async function addBankApp() {

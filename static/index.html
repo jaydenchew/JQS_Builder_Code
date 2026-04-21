@@ -6,60 +6,196 @@
     <title>WA Unified System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .arm-card { padding: 16px; min-height: 140px; position: relative; }
-        .arm-card .arm-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+        html, body { min-height: 100%; }
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
+                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
+                #0a1020;
+            color: #e8ecff;
+            overflow-x: hidden;
+        }
+        .app-shell {
+            width: 111.1112%;
+            transform: scale(0.9);
+            transform-origin: top left;
+        }
+        .container { max-width: 1520px; padding-top: 20px; }
+        .dash-hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+        .dash-kicker {
+            margin: 0 0 6px;
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #93a7ff;
+        }
+        .dash-subtitle {
+            margin: 6px 0 0;
+            color: #acb6de;
+            font-size: 13px;
+        }
+        .page-title { margin-bottom: 20px; }
+        .dash-hero .page-title { margin-bottom: 0; font-size: 27px; letter-spacing: 0.01em; }
+        .section-title { margin-top: 24px; margin-bottom: 12px; color: #d4dcff; font-size: 18px; }
+        .full-span-center-muted { grid-column: 1 / -1; text-align: center; color: var(--text2); }
+        .panel-card { margin-top: 24px; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .panel-header h3 { margin: 0; }
+        .panel-actions { display: flex; gap: 8px; align-items: center; }
+        .select-compact { width: auto; min-width: 120px; }
+        .stats-grid .card-stat {
+            border-radius: 14px;
+            border-color: rgba(110, 128, 212, 0.32);
+            background: linear-gradient(160deg, rgba(22, 34, 72, 0.9), rgba(16, 24, 52, 0.92));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        .stats-grid .card-stat .num { font-size: 34px; letter-spacing: 0.02em; }
+        .stats-grid .card-stat .label { color: #98a8dd; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .stat-total { border-left: 3px solid #a06bff; }
+        .stat-success { border-left: 3px solid #4caf50; }
+        .stat-failed { border-left: 3px solid #f44336; }
+        .stat-stall { border-left: 3px solid #ff9800; }
+        .stat-queue { border-left: 3px solid #ffbf47; }
+        .log-terminal {
+            background: #0b1327;
+            border: 1px solid #2f3d66;
+            border-radius: 12px;
+            padding: 12px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .log-line {
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+        }
+        .log-line:hover { background: rgba(130, 149, 220, 0.08); border-color: rgba(130, 149, 220, 0.16); }
+        .log-prefix { color: #8b949e; }
+        .log-ts { color: #484f58; }
+        .log-lvl { font-weight: 600; }
+        .card-stat .num.stat-num-success { color: var(--success); }
+        .card-stat .num.stat-num-failed { color: var(--danger); }
+        .card-stat .num.stat-num-stall { color: #ff9800; }
+        .card-stat .num.stat-num-queue { color: var(--warning); }
+        .arm-extra { font-size: 11px; color: var(--text2); margin-top: 4px; }
+        .arm-error { font-size: 11px; color: var(--danger); margin-top: 4px; }
+        .cam-loading { text-align: center; color: var(--text2); padding: 24px 4px; }
+        .arm-grid .card.arm-card {
+            padding: 16px;
+            min-height: 154px;
+            position: relative;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.28);
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+        }
+        .arm-card-idle { border-left: 3px solid rgba(76, 175, 80, 0.9); }
+        .arm-card-busy { border-left: 3px solid rgba(255, 152, 0, 0.95); }
+        .arm-card-paused { border-left: 3px solid rgba(244, 67, 54, 0.9); }
+        .arm-card-offline, .arm-card-no_worker { border-left: 3px solid rgba(244, 67, 54, 0.75); opacity: 0.92; }
+        .arm-card .arm-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; color: #e6ecff; }
         .arm-card .arm-meta { font-size: 11px; color: var(--text2); margin-bottom: 8px; }
-        .arm-card .arm-status { font-size: 14px; margin-bottom: 6px; }
-        .arm-card .arm-task { font-size: 12px; color: var(--text2); min-height: 32px; }
+        .arm-card .arm-status { font-size: 14px; margin-bottom: 6px; color: #dbe3ff; }
+        .arm-card .arm-task { font-size: 12px; color: #9fb0e7; min-height: 32px; line-height: 1.5; }
         .arm-card .arm-controls { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-        .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08), 0 0 12px currentColor;
+        }
         .dot-idle { background: var(--success); }
         .dot-busy { background: var(--warning); animation: pulse 1.5s infinite; }
         .dot-offline, .dot-paused, .dot-no_worker { background: var(--danger); }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-        .btn-warning { background: var(--warning); color: #000; }
+        .arm-controls .btn {
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .btn-warning { background: var(--warning); color: #111; }
         .btn-warning:hover { background: #e68a00; }
-        .cam-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); margin-bottom: 8px; }
-        .cam-row .cam-btn { padding: 1px 6px; font-size: 11px; line-height: 1.4; cursor: pointer; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 4px; }
+        .cam-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #9fb0e7; margin-bottom: 8px; }
+        .cam-row .cam-btn { padding: 1px 8px; font-size: 11px; line-height: 1.4; cursor: pointer; background: rgba(255,255,255,0.02); border: 1px solid rgba(135, 150, 212, 0.45); color: #c5d2ff; border-radius: 999px; }
         .cam-row .cam-btn:hover { color: var(--accent); border-color: var(--accent); }
         .cam-row .cam-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .cam-panel { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px; margin-bottom: 10px; font-size: 11px; }
+        .cam-panel { background: #0d162f; border: 1px solid #31416d; border-radius: 10px; padding: 8px; margin-bottom: 10px; font-size: 11px; }
         .cam-panel img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 4px; background: #000; }
-        .cam-panel .cam-hint { color: var(--text2); margin: 6px 0; line-height: 1.4; }
+        .cam-panel .cam-hint { color: #a6b7ea; margin: 6px 0; line-height: 1.4; }
         .cam-panel .cam-swap-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
         .cam-panel select { font-size: 11px; padding: 2px 4px; flex: 1; min-width: 0; }
         .cam-panel .cam-err { color: var(--danger); padding: 12px 4px; text-align: center; }
+        .panel-card {
+            border-radius: 14px;
+            border-color: rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+        }
+        .panel-header { margin-bottom: 12px; }
+        .panel-header h3 { color: #dee6ff; }
+        .full-span-center-muted {
+            color: #9fb0e7;
+            border-style: dashed;
+            border-color: rgba(140, 156, 224, 0.34);
+            background: rgba(14, 24, 49, 0.55);
+            border-radius: 14px;
+        }
+        @media (max-width: 980px) {
+            .dash-hero { flex-direction: column; }
+        }
     </style>
 </head>
 <body>
+    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
-        <h2 style="margin-bottom: 20px;">Dashboard</h2>
+        <header class="dash-hero">
+            <div>
+                <p class="dash-kicker">Operations Console</p>
+                <h2 class="page-title">Dashboard</h2>
+                <p class="dash-subtitle">Real-time machine health, task flow, and diagnostics in one place.</p>
+            </div>
+        </header>
 
-        <div class="grid grid-5" id="stats"></div>
+        <div class="grid grid-5 stats-grid" id="stats"></div>
 
-        <h3 style="margin-top:24px;margin-bottom:12px;">Machine Status</h3>
-        <div class="grid grid-4" id="arm-cards">
-            <div class="card" style="grid-column:1/-1;text-align:center;color:var(--text2)">Connecting...</div>
+        <h3 class="section-title">Machine Status</h3>
+        <div class="grid grid-4 arm-grid" id="arm-cards">
+            <div class="card full-span-center-muted">Connecting...</div>
         </div>
 
         <!-- Live Log Terminal -->
-        <div class="card" style="margin-top:24px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <h3 style="margin:0;">Live Logs</h3>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="log-arm-select" onchange="switchLogArm()" style="width:auto;min-width:120px;">
+        <div class="card panel-card">
+            <div class="panel-header">
+                <h3>Live Logs</h3>
+                <div class="panel-actions">
+                    <select id="log-arm-select" onchange="switchLogArm()" class="select-compact">
                         <option value="">All Arms</option>
                     </select>
                     <button class="btn btn-sm btn-secondary" onclick="clearLogs()">Clear</button>
                 </div>
             </div>
-            <div id="log-terminal" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;height:300px;overflow-y:auto;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12px;line-height:1.6;"></div>
+            <div id="log-terminal" class="log-terminal"></div>
         </div>
 
 
 
 
+    </div>
     </div>
     <script src="/static/js/api.js"></script>
     <script>
@@ -71,11 +207,11 @@
         catch (e) { return; }
         if (!s || s.error) return;
         document.getElementById('stats').innerHTML = `
-            <div class="card card-stat"><div class="num">${s.total || 0}</div><div class="label">Today Total</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--success)">${s.success || 0}</div><div class="label">Success</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--danger)">${s.failed || 0}</div><div class="label">Failed</div></div>
-            <div class="card card-stat"><div class="num" style="color:#ff9800">${s.stall || 0}</div><div class="label">Stall</div></div>
-            <div class="card card-stat"><div class="num" style="color:var(--warning)">${s.queued || 0}</div><div class="label">In Queue</div></div>
+            <div class="card card-stat stat-total"><div class="num">${s.total || 0}</div><div class="label">Today Total</div></div>
+            <div class="card card-stat stat-success"><div class="num stat-num-success">${s.success || 0}</div><div class="label">Success</div></div>
+            <div class="card card-stat stat-failed"><div class="num stat-num-failed">${s.failed || 0}</div><div class="label">Failed</div></div>
+            <div class="card card-stat stat-stall"><div class="num stat-num-stall">${s.stall || 0}</div><div class="label">Stall</div></div>
+            <div class="card card-stat stat-queue"><div class="num stat-num-queue">${s.queued || 0}</div><div class="label">In Queue</div></div>
         `;
     }
 
@@ -109,7 +245,7 @@
         lastArms = arms || [];
         const cards = document.getElementById('arm-cards');
         if (!arms || arms.length === 0) {
-            cards.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--text2)">No machines configured. <a href="/settings">Add one in Settings</a>.</div>';
+            cards.innerHTML = '<div class="card full-span-center-muted">No machines configured. <a href="/settings">Add one in Settings</a>.</div>';
             return;
         }
         cards.innerHTML = arms.map(a => {
@@ -137,7 +273,7 @@
                 <button class="cam-btn" ${camBtnDisabled} title="${camBtnTitle}" onclick="toggleCamPanel(${a.arm_id})">&#x21bb; Verify</button>
             </div>`;
 
-            return `<div class="card arm-card" id="arm-card-${a.arm_id}">
+            return `<div class="card arm-card arm-card-${st}" id="arm-card-${a.arm_id}">
                 <div class="arm-name">${a.name}</div>
                 ${camRow}
                 <div id="cam-panel-${a.arm_id}"></div>
@@ -149,8 +285,8 @@
                     ${a.current_task ? 'Task: ' + a.current_task : 'No active task'}
                     ${a.current_step ? '<br>Step: ' + a.current_step : ''}
                 </div>
-                <div style="font-size:11px;color:var(--text2);margin-top:4px;">Completed: ${a.task_count}</div>
-                ${a.last_error ? '<div style="font-size:11px;color:var(--danger);margin-top:4px;">' + a.last_error.substring(0,80) + '</div>' : ''}
+                <div class="arm-extra">Completed: ${a.task_count}</div>
+                ${a.last_error ? '<div class="arm-error">' + a.last_error.substring(0,80) + '</div>' : ''}
                 <div class="arm-controls">${btns}</div>
             </div>`;
         }).join('');
@@ -212,7 +348,7 @@
 
         let body;
         if (!result) {
-            body = `<div style="text-align:center;color:var(--text2);padding:24px 4px;">Loading camera ${arm.camera_id}…</div>`;
+            body = `<div class="cam-loading">Loading camera ${arm.camera_id}…</div>`;
         } else if (result.success) {
             body = `<img src="data:image/jpeg;base64,${result.image}" alt="Camera ${result.camera_id}">`;
         } else {
@@ -320,10 +456,10 @@
             const term = document.getElementById('log-terminal');
             logs.forEach(l => {
                 const color = logColors[l.level] || '#c9d1d9';
-                const prefix = l.arm_name ? `<span style="color:#8b949e">[${l.arm_name}]</span> ` : '';
-                const ts = `<span style="color:#484f58">${l.ts}</span>`;
-                const lvl = `<span style="color:${color};font-weight:600">${l.level.padEnd(7)}</span>`;
-                term.innerHTML += `<div>${ts} ${lvl} ${prefix}${escHtml(l.msg)}</div>`;
+                const prefix = l.arm_name ? `<span class="log-prefix">[${l.arm_name}]</span> ` : '';
+                const ts = `<span class="log-ts">${l.ts}</span>`;
+                const lvl = `<span class="log-lvl" style="color:${color}">${l.level.padEnd(7)}</span>`;
+                term.innerHTML += `<div class="log-line">${ts} ${lvl} ${prefix}${escHtml(l.msg)}</div>`;
             });
             if (logs.length > 0) term.scrollTop = term.scrollHeight;
         };

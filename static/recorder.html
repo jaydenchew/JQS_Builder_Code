@@ -190,13 +190,135 @@
             padding: 5px 8px; font-size: 14px; width: 100%;
         }
         .settings-table .actions { white-space: nowrap; width: 80px; }
+
+        /* === Recorder UI Theme Overrides (visual only) === */
+        html, body { min-height: 100%; }
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
+                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
+                #0a1020;
+            color: #e8ecff;
+            overflow: hidden;
+        }
+        .app-shell {
+            width: 111.1112%;
+            transform: scale(0.9);
+            transform-origin: top left;
+            height: 111.1112vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .builder-nav {
+            background: rgba(16, 25, 52, 0.96);
+            border-bottom-color: rgba(109, 127, 206, 0.35);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            padding: 10px 16px;
+            gap: 10px;
+        }
+        .builder-nav .logo {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-right: 6px;
+        }
+        .builder-nav .logo-main {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+            line-height: 1;
+        }
+        .builder-nav .logo-sub {
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9fb0e7;
+            line-height: 1;
+        }
+        .builder-nav .ctx-group {
+            padding: 3px 6px;
+            border-radius: 999px;
+            background: rgba(9, 16, 38, 0.5);
+            border: 1px solid rgba(109, 127, 206, 0.2);
+        }
+        .builder-nav .ctx-group select,
+        .builder-nav .ctx-group input {
+            border-radius: 999px;
+            border-color: rgba(109, 127, 206, 0.28);
+            background: rgba(6, 12, 30, 0.72);
+        }
+        .builder-nav .btn {
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .builder-main {
+            grid-template-columns: minmax(370px, 500px) 1fr;
+            flex: 1;
+            min-height: 0;
+            height: auto;
+        }
+        .panel-left {
+            border-right-color: rgba(109, 127, 206, 0.28);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.9), rgba(12, 18, 40, 0.94));
+            padding: 12px;
+            gap: 12px;
+        }
+        .panel-right {
+            background: rgba(8, 14, 33, 0.55);
+            min-height: 0;
+        }
+        .camera-container {
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .arm-panel {
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+            border-color: rgba(109, 127, 206, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+        }
+        .step-list-area {
+            padding: 12px;
+            border-bottom-color: rgba(109, 127, 206, 0.24);
+            min-height: 0;
+        }
+        .step-form-area {
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.88), rgba(12, 18, 40, 0.92));
+            border-top: 1px solid rgba(109, 127, 206, 0.2);
+        }
+        .step-item {
+            background: rgba(11, 19, 43, 0.8);
+            border-color: rgba(109, 127, 206, 0.26);
+            border-radius: 10px;
+        }
+        .step-item.selected {
+            border-color: rgba(151, 170, 255, 0.8);
+            background: rgba(88, 106, 188, 0.16);
+        }
+        .mode-btn { border-radius: 999px; }
+        .builder-bottom {
+            background: linear-gradient(135deg, rgba(20, 30, 63, 0.95), rgba(13, 20, 42, 0.95));
+            border-top-color: rgba(109, 127, 206, 0.35);
+        }
+        .modal {
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.95), rgba(12, 18, 40, 0.98));
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+        }
+        .settings-tabs { border-bottom-color: rgba(109, 127, 206, 0.35); }
+        .settings-tab.active { color: #f2f5ff; border-bottom-color: #97a9ff; }
     </style>
 </head>
 <body>
 
+<div class="app-shell">
+
 <!-- ==================== NAV BAR ==================== -->
 <div class="builder-nav">
-    <span class="logo">Flow Builder</span>
+    <span class="logo"><span class="logo-main">WA System</span><span class="logo-sub">Flow Builder</span></span>
 
     <div class="ctx-group">
         <label>Bank:</label>
@@ -332,6 +454,8 @@
     <button class="btn btn-secondary" onclick="testAll()">Test All</button>
     <div class="spacer"></div>
     <span id="status-log">Ready</span>
+</div>
+
 </div>
 
 <!-- ==================== KEYBOARD MODAL ==================== -->

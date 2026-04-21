@@ -6,8 +6,57 @@
     <title>Transactions — WA System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .filters { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+        html, body { min-height: 100%; }
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
+                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
+                #0a1020;
+            color: #e8ecff;
+            overflow-x: hidden;
+        }
+        .app-shell {
+            width: 111.1112%;
+            transform: scale(0.9);
+            transform-origin: top left;
+        }
+        .container { max-width: 1520px; padding-top: 20px; }
+        .page-head { margin-bottom: 14px; }
+        .page-kicker {
+            margin: 0 0 6px;
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #93a7ff;
+        }
+        .page-title { margin: 0; font-size: 27px; color: #e6ecff; }
+        .page-subtitle { margin: 6px 0 0; color: #acb6de; font-size: 13px; }
+        .filters {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+        }
         .filters select, .filters input { width: auto; min-width: 120px; }
+        .filters .btn { border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
+        .filters .btn-clear { font-size: 12px; }
+        .tx-count { color: #9fb0e7; font-size: 13px; margin-left: auto; }
+        #tx-list {
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        #tx-list table { margin: 0; }
+        #tx-list th { background: rgba(38, 53, 102, 0.6); color: #b8c5f1; }
+        #tx-list td { border-bottom-color: rgba(96, 117, 191, 0.2); }
         .tx-row { cursor: pointer; }
         .tx-row:hover td { background: rgba(233,69,96,0.08) !important; }
         .status-success { color: var(--success); }
@@ -15,20 +64,55 @@
         .status-stall { color: #ff9800; font-weight: bold; }
         .status-running { color: var(--warning); }
         .status-queued { color: var(--text2); }
-        .log-item { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .log-item { padding: 8px 12px; border-bottom: 1px solid rgba(96, 117, 191, 0.2); font-size: 13px; }
         .log-item.fail { background: rgba(244,67,54,0.08); }
         .log-item .step-info { display: flex; justify-content: space-between; }
         .screenshot-btn { cursor: pointer; color: var(--accent); text-decoration: underline; font-size: 12px; }
         .modal-img { max-width: 100%; border-radius: 8px; }
-        #detail-modal .modal { max-width: 700px; max-height: 85vh; overflow-y: auto; }
+        #detail-modal .modal {
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.95), rgba(12, 18, 40, 0.98));
+        }
         #detail-modal .modal h3 { margin-top: 0; }
-        #detail-logs-container { max-height: 45vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; margin-top: 8px; }
+        #detail-logs-container {
+            max-height: 45vh;
+            overflow-y: auto;
+            border: 1px solid rgba(96, 117, 191, 0.3);
+            border-radius: 10px;
+            margin-top: 8px;
+            background: rgba(7, 14, 33, 0.65);
+        }
+        .detail-head { display: flex; justify-content: space-between; align-items: center; }
+        .detail-info { margin: 12px 0; font-size: 13px; }
+        .detail-subtitle { margin: 12px 0 4px; }
+        .detail-grid { gap: 8px; }
+        .detail-error { margin-top: 8px; color: var(--danger); }
+        .detail-ocr { font-size: 12px; color: var(--text2); margin-top: 4px; }
+        .detail-msg { font-size: 12px; color: var(--danger); margin-top: 4px; }
+        .empty-tip { color: var(--text2); padding: 12px; }
+        .screen-modal {
+            max-width: 500px;
+            text-align: center;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.95), rgba(12, 18, 40, 0.98));
+        }
+        .screen-modal-footer { margin-top: 12px; }
     </style>
 </head>
 <body>
+    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
-        <h2>Transactions</h2>
+        <div class="page-head">
+            <p class="page-kicker">Operations Console</p>
+            <h2 class="page-title">Transactions</h2>
+            <p class="page-subtitle">Review transaction lifecycle, status, and execution logs.</p>
+        </div>
 
         <div class="filters">
             <select id="filter-status">
@@ -52,8 +136,8 @@
                 <option value="">All</option>
             </select>
             <button class="btn btn-primary" onclick="loadTransactions()">Filter</button>
-            <button class="btn btn-secondary" onclick="clearFilters()" style="font-size:12px;">Clear</button>
-            <span id="tx-count" style="color:var(--text2);font-size:13px;"></span>
+            <button class="btn btn-secondary btn-clear" onclick="clearFilters()">Clear</button>
+            <span id="tx-count" class="tx-count"></span>
         </div>
 
         <div id="tx-list">
@@ -69,15 +153,16 @@
         </div>
 
     </div>
+    </div>
 
     <div class="modal-overlay" id="detail-modal">
         <div class="modal">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="detail-head">
                 <h3 id="detail-title">Transaction Detail</h3>
                 <button class="btn btn-sm btn-secondary" onclick="closeDetail()">Close</button>
             </div>
-            <div id="detail-info" style="margin:12px 0;font-size:13px;"></div>
-            <h4 style="margin:12px 0 4px;">Step Logs</h4>
+            <div id="detail-info" class="detail-info"></div>
+            <h4 class="detail-subtitle">Step Logs</h4>
             <div id="detail-logs-container">
                 <div id="detail-logs"></div>
             </div>
@@ -85,9 +170,9 @@
     </div>
 
     <div class="modal-overlay" id="screenshot-modal">
-        <div class="modal" style="max-width:500px;text-align:center;">
+        <div class="modal screen-modal">
             <img id="screenshot-img" class="modal-img" />
-            <div style="margin-top:12px;">
+            <div class="screen-modal-footer">
                 <button class="btn btn-secondary" onclick="document.getElementById('screenshot-modal').classList.remove('active')">Close</button>
             </div>
         </div>
@@ -164,7 +249,7 @@
                 <td>${toGMT8(tx.created_at)}</td>
                 <td>${dur}</td>
             </tr>`;
-        }).join('') || '<tr><td colspan="8" style="color:var(--text2)">No transactions</td></tr>';
+        }).join('') || '<tr><td colspan="8" class="empty-tip">No transactions</td></tr>';
     }
 
     async function showDetail(id) {
@@ -174,7 +259,7 @@
         ]);
         document.getElementById('detail-title').textContent = `Transaction #${tx.id} — Process ${tx.process_id}`;
         document.getElementById('detail-info').innerHTML = `
-            <div class="grid grid-4" style="gap:8px;">
+            <div class="grid grid-4 detail-grid">
                 <div><label>From</label><div>${tx.pay_from_bank_code}</div></div>
                 <div><label>To</label><div>${tx.pay_to_bank_code || '-'}</div></div>
                 <div><label>Amount</label><div>$${tx.amount}</div></div>
@@ -185,7 +270,7 @@
                 <div><label>Finished</label><div>${toGMT8(tx.finished_at)}</div></div>
                 <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
             </div>
-            ${tx.error_message ? '<div style="margin-top:8px;color:var(--danger);">Error: ' + tx.error_message + '</div>' : ''}
+            ${tx.error_message ? '<div class="detail-error">Error: ' + tx.error_message + '</div>' : ''}
         `;
         document.getElementById('detail-logs').innerHTML = logs.map(l => `
             <div class="log-item ${l.result === 'fail' ? 'fail' : ''}">
@@ -193,11 +278,11 @@
                     <span><strong>${l.step_number}.</strong> ${l.step_name} (${l.action_type})</span>
                     <span>${l.result === 'ok' ? '✓' : '✗'} ${l.duration_ms ? l.duration_ms + 'ms' : ''}</span>
                 </div>
-                ${l.ocr_text ? '<div style="font-size:12px;color:var(--text2);margin-top:4px;">OCR: ' + l.ocr_text.substring(0,100) + '</div>' : ''}
-                ${l.message ? '<div style="font-size:12px;color:var(--danger);margin-top:4px;">' + l.message.substring(0,200) + '</div>' : ''}
+                ${l.ocr_text ? '<div class="detail-ocr">OCR: ' + l.ocr_text.substring(0,100) + '</div>' : ''}
+                ${l.message ? '<div class="detail-msg">' + l.message.substring(0,200) + '</div>' : ''}
                 ${l.has_screenshot ? '<span class="screenshot-btn" onclick="showScreenshot(' + tx.id + ',' + l.id + ')">Screenshot</span>' : ''}
             </div>
-        `).join('') || '<div style="color:var(--text2);padding:12px;">No logs</div>';
+        `).join('') || '<div class="empty-tip">No logs</div>';
 
         document.getElementById('detail-modal').classList.add('active');
     }
