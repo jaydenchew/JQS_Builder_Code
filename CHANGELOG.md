@@ -1,5 +1,33 @@
 # Changelog
 
+## random_pin: fix scan range, add close-up fallback + elimination (2026-04-22)
+
+### Problem
+
+Two bugs in `type_with_random_pin` caused OCR failures on some PIN layouts:
+
+1. **Wrong scan range** (`positions[:10]`): index 9 (backspace `-`) was scanned but index 10 (digit `0`) was never scanned. On any layout where `0` appears in the bottom-center slot, the system could never find it and would stall.
+
+2. **No recovery when OCR misses a digit**: The 3 wide-view offset passes would sometimes fail to recognise certain digits (e.g., `8` and `6` were consistently missed in one MBB deployment). With no fallback, the task always stalled.
+
+### Fix
+
+`app/keyboard_engine.py` — `type_with_random_pin` only:
+
+- **Scan range**: replaced `positions[:10]` with `positions[:12]` and `_DIGIT_SKIP = {9, 11}`. Index 9 (backspace) and index 11 (enter/confirm) are excluded; index 10 (digit `0`) is now correctly included.
+
+- **Close-up fallback**: after the 3 wide-view passes, any unrecognised digit cells trigger a targeted retry. The camera computes the position that centres the cell in frame (inverse calibration), flies there, uses `capture_fresh` to avoid buffer frames, and OCRs only the centre 100×100 crop. A guard skips cells where the computed cam position deviates more than 30mm from the recorded `camera_pos` (likely exceeds arm travel limits) and logs a warning instead.
+
+- **Elimination**: if after the close-up loop exactly one digit and one unassigned cell remain, the digit is assigned without another move.
+
+- If targets are still not satisfied after all fallback steps, `RuntimeError` is raised immediately so the arm stalls — no extra retries that would risk a PIN timeout.
+
+### Known remaining issue (not in scope)
+
+If the wide-view passes **mis-lock** a digit to the wrong cell (false OCR positive), the close-up fallback cannot recover it. That cell is marked `assigned` and skipped. See KNOWN_ISSUES.md.
+
+---
+
 ## Fix random_pin category lock + test-mode routing (2026-04-22)
 
 Two gaps introduced by the keyboard category-lock feature (which stores

@@ -119,6 +119,15 @@
   - Mitigation: the UI instructions (INSTALL.md Step 9) tell the operator to align the card visually, and the RMSE gate surfaces bad placements immediately.
   - Possible future enhancement: add an optional "second pen anchor" step (pen on TR corner as well as crosshair) that provides a second physical reference, letting the code solve for card orientation automatically. Would eliminate the manual-alignment dependency entirely.
 
+- [x] **random_pin scan range excluded digit 0 and included backspace** — FIXED in commit 260f998
+  - `positions[:10]` scanned index 9 (backspace `-`) and missed index 10 (digit `0`). Any PIN containing `0` when it appeared in the bottom-center slot would always fail to find the digit and stall.
+  - Fix: replaced with `positions[:12]` + `_DIGIT_SKIP = {9, 11}` to exclude the two fixed non-digit keys (backspace at index 9, enter at index 11) and include all 10 digit cells including index 10.
+
+- [ ] **random_pin close-up fallback cannot recover mis-locked cells** (LOW)
+  - The close-up fallback (added in commit 260f998) skips cells already in `assigned`. If the wide-view pass OCR'd a false positive (e.g., cell 3 was misread as `5` and locked in), the real `5` will never be found on close-up because cell 3 is already taken. Close-up can only recover digits that were simply *not found*, not digits that were *found at the wrong position*.
+  - Symptom: close-up loop runs and finishes but `target_digits` is still not satisfied → stall. Diagnose by checking the `pos 1` log line: if it shows 10 digits recognised but the stall still happens, a mis-lock occurred.
+  - Possible fix: add a confidence threshold or multi-pass voting so a single OCR result doesn't permanently lock a cell. Out of scope for current implementation.
+
 - [ ] **OCR failure should not stall — new status code + branch step**
   - Currently any OCR mismatch → stall (status=4), arm pauses, all queued tasks rejected.
   - Proposed: OCR failure returns new status (e.g., status=5 "OCR mismatch") to PAS. Arm does NOT pause, continues next queued task. Builder configures which step to jump to on OCR failure (e.g., skip confirm, go straight to photo).
