@@ -242,6 +242,14 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
             cu_x = park_x + ax - abx_t
             cu_y = park_y + ay - aby_t
 
+            # Warn if the close-up position looks far outside the original
+            # camera_pos range (likely exceeds arm travel limits for this machine).
+            # We don't have max_x/max_y here, so use camera_pos as a reference.
+            if cu_x < 0 or cu_y < 0 or cu_x > camera_pos[0] + 30 or cu_y > camera_pos[1] + 30:
+                logger.warning("random_pin close-up: cell %d cam=(%.1f,%.1f) may exceed arm limits, skipping",
+                               i + 1, cu_x, cu_y)
+                continue
+
             await _hw(executor, a.move, cu_x, cu_y)
             await asyncio.sleep(0.8)
 
