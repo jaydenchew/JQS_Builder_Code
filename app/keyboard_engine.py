@@ -211,6 +211,58 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
 
     if not target_digits.issubset(digit_to_cell.keys()):
         missing = target_digits - set(digit_to_cell.keys())
+        # Save debug images so we can inspect what the camera actually captured
+        # and what each cell crop looked like.
+        try:
+            import os, datetime
+            debug_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "deploy", "logs", "random_pin_debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            label_list = ['8','0','6','5','9','1','2','4','3','X','7','OK']
+            for offset_idx, (dx, dy) in enumerate(camera_offsets):
+                cam_x = camera_pos[0] + dx
+                cam_y = camera_pos[1] + dy
+                await _hw(executor, a.move, cam_x, cam_y)
+                await asyncio.sleep(0.8)
+                frame = await _hw(executor, c.capture_frame)
+                if frame is None:
+                    continue
+                rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                # Save full rotated image with cell boxes drawn
+                vis = rotated.copy()
+                h_img, w_img = vis.shape[:2]
+                for i, (ax, ay) in enumerate(positions[:10]):
+                    abx = ax - (cam_x - park_x)
+                    aby = ay - (cam_y - park_y)
+                    ry = (tx - abx) / s
+                    rx = (aby - ty) / s
+                    px_c = int(raw_height - 1 - ry)
+                    py_c = int(rx)
+                    x1 = max(0, px_c - CELL_HALF); x2 = min(w_img, px_c + CELL_HALF)
+                    y1 = max(0, py_c - CELL_HALF); y2 = min(h_img, py_c + CELL_HALF)
+                    cell = rotated[y1:y2, x1:x2]
+                    lbl = label_list[i] if i < len(label_list) else str(i)
+                    color = (0, 255, 0) if lbl in digit_to_cell else (0, 0, 255)
+                    cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(vis, lbl, (x1 + 2, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                    # Save individual cell crop with all preprocessing stages
+                    if cell.size > 0:
+                        gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+                        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+                        stages = [
+                            ("raw", gray),
+                            ("otsu", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+                            ("adapt", cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 5)),
+                            ("thresh150", cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]),
+                        ]
+                        row_imgs = [cv2.resize(img, (112, 112)) for _, img in stages]
+                        strip = np.hstack(row_imgs)
+                        fn = os.path.join(debug_dir, "%s_off%d_cell%s.jpg" % (ts, offset_idx + 1, lbl))
+                        cv2.imwrite(fn, strip)
+                cv2.imwrite(os.path.join(debug_dir, "%s_off%d_full.jpg" % (ts, offset_idx + 1)), vis)
+            logger.info("random_pin: debug images saved to %s", debug_dir)
+        except Exception as dbg_err:
+            logger.warning("random_pin: debug save failed: %s", dbg_err)
         raise RuntimeError("random_pin: could not find digits %s after %d positions" % (missing, len(camera_offsets)))
 
     logger.info("random_pin: typing '%s'", text)
