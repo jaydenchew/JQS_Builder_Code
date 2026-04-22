@@ -269,9 +269,13 @@ Go to `/settings` -> **Arms** section. Click **Add Arm**:
 - `service_url`: leave as default `http://127.0.0.1:8082/MyWcfService/getstring`
 - `z_down`: 10 (default press depth)
 - `camera_id`: OpenCV device index of this arm's camera (0, 1, 2, ...). Click **Scan Cameras** for a list.
+- `max_x`: physical X track limit in mm. **Required.** Builder will refuse to move the arm beyond this value. Default 90; measure or check hardware spec for each machine.
+- `max_y`: physical Y track limit in mm. **Required.** Default 120.
 - `active`: TRUE
 
 Save. Dashboard should now show the arm card. If camera_id is wrong, the preview will be from a different camera -- use Dashboard -> Verify button to check each arm.
+
+**Important — set max_x / max_y accurately.** Exceeding the physical track limit causes the arm to stall and lose the (0, 0) reference, requiring a power-cycle and manual re-zeroing. If unsure, start with a conservative value (e.g., 80 / 110) and increase after physical testing.
 
 ### 8.2 Add stations
 

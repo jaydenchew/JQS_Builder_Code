@@ -680,6 +680,8 @@ let S = {
     camOn: false,
     armId: null,
     allStations: [],
+    maxX: null,
+    maxY: null,
 };
 let runAbort = false;
 
@@ -692,7 +694,11 @@ async function init() {
     const arms = await API.get('/api/stations/arms');
     const armSel = document.getElementById('arm-select');
     armSel.innerHTML = arms.map(a => `<option value="${a.id}">${a.name} (${a.com_port})</option>`).join('');
-    if (arms.length > 0) S.armId = arms[0].id;
+    if (arms.length > 0) {
+        S.armId = arms[0].id;
+        S.maxX = arms[0].max_x ?? null;
+        S.maxY = arms[0].max_y ?? null;
+    }
 
     S.allStations = await API.get('/api/stations/');
     loadStationsForArm();
@@ -759,6 +765,9 @@ async function onArmChange() {
     }
     if (S.camOn) { await toggleCam(); }
     S.armId = newArmId;
+    const selectedArm = (await API.get('/api/stations/arms')).find(a => a.id === newArmId);
+    S.maxX = selectedArm?.max_x ?? null;
+    S.maxY = selectedArm?.max_y ?? null;
     loadStationsForArm();
     await reloadTemplates();
     S.bank = ''; S.tplId = null; S.steps = []; S.refs = [];
@@ -1233,9 +1242,22 @@ function setJog(v) {
     event.target.className = 'btn btn-primary btn-sm';
 }
 
+function _armLimitError(x, y) {
+    if (x < 0 || y < 0)
+        return `Position out of range: X and Y must be \u2265 0 (got X=${x} Y=${y})`;
+    if (S.maxX !== null && x > S.maxX)
+        return `Position out of range: X ${x} exceeds limit ${S.maxX}`;
+    if (S.maxY !== null && y > S.maxY)
+        return `Position out of range: Y ${y} exceeds limit ${S.maxY}`;
+    return null;
+}
+
 async function jog(dx, dy) {
-    S.curX = Math.round(Math.max(0, S.curX + dx * S.jogStep) * 10) / 10;
-    S.curY = Math.round(Math.max(0, S.curY + dy * S.jogStep) * 10) / 10;
+    const nx = Math.round(Math.max(0, S.curX + dx * S.jogStep) * 10) / 10;
+    const ny = Math.round(Math.max(0, S.curY + dy * S.jogStep) * 10) / 10;
+    const err = _armLimitError(nx, ny);
+    if (err) { toast(err, 'error'); return; }
+    S.curX = nx; S.curY = ny;
     showPos();
     if (S.armOn) await API.post('/api/recorder/arm/move', { x: S.curX, y: S.curY, arm_id: getArmId() });
 }
@@ -1249,8 +1271,11 @@ async function goHome() {
 }
 
 async function goToXY() {
-    S.curX = parseFloat(document.getElementById('go-x').value) || 0;
-    S.curY = parseFloat(document.getElementById('go-y').value) || 0;
+    const tx = parseFloat(document.getElementById('go-x').value) || 0;
+    const ty = parseFloat(document.getElementById('go-y').value) || 0;
+    const err = _armLimitError(tx, ty);
+    if (err) { toast(err, 'error'); return; }
+    S.curX = tx; S.curY = ty;
     showPos();
     if (S.armOn) await API.post('/api/recorder/arm/move', { x: S.curX, y: S.curY, arm_id: getArmId() });
 }
@@ -1319,10 +1344,14 @@ async function onCameraClick(e) {
     S.lastArm = { x: ax, y: ay };
 
     if (S.mode === 'move') {
+        const moveErr = _armLimitError(ax, ay);
+        if (moveErr) { toast(moveErr, 'error'); return; }
         if (S.armOn) { await API.post('/api/recorder/arm/move', { x: ax, y: ay, arm_id: getArmId() }); S.curX = ax; S.curY = ay; showPos(); }
         drawDot(rpx, rpy, '#2196f3');
         fillCoord(ax, ay);
     } else if (S.mode === 'click') {
+        const clickErr = _armLimitError(ax, ay);
+        if (clickErr) { toast(clickErr, 'error'); return; }
         if (S.armOn) { await API.post('/api/recorder/arm/click', { x: ax, y: ay, arm_id: getArmId() }); S.curX = ax; S.curY = ay; showPos(); }
         drawDot(rpx, rpy, '#2196f3');
         fillCoord(ax, ay);
@@ -1338,6 +1367,9 @@ async function onCameraClick(e) {
             drawDot(rpx, rpy, '#f44336');
             drawLine(S.swipeStartPx.x, S.swipeStartPx.y, rpx, rpy);
             if (S.armOn) {
+                const swipeErrS = _armLimitError(S.swipeStartArm.x, S.swipeStartArm.y);
+                const swipeErrE = _armLimitError(ax, ay);
+                if (swipeErrS || swipeErrE) { toast(swipeErrS || swipeErrE, 'error'); S.swipePhase = null; return; }
                 await API.post('/api/recorder/arm/swipe', {
                     start_x: S.swipeStartArm.x, start_y: S.swipeStartArm.y,
                     end_x: ax, end_y: ay, arm_id: getArmId(),

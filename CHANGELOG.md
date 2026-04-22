@@ -1,5 +1,28 @@
 # Changelog
 
+## Per-arm X/Y movement limits in Builder (2026-04-22)
+
+### Problem
+
+Each mechanical arm has physical track limits. Moving beyond them causes the arm to stall and lose the (0, 0) reference, requiring a manual power-cycle and physical re-zeroing. The system had no software guard: an operator could jog, click on the camera, or type coordinates into the Move box that exceeded the track length, silently sending the arm into the hard stop.
+
+### Fix
+
+Every arm now stores `max_x` and `max_y` (FLOAT, default 90/120 mm). Any Builder action that would result in a position outside `[0, max_x] x [0, max_y]` is blocked before the command is sent:
+
+- **Frontend** (`static/recorder.html`): `_armLimitError(x, y)` checks on every jog step, Move-button submit, camera-click move/click/swipe.
+- **Backend** (`app/routers/recorder.py`): `_check_limits(arm_id, x, y)` reads limits from DB and rejects `/arm/move`, `/arm/click`, `/arm/swipe`, `/arm/click-pixel`, `/arm/move-pixel`, and `/test-step` CLICK/SWIPE/ARM_MOVE. This is the safety net if another client bypasses the frontend.
+- **Settings** (`static/settings.html`): Max X and Max Y fields added to the arm edit form. Fields are required; saving without valid positive values is rejected.
+- **DB** (`db/schema.sql` + live `ALTER TABLE`): `arms.max_x` and `arms.max_y` added with `NOT NULL DEFAULT 90/120`.
+
+Production flow execution (`execute_click`, `execute_swipe`, etc. in `actions.py`) is deliberately NOT restricted: if coordinates were within limits when recorded in Builder, they are within limits at runtime.
+
+### Configuration
+
+Open Settings → Arms, set Max X and Max Y per arm. Changes take effect immediately (Builder reads them on arm select). The arm does not need to be restarted.
+
+---
+
 ## Per-bank flow seeds + import script (2026-04-22)
 
 ### What

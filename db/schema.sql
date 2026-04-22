@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS arms (
     service_url VARCHAR(255) NOT NULL,
     z_down INT NOT NULL DEFAULT 10,
     camera_id INT NOT NULL DEFAULT 0 COMMENT 'OpenCV camera device index',
+    max_x FLOAT NOT NULL DEFAULT 90 COMMENT 'Hard X movement limit (mm). Builder refuses to move beyond this.',
+    max_y FLOAT NOT NULL DEFAULT 120 COMMENT 'Hard Y movement limit (mm). Builder refuses to move beyond this.',
     active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'false = paused/debug, worker skips this arm',
     status ENUM('idle', 'busy', 'offline') NOT NULL DEFAULT 'idle',
     stall_reason VARCHAR(50) NULL COMMENT 'Classified stall reason: ocr_mismatch/screen_mismatch/camera_fail/arm_hw_error/flow_not_found/step_failed/unknown',

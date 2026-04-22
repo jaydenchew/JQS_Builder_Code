@@ -15,6 +15,27 @@ def _get_arm(arm_id: int = None):
     return arm_client
 
 
+async def _check_limits(arm_id, x, y):
+    """Return an error dict if (x, y) violates this arm's max_x / max_y limits,
+    or None if the coordinates are within bounds.
+    Checks both lower bound (0) and upper bound (max_x / max_y from DB)."""
+    if arm_id is None:
+        return None
+    row = await database.fetchone(
+        "SELECT max_x, max_y FROM arms WHERE id = %s", (arm_id,)
+    )
+    if not row:
+        return None
+    x, y = float(x), float(y)
+    if x < 0 or y < 0:
+        return {"success": False, "error": "Position out of range: X and Y must be >= 0 (got X=%.1f Y=%.1f)" % (x, y)}
+    if row["max_x"] is not None and x > row["max_x"]:
+        return {"success": False, "error": "Position out of range: X %.1f exceeds limit %.1f" % (x, row["max_x"])}
+    if row["max_y"] is not None and y > row["max_y"]:
+        return {"success": False, "error": "Position out of range: Y %.1f exceeds limit %.1f" % (y, row["max_y"])}
+    return None
+
+
 def _arm_or_error(arm_id):
     a = _get_arm(arm_id)
     if a is None:
@@ -75,6 +96,9 @@ async def arm_move(data: dict):
     a, err = _arm_or_error(data.get("arm_id"))
     if err:
         return err
+    limit_err = await _check_limits(data.get("arm_id"), data["x"], data["y"])
+    if limit_err:
+        return limit_err
     try:
         a.move(data["x"], data["y"])
         return {"success": True}
@@ -87,6 +111,9 @@ async def arm_click(data: dict):
     a, err = _arm_or_error(data.get("arm_id"))
     if err:
         return err
+    limit_err = await _check_limits(data.get("arm_id"), data["x"], data["y"])
+    if limit_err:
+        return limit_err
     try:
         a.click(data["x"], data["y"])
         return {"success": True}
@@ -99,6 +126,10 @@ async def arm_swipe(data: dict):
     a, err = _arm_or_error(data.get("arm_id"))
     if err:
         return err
+    for cx, cy in [(data["start_x"], data["start_y"]), (data["end_x"], data["end_y"])]:
+        limit_err = await _check_limits(data.get("arm_id"), cx, cy)
+        if limit_err:
+            return limit_err
     try:
         a.swipe(data["start_x"], data["start_y"], data["end_x"], data["end_y"])
         return {"success": True}
@@ -117,6 +148,9 @@ async def arm_click_pixel(data: dict):
     if not await calibration.is_calibrated(station_id):
         return {"error": "Station %d not calibrated" % station_id}
     ax, ay = await calibration.pixel_to_arm(station_id, px, py, cur_x, cur_y)
+    limit_err = await _check_limits(data.get("arm_id"), ax, ay)
+    if limit_err:
+        return limit_err
     a.click(ax, ay)
     return {"success": True, "arm_x": ax, "arm_y": ay}
 
@@ -132,6 +166,9 @@ async def arm_move_pixel(data: dict):
     if not await calibration.is_calibrated(station_id):
         return {"error": "Station %d not calibrated" % station_id}
     ax, ay = await calibration.pixel_to_arm(station_id, px, py, cur_x, cur_y)
+    limit_err = await _check_limits(data.get("arm_id"), ax, ay)
+    if limit_err:
+        return limit_err
     a.move(ax, ay)
     return {"success": True, "arm_x": ax, "arm_y": ay}
 
@@ -172,10 +209,20 @@ async def test_step(data: dict):
             a.motor_lock()
 
         if action == "CLICK":
+            limit_err = await _check_limits(data.get("arm_id"), data["x"], data["y"])
+            if limit_err:
+                return limit_err
             a.click(data["x"], data["y"])
         elif action == "SWIPE":
+            for cx, cy in [(data["start_x"], data["start_y"]), (data["end_x"], data["end_y"])]:
+                limit_err = await _check_limits(data.get("arm_id"), cx, cy)
+                if limit_err:
+                    return limit_err
             a.swipe(data["start_x"], data["start_y"], data["end_x"], data["end_y"])
         elif action == "ARM_MOVE":
+            limit_err = await _check_limits(data.get("arm_id"), data["x"], data["y"])
+            if limit_err:
+                return limit_err
             a.move(data["x"], data["y"])
         elif action == "press":
             a.press()

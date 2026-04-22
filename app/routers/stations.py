@@ -67,10 +67,11 @@ async def list_arms():
 @router.post("/arms")
 async def create_arm(data: dict):
     row_id = await database.execute(
-        """INSERT INTO arms (name, com_port, service_url, z_down, camera_id, active, status)
-        VALUES (%s, %s, %s, %s, %s, %s, 'idle')""",
+        """INSERT INTO arms (name, com_port, service_url, z_down, camera_id, active, status, max_x, max_y)
+        VALUES (%s, %s, %s, %s, %s, %s, 'idle', %s, %s)""",
         (data["name"], data["com_port"], data.get("service_url", "http://127.0.0.1:8082/MyWcfService/getstring"),
-         data.get("z_down", 10), data.get("camera_id", 0), data.get("active", True))
+         data.get("z_down", 10), data.get("camera_id", 0), data.get("active", True),
+         data.get("max_x", 90), data.get("max_y", 120))
     )
     if data.get("active", True):
         ok = await manager.add_worker(row_id)
@@ -82,7 +83,7 @@ async def create_arm(data: dict):
 
 @router.put("/arms/{arm_id}")
 async def update_arm(arm_id: int, data: dict):
-    allowed = {"name", "com_port", "service_url", "z_down", "camera_id", "active", "status"}
+    allowed = {"name", "com_port", "service_url", "z_down", "camera_id", "active", "status", "max_x", "max_y"}
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return {"error": "No valid fields"}
