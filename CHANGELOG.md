@@ -1,5 +1,28 @@
 # Changelog
 
+## Fix random_pin category lock + test-mode routing (2026-04-22)
+
+Two gaps introduced by the keyboard category-lock feature (which stores
+`{category: ...}` in keyboard_configs for simple/multi-page keyboards):
+
+1. **`syncKbCategory` never locked the dropdown for random_pin keyboards.**
+   Random_pin configs are stored with `{type: "random_pin", ...}` not
+   `{category: ...}`. The lock function only read `parsed.category`, so
+   `foundCategory` was always null for random_pin → dropdown stayed
+   unlocked. Fix: accept `parsed.category || parsed.type` as the source
+   of truth for the category name.
+
+2. **`testTypeStep` silently failed for random_pin keyboards.**
+   The routing `if (_cfg.pages) → _typeMultiPage else → _typeSimple` had
+   no branch for random_pin (which has neither `pages` nor keymaps).
+   Fell through to `_typeSimple`, called the keymaps API, got "no keymap
+   found" error or silent skip. Fix: add an explicit `_cfg.type ===
+   "random_pin"` branch that toasts/logs a clear "skipped in test mode"
+   message. Production execution path is unaffected (keyboard_engine.py
+   correctly handles random_pin via the `type` field independently).
+
+---
+
 ## Per-arm X/Y movement limits in Builder (2026-04-22)
 
 ### Problem

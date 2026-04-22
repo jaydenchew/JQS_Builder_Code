@@ -2142,7 +2142,13 @@ async function testTypeStep(step, log) {
     // keyboard_engine.py load_keyboard_config). A category-only row like
     // {"category": "system_keypad"} means coords are in the keymaps table, not here.
     const _cfg = kbCfg?.config ? (typeof kbCfg.config === 'string' ? JSON.parse(kbCfg.config) : kbCfg.config) : null;
-    if (_cfg && _cfg.pages && Object.keys(_cfg.pages).length > 0) {
+    if (_cfg && _cfg.type === 'random_pin') {
+        // Random PIN requires live phone screen + Tesseract OCR; cannot be
+        // simulated in Builder test mode. Skip with an informational message.
+        const msg = 'Random PIN keyboard — skipped in test mode (requires live phone screen with OCR)';
+        if (log) addLog(log, '  ' + msg, 'info');
+        else toast(msg);
+    } else if (_cfg && _cfg.pages && Object.keys(_cfg.pages).length > 0) {
         await _typeMultiPage(kbCfg.config, text, log);
     } else {
         await _typeSimple(kbType, text, log);
@@ -2690,8 +2696,11 @@ async function syncKbCategory() {
         );
         if (cfg && !cfg.error && cfg.config) {
             const parsed = typeof cfg.config === 'string' ? JSON.parse(cfg.config) : cfg.config;
-            if (parsed && parsed.category) {
-                foundCategory = parsed.category;
+            // Accept either `category` (simple/multi-page keyboards saved after the
+            // category-lock feature) or `type` (random_pin keyboards, which use the
+            // `type` field by convention from their separate recording path).
+            if (parsed && (parsed.category || parsed.type)) {
+                foundCategory = parsed.category || parsed.type;
             }
         }
     } catch (e) { /* treat as "no category found" */ }
