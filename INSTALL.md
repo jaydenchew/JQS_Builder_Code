@@ -61,7 +61,8 @@ cd JQS_Builder_Code
 After clone, confirm these folders exist (they hold tracked binaries essential to install):
 
 - `arm_service/service/WindowsService1.exe` and `Dll1.dll`
-- `arm_service/VC_redist.x86.exe`
+- `arm_service/VC_redist.x86.exe` — VC++ **x86** runtime (for the WCF arm service DLL)
+- `arm_service/VC_redist.x64.exe` — VC++ **x64** runtime (for PyTorch / EasyOCR)
 - `deploy/nssm.exe`, `deploy/tesseract-setup.exe`
 - `models/craft_mlt_25k.pth`, `models/english_g2.pth`
 
@@ -74,8 +75,12 @@ If any are missing, `git lfs` might be blocking them; run `git lfs pull` or recl
 This is the vendor-supplied service that talks to the arm over COM. Without it, Python cannot move the arm.
 
 ```powershell
-# 1. Install VC++ Redistributable (required by Dll1.dll)
+# 1a. Install VC++ x86 Redistributable (required by Dll1.dll — the WCF arm service)
 arm_service\VC_redist.x86.exe /quiet /norestart
+
+# 1b. Install VC++ x64 Redistributable (required by PyTorch / EasyOCR — 64-bit DLLs)
+#     Without this, OCR steps fail with WinError 126 / c10.dll not found at runtime.
+arm_service\VC_redist.x64.exe /quiet /norestart
 
 # 2. Register the Windows Service
 # Right-click arm_service\service\安装.bat -> Run as Administrator
@@ -175,14 +180,27 @@ Right-click `deploy\install_service.bat` -> **Run as Administrator**. The script
 
 If it aborts on the pip step, check `requirements.txt` download errors (network? proxy?). You can re-run the script; it's idempotent.
 
+The script now verifies PyTorch loads correctly before proceeding. If you see:
+```
+ERROR: PyTorch failed to load.
+```
+This means VC++ x64 is missing or the install did not take effect. Reboot the machine and re-run `deploy\install_service.bat` as Administrator.
+
 **Verify**:
 
 ```powershell
+# 1. Check PyTorch loads (must succeed before the service can run OCR steps)
+venv\Scripts\python.exe -c "import torch; print('PyTorch OK:', torch.__version__)"
+# Should print e.g.: PyTorch OK: 2.11.0+cpu
+
+# 2. Check the service health endpoint
 curl http://127.0.0.1:9000/health
 # Should return JSON with status: ok
 ```
 
 If the service starts but `/health` fails, check `deploy\logs\service_stderr.log` for the actual error (typical: DB password mismatch, arm service unreachable, camera busy).
+
+If OCR steps fail in production with `WinError 126 / c10.dll not found`, it means VC++ x64 was not properly installed. Run `arm_service\VC_redist.x64.exe` manually, reboot, then `nssm restart WA-Unified`.
 
 ---
 
