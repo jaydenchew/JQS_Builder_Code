@@ -131,7 +131,7 @@ async def execute_type(step, bank_code, station_id, transaction, password, arm=N
     if kb_config and isinstance(kb_config, dict) and kb_config.get("type") == "random_pin":
         kb_config["station_id"] = station_id
         logger.info("TYPE '%s' using random_pin keyboard (%s)", text, keyboard_type)
-        await type_with_random_pin(kb_config, text, arm=a, cam=c, executor=executor)
+        return await type_with_random_pin(kb_config, text, arm=a, cam=c, executor=executor)
     elif kb_config:
         logger.info("TYPE '%s' using intelligent keyboard (%s)", text, keyboard_type)
         await type_with_intelligent_keyboard(kb_config, text, arm=a, executor=executor)
@@ -459,6 +459,10 @@ async def execute_step(step, bank_code, station_id, transaction, password, trans
             return True
         ret = await handler(step, bank_code, station_id, transaction, password, arm=arm, cam=cam, executor=executor)
         if action_type == "PHOTO" and isinstance(ret, str):
+            screenshot_b64 = ret
+        elif action_type == "TYPE" and isinstance(ret, str):
+            # random_pin returns an annotated debug image (b64 JPEG) showing each
+            # cell with its recognized digit; save to transaction_logs for debugging.
             screenshot_b64 = ret
     except Exception as e:
         result = "fail"

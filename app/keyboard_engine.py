@@ -168,6 +168,7 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
     _DIGIT_SKIP = {9, 11}
 
     digit_to_cell = {}
+    _first_wide_frame = None  # kept for annotated screenshot saved to transaction_logs
 
     for offset_idx, (dx, dy) in enumerate(camera_offsets):
         cam_x = camera_pos[0] + dx
@@ -180,6 +181,8 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
         if frame is None:
             logger.warning("random_pin: capture failed at (%.0f,%.0f)", cam_x, cam_y)
             continue
+        if _first_wide_frame is None:
+            _first_wide_frame = frame  # save first frame for annotated debug image
 
         rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
@@ -312,6 +315,37 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
         await asyncio.sleep(ARM_DIGIT_DELAY)
 
     logger.info("random_pin: typed %d digits successfully", len(text))
+
+    # Build annotated debug image: draw each cell box with its recognized digit (or ?).
+    # Returned as base64 JPEG so execute_type can pass it to transaction_logs.screenshot_base64.
+    if _first_wide_frame is not None:
+        try:
+            import base64 as _b64
+            ann = cv2.rotate(_first_wide_frame, cv2.ROTATE_90_CLOCKWISE)
+            h_ann, w_ann = ann.shape[:2]
+            cell_to_digit = {idx: d for d, (idx, _) in digit_to_cell.items()}
+            ann_cam_x, ann_cam_y = camera_pos[0], camera_pos[1]
+            for i, (ax, ay) in enumerate(positions[:12]):
+                if i in _DIGIT_SKIP:
+                    continue
+                abx = ax - (ann_cam_x - park_x)
+                aby = ay - (ann_cam_y - park_y)
+                ry = (tx - abx) / s
+                rx = (aby - ty) / s
+                px_a = int(raw_height - 1 - ry)
+                py_a = int(rx)
+                x1 = max(0, px_a - CELL_HALF); x2 = min(w_ann, px_a + CELL_HALF)
+                y1 = max(0, py_a - CELL_HALF); y2 = min(h_ann, py_a + CELL_HALF)
+                d = cell_to_digit.get(i)
+                color = (0, 200, 0) if d else (0, 0, 220)
+                cv2.rectangle(ann, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(ann, d if d else "?", (x1 + 3, y1 + 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
+            _, buf = cv2.imencode(".jpg", ann, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            return _b64.b64encode(buf).decode("utf-8")
+        except Exception as ann_err:
+            logger.warning("random_pin: annotated screenshot failed: %s", ann_err)
+    return None
 
 
 def _tesseract_recognize_digit(gray_cell, pytesseract):
