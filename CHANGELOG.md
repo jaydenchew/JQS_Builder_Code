@@ -1,5 +1,19 @@
 # Changelog
 
+## random_pin: annotated debug image saved to transaction_logs (2026-04-22)
+
+After each successful random_pin TYPE step, the system now saves an annotated JPEG to `transaction_logs.screenshot_base64` (same column used by PHOTO steps, no schema change). The image shows the first wide-view camera frame with each digit cell outlined:
+
+- Green box + digit label — OCR successfully recognized this cell
+- Red box + `?` — cell was not recognized by OCR (resolved by elimination or close-up fallback)
+- Backspace and enter cells are excluded
+
+Visible in the Transactions page for each run. Useful for diagnosing OCR misses and planning future accuracy improvements without needing a live rerun.
+
+Commits: `7934100` (feature), `b29da07` (early elimination), `0545ea6` (close-up range guard), `260f998` (scan fix + fallback + elimination)
+
+---
+
 ## random_pin: fix scan range, add close-up fallback + elimination (2026-04-22)
 
 ### Problem
