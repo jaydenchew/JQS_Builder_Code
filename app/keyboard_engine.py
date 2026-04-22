@@ -215,6 +215,21 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
         if target_digits.issubset(digit_to_cell.keys()):
             break
 
+        # Early elimination: if exactly 1 target digit and 1 unassigned cell remain
+        # after this wide-view pass, we can resolve without further passes or close-up.
+        _early_missing = target_digits - digit_to_cell.keys()
+        if len(_early_missing) == 1:
+            _early_unassigned = [(i, p) for i, p in enumerate(positions[:12])
+                                 if i not in _DIGIT_SKIP
+                                 and i not in {idx for idx, _ in digit_to_cell.values()}]
+            if len(_early_unassigned) == 1:
+                d = next(iter(_early_missing))
+                i, pos = _early_unassigned[0]
+                digit_to_cell[d] = (i, list(pos))
+                logger.info("random_pin: early elimination '%s' at pos %d (cell %d)",
+                            d, offset_idx + 1, i + 1)
+                break
+
     # Close-up fallback: for any remaining unrecognized cells, fly the camera
     # directly above that cell so the digit fills the frame center. Uses inverse
     # calibration to compute the cam position that places the cell at the image
