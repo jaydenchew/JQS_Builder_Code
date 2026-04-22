@@ -163,6 +163,10 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
     target_digits = set(text)
     camera_offsets = [(0, 0), (-2, 0), (0, -2)]
 
+    # Index 9 = backspace (-) and index 11 = enter (+) are fixed non-digit keys.
+    # Index 10 = digit 0, must be included. Scan all 12 cells except these two.
+    _DIGIT_SKIP = {9, 11}
+
     digit_to_cell = {}
 
     for offset_idx, (dx, dy) in enumerate(camera_offsets):
@@ -179,7 +183,9 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
 
         rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
-        for i, (ax, ay) in enumerate(positions[:10]):
+        for i, (ax, ay) in enumerate(positions[:12]):
+            if i in _DIGIT_SKIP:
+                continue
             if any(ax == pos[0] and ay == pos[1] for d, pos in digit_to_cell.values()):
                 continue
 
@@ -209,9 +215,72 @@ async def type_with_random_pin(config: dict, text: str, arm=None, cam=None, exec
         if target_digits.issubset(digit_to_cell.keys()):
             break
 
+    # Close-up fallback: for any remaining unrecognized cells, fly the camera
+    # directly above that cell so the digit fills the frame center. Uses inverse
+    # calibration to compute the cam position that places the cell at the image
+    # center, then OCRs only that center crop. If exactly one digit + one cell
+    # remain after the loop, resolve by elimination without an extra move.
+    missing = target_digits - digit_to_cell.keys()
+    if missing:
+        assigned = {idx for idx, _ in digit_to_cell.values()}
+        for i, (ax, ay) in enumerate(positions[:12]):
+            if i in _DIGIT_SKIP or i in assigned:
+                continue
+            # Inverse calibration: find cam position that centres (ax,ay) in frame.
+            # Forward: px = raw_height-1 - (tx-abx)/s, py = (aby-ty)/s
+            # Solve for cam_x/cam_y when px=rot_w//2, py=rot_h//2:
+            #   ry = raw_height-1 - (rot_w//2)
+            #   rx = rot_h//2
+            #   abx = tx - ry*s,  aby = ty + rx*s
+            #   cam_x = park_x + ax - abx,  cam_y = park_y + ay - aby
+            # rot dimensions come from a real frame captured below; use 480/640
+            # defaults (ROTATE_90_CW on a 480×640 raw → 640h×480w) until then.
+            ry_t = raw_height - 1 - 240   # 240 = 480//2, rotated image width center
+            rx_t = 320                     # rotated image height center (640//2)
+            abx_t = tx - ry_t * s
+            aby_t = ty + rx_t * s
+            cu_x = park_x + ax - abx_t
+            cu_y = park_y + ay - aby_t
+
+            await _hw(executor, a.move, cu_x, cu_y)
+            await asyncio.sleep(0.8)
+
+            frame = await _hw(executor, c.capture_fresh)
+            if frame is None:
+                continue
+            rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            rot_h, rot_w = rotated.shape[:2]
+            cy, cx = rot_h // 2, rot_w // 2
+            CLOSEUP_HALF = 50
+            cell = rotated[max(0, cy - CLOSEUP_HALF):cy + CLOSEUP_HALF,
+                           max(0, cx - CLOSEUP_HALF):cx + CLOSEUP_HALF]
+            if cell.size == 0:
+                continue
+            gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+            digit = _tesseract_recognize_digit(gray, pytesseract)
+            logger.info("random_pin close-up: cell %d arm=(%.1f,%.1f) cam=(%.1f,%.1f) digit=%s",
+                        i + 1, ax, ay, cu_x, cu_y, digit)
+            if digit and digit not in digit_to_cell:
+                digit_to_cell[digit] = (i, [ax, ay])
+                assigned.add(i)
+                missing = target_digits - digit_to_cell.keys()
+                if not missing:
+                    break
+
+        # Elimination: if exactly one digit and one unassigned cell remain, lock.
+        missing = target_digits - digit_to_cell.keys()
+        if len(missing) == 1:
+            unassigned = [(i, p) for i, p in enumerate(positions[:12])
+                          if i not in _DIGIT_SKIP and i not in {idx for idx, _ in digit_to_cell.values()}]
+            if len(unassigned) == 1:
+                d = next(iter(missing))
+                i, pos = unassigned[0]
+                digit_to_cell[d] = (i, list(pos))
+                logger.info("random_pin: resolved '%s' by elimination (cell %d)", d, i + 1)
+
     if not target_digits.issubset(digit_to_cell.keys()):
         missing = target_digits - set(digit_to_cell.keys())
-        raise RuntimeError("random_pin: could not find digits %s after %d positions" % (missing, len(camera_offsets)))
+        raise RuntimeError("random_pin: could not find digits %s after close-up fallback" % (missing,))
 
     logger.info("random_pin: typing '%s'", text)
     for ch in text:
