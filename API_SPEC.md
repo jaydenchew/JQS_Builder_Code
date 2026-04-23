@@ -201,7 +201,7 @@ For **same-bank transfers**: destination bank must match source bank.
 
 For **interbank transfers**: destination can be any bank listed below per source bank.
 
-#### ACLEDA Interbank Destinations (58 banks)
+#### ACLEDA Interbank Destinations (59 banks)
 
 | Bank Code | Display Name |
 |-----------|-------------|
