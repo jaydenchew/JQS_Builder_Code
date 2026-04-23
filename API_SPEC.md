@@ -1,4 +1,4 @@
-# WA API Specification
+﻿# WA API Specification
 
 > Version: 1.0
 > Base URL: `https://wa.evolution-x.io`
@@ -38,9 +38,9 @@ Content-Type: application/json
 | `amount` | Float | Yes | Transfer amount (must be > 0) |
 | `pay_from_bank_code` | String | Yes | Source bank code (e.g., `ABA`, `ACLEDA`, `WINGBANK`) |
 | `pay_from_account_no` | String | Yes | Source account number (must be registered in WA) |
-| `pay_to_bank_code` | String | Yes | Destination bank code |
+| `pay_to_bank_code` | String | Yes | Destination bank code. For interbank transfers, WA resolves the bank search text internally using its own mapping table — PAS does not supply the bank display name. |
 | `pay_to_account_no` | String | Yes | Destination account number |
-| `pay_to_account_name` | String | Yes | Destination account holder name |
+| `pay_to_account_name` | String | Yes | Destination account holder name. Stored for audit purposes. Not currently used in automation flow steps (no OCR name verification). May be used for name matching in a future release. |
 
 ### Response
 
@@ -116,6 +116,10 @@ Content-Type: multipart/form-data
 - All queued tasks for the same machine are also automatically rejected with status `4`
 - The machine goes offline and requires manual inspection
 - PAS should not re-send the same `process_id` — instead, create a new withdrawal with a new `process_id` after the issue is resolved
+- `receipt` in the stall callback is **optional**:
+  - **With receipt**: the transfer may have been submitted before the error — manual verification required before deciding to retry
+  - **Without receipt**: the error occurred before the transfer was submitted — safe to retry with a new `process_id` after the machine is cleared
+- In both cases, PAS should wait for manual confirmation before re-queuing
 
 ---
 
@@ -142,14 +146,17 @@ GET /status/{process_id}
 
 ### Status Values
 
-| Value | Meaning |
-|-------|---------|
-| `not_found` | No transaction with this process_id |
-| `queued` | Waiting to be processed |
-| `running` | Currently being executed |
-| `success` | Completed successfully (callback status=1) |
-| `failed` | Failed as determined by receipt OCR (callback status=2 or 3) |
-| `stall` | Automation error, needs manual inspection (callback status=4) |
+| Value | Meaning | Callback equivalent |
+|-------|---------|---------------------|
+| `not_found` | No transaction with this process_id | — |
+| `queued` | Waiting to be processed | — |
+| `running` | Currently being executed | — |
+| `success` | Completed successfully | status=1 |
+| `failed` | Transfer failed (receipt OCR detected failure) | status=2 |
+| `review` | Transfer submitted but bank shows "in review" / "pending" | status=3 |
+| `stall` | Automation error, machine paused for manual inspection | status=4 |
+
+> **Note**: `GET /status` returns string values; the asynchronous callback uses integer codes. The two systems use independent representations — they are not interchangeable.
 
 ---
 
