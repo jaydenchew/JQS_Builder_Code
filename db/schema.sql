@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     pay_to_account_name VARCHAR(100) NOT NULL,
     bank_app_id INT NULL,
     station_id INT NULL,
-    status ENUM('pending', 'queued', 'running', 'success', 'failed', 'stall') NOT NULL DEFAULT 'pending',
+    status ENUM('pending', 'queued', 'running', 'success', 'failed', 'review', 'stall') NOT NULL DEFAULT 'pending',
     receipt_base64 LONGTEXT NULL,
     error_message VARCHAR(500) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

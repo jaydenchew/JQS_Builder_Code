@@ -218,7 +218,7 @@ class ArmWorker:
             rr = ocr_result.get("receipt_result")
             status_map = {"success": 1, "failed": 2, "fail": 2, "review": 3}
             pas_status = status_map.get(rr, 1)
-            db_status = "success" if pas_status == 1 else "failed"
+            db_status = "success" if pas_status == 1 else ("review" if pas_status == 3 else "failed")
 
             await database.execute(
                 "UPDATE transactions SET status = %s, finished_at = NOW() WHERE id = %s",
