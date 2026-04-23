@@ -2,7 +2,7 @@
 
 > Version: 1.0
 > Base URL: `https://wa.evolution-x.io`
-> Last updated: 2026-04-14
+> Last updated: 2026-04-23
 
 ---
 
@@ -201,7 +201,7 @@ For **same-bank transfers**: destination bank must match source bank.
 
 For **interbank transfers**: destination can be any bank listed below per source bank.
 
-#### ACLEDA Interbank Destinations (59 banks)
+#### ACLEDA Interbank Destinations (58 banks)
 
 | Bank Code | Display Name |
 |-----------|-------------|
@@ -265,37 +265,118 @@ For **interbank transfers**: destination can be any bank listed below per source
 | `WINGBANK` | WING BANK |
 | `WOORI` | Woori Bank (Cambodia) Plc. |
 
-#### CIMB Interbank Destinations (21 banks — Malaysia)
+#### CIMB Interbank Destinations (58 banks — Malaysia)
 
 | Bank Code | Display Name |
 |-----------|-------------|
-| `AFFIN` | Affin Bank Berhad |
-| `ABMB` | Alliance Bank Malaysia Berhad |
-| `AMMB` | AmBank (M) Berhad |
-| `BIMB` | Bank Islam Malaysia Berhad |
-| `BKRM` | Bank Kerjasama Rakyat Malaysia Berhad |
-| `BMMB` | Bank Muamalat Malaysia Berhad |
-| `BOC` | Bank of China |
-| `AGRO` | Bank Pertanian Malaysia Berhad |
-| `BSN` | Bank Simpanan Nasional |
-| `CITI` | Citibank Berhad |
-| `GX` | GX Bank |
-| `HLB` | Hong Leong Bank Berhad |
-| `HSBC` | Hongkong Bank Malaysia Berhad |
-| `MBB` | Malayan Banking Berhad / Maybank |
-| `OCBC` | OCBC |
-| `PBE` | Public Bank Berhad |
-| `RHB` | RHB Bank |
-| `RYTB` | RYT Bank |
-| `SCB` | Standard Chartered Bank Malaysia Berhad |
-| `TNG` | Touch N Go |
-| `UOB` | United Overseas Bank Limited |
+| `AEONBANK` | AEON BANK (M) BERHAD |
+| `AFFIN` | AFFIN BANK BHD |
+| `AGRO` | AGROBANK |
+| `ABMB` | ALLIANCE BANK MALAYSIA BHD |
+| `ALRAJHI` | AL RAJHI BANKING & INVESTMENT |
+| `AMMB` | AMBANK BERHAD |
+| `AXIATA` | Axiata Digital eCode Sdn Bhd |
+| `BANGKOK` | BANGKOK BANK BHD |
+| `BIMB` | BANK ISLAM MALAYSIA BHD |
+| `BKRM` | BANK KERJASAMA RAKYAT MALAYSIA BHD |
+| `BMMB` | BANK MUALAMAT MALAYSIA BHD |
+| `BOFA` | BANK OF AMERICA MALAYSIA BHD |
+| `BOC` | Bank of China (Malaysia) Berhad |
+| `BSN` | BANK SIMPANAN NASIONAL |
+| `BEEZ` | Beez Fintech Sdn Bhd |
+| `BIGPAY` | BigPay Malaysia Sdn Bhd |
+| `BNPPARIBAS` | BNP PARIBAS MALAYSIA BERHAD |
+| `BOOSTBANK` | Boost Bank Berhad |
+| `CCBM` | CHINA CONSTUCTION BANK (MALAYSIA) BERHAD |
+| `CITI` | CITIBANK BHD |
+| `CURLEC` | Curlec Sdn Bhd |
+| `DEUTSCHE` | DEUTSCHE BANK MALAYSIA BERHAD |
+| `FASSPAY` | Fass Payment Solutions Sdn Bhd |
+| `FAVE` | Fave Asia Technologies Sdn Bhd |
+| `FINEXUS` | Finexus Cards Sdn. Bhd. |
+| `GHL` | GHL Cardpay Sdn Bhd |
+| `GPAY` | GPay Network (M) Sdn Bhd |
+| `GX` | GX Bank Berhad |
+| `HLB` | HONG LEONG BANK BHD |
+| `HSBC` | HSBC Bank Malaysia Berhad |
+| `ICBC` | INDUSTRIAL & COMMERCIAL BANK OF CHINA |
+| `IPAY88` | iPay88 (M) Sdn Bhd |
+| `JCPACIFIC` | J & C Pacific Sdn Bhd |
+| `JPMORGAN` | JP MORGAN CHASE BANK BHD |
+| `KAF` | KAF Digital Bank Berhad |
+| `KFH` | KUWAIT FINANCE HOUSE MALAYSIA BHD |
+| `MBB` | MALAYAN BANKING BHD |
+| `MBSB` | MBSB Bank Berhad |
+| `MERCHANTRADE` | Merchantrade Asia Sdn Bhd |
+| `MIZUHO` | MIZUHO BANK (M) BHD |
+| `MOBILITYONE` | MobilityOne Sdn Bhd |
+| `MUFG` | MUFG BANK (MALAYSIA) BERHAD |
+| `OCBC` | OCBC BANK MALAYSIA BHD |
+| `PAYEX` | Payex PLT |
+| `PBE` | PUBLIC BANK BHD |
+| `RAZERPAY` | Razer Merchant Services Sdn Bhd |
+| `RHB` | RHB BANK BHD |
+| `RYTBANK` | YTL Digital Bank Berhad (Ryt Bank) |
+| `SETEL` | Setel Pay Sdn Bhd |
+| `SHOPEPAY` | Shopee |
+| `SILICONNET` | SiliconNet Technologies Sdn Bhd |
+| `SCB` | STANDARD CHARTERED BANK BHD |
+| `SMBC` | SUMITOMO MITSUI BANK BERHAD |
+| `TNG` | Touch N Go Digital |
+| `UNIPIN` | Unipin (M) Sdn Bhd |
+| `UOB` | UNITED OVERSEAS BANK BHD |
+| `WANNAPAY` | Wannapay Sdn Bhd |
+| `WISE` | Wise Payments Malaysia Sdn Bhd |
 
-#### MBB (Maybank) Interbank Destinations (1 bank — Malaysia)
+#### MBB (Maybank) Interbank Destinations (45 banks — Malaysia)
 
 | Bank Code | Display Name |
 |-----------|-------------|
-| `CIMB` | Cimb Bank |
+| `AEONBANK` | AEON BANK (M) BERHAD |
+| `AFFIN` | AFFIN BANK BERHAD |
+| `ALRAJHI` | AL RAJHI BANKING & INVESTMENT CORP (M) BERHAD |
+| `ABMB` | ALLIANCE BANK MALAYSIA BERHAD |
+| `AMMB` | AmBANK BERHAD |
+| `BIMB` | BANK ISLAM MALAYSIA |
+| `BKRM` | BANK KERJASAMA RAKYAT MALAYSIA BERHAD |
+| `BMMB` | BANK MUALAMAT |
+| `BOFA` | BANK OF AMERICA |
+| `BOC` | BANK OF CHINA (MALAYSIA) BERHAD |
+| `AGRO` | BANK PERTANIAN MALAYSIA BERHAD (AGROBANK) |
+| `BSN` | BANK SIMPANAN NASIONAL BERHAD |
+| `BNPPARIBAS` | BNP PARIBAS MALAYSIA |
+| `BANGKOK` | Bangkok Bank Berhad |
+| `BIGPAY` | BigPay Malaysia Sdn Bhd |
+| `BOOSTBANK` | Boost Bank Berhad |
+| `BOOSTEWALLET` | Boost eWallet |
+| `CCBM` | CHINA CONST BK (M) BERHAD |
+| `CIMB` | CIMB BANK BERHAD |
+| `CITI` | CITIBANK BERHAD |
+| `COOPBANK` | Co-opbank Pertama |
+| `DEUTSCHE` | DEUTSCHE BANK (MSIA) BERHAD |
+| `FASSPAY` | FASSPAY |
+| `FINEXUS` | FINEXUS CARDS SDN. BHD. |
+| `GX` | GXBANK |
+| `HLB` | HONG LEONG BANK |
+| `HSBC` | HSBC BANK MALAYSIA BERHAD |
+| `ICBC` | INDUSTRIAL & COMMERCIAL BANK OF CHINA |
+| `JPMORGAN` | J.P. MORGAN CHASE BANK BERHAD |
+| `KAF` | KAF Digital Bank |
+| `KFH` | KUWAIT FINANCE HOUSE (MALAYSIA) BHD |
+| `MBSB` | MBSB BANK |
+| `MIZUHO` | MIZUHO BANK (MALAYSIA) BERHAD |
+| `MUFG` | MUFG BANK (MALAYSIA) BHD |
+| `MERCHANTRADE` | Merchantrade |
+| `OCBC` | OCBC BANK (MALAYSIA) BHD |
+| `PBE` | PUBLIC BANK |
+| `RHB` | RHB BANK |
+| `RYTBANK` | Ryt Bank |
+| `SETEL` | SETEL |
+| `SCB` | STANDARD CHARTERED BANK |
+| `SMBC` | SUMITOMO MITSUI BANKING CORPORATION MALAYSIA BHD |
+| `SHOPEPAY` | ShopeePay |
+| `TNG` | TOUCH N GO eWALLET |
+| `UOB` | UNITED OVERSEAS BANK BERHAD |
 
 ---
 

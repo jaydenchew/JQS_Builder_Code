@@ -521,6 +521,28 @@ py db\import_bank_seed.py db\seed_bank_ABA.sql ARM-05
 py db\export_bank_seed.py ABA ARM-01
 ```
 
+### Bank name mappings seed (interbank search text)
+
+The `db/seed_bank_name_mappings_<BANK>.sql` files contain the `bank_name_mappings` rows for each source bank — the search text typed into the interbank search field when the destination bank name is looked up. These are required for any flow that uses `pay_to_bank_name` as an input source.
+
+Available seeds:
+
+| File | Source bank | Destinations |
+|---|---|---|
+| `seed_bank_name_mappings_ACLEDA.sql` | ACLEDA | 58 Cambodian banks |
+| `seed_bank_name_mappings_CIMB.sql` | CIMB | 21 Malaysian banks |
+| `seed_bank_name_mappings_MBB.sql` | MBB (Maybank) | 45 Malaysian banks |
+
+Import on a new machine (or after a fresh DB):
+
+```powershell
+docker exec -i wa-unified-mysql mysql -uroot -pwa_unified_2026 wa_db < db\seed_bank_name_mappings_ACLEDA.sql
+docker exec -i wa-unified-mysql mysql -uroot -pwa_unified_2026 wa_db < db\seed_bank_name_mappings_CIMB.sql
+docker exec -i wa-unified-mysql mysql -uroot -pwa_unified_2026 wa_db < db\seed_bank_name_mappings_MBB.sql
+```
+
+Each file is idempotent (deletes existing rows for that source bank then reinserts). Run all three if unsure.
+
 ---
 
 ## Where to get help
