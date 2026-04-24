@@ -201,6 +201,7 @@ Banks with apps installed and configured on WA machines:
 | `WINGBANK` | WING Bank | Cambodia |
 | `CIMB` | CIMB Bank | Malaysia |
 | `MBB` | Maybank | Malaysia |
+| `RHB` | RHB Bank | Malaysia |
 
 ### Destination Banks (pay_to)
 
@@ -384,6 +385,58 @@ For **interbank transfers**: destination can be any bank listed below per source
 | `SHOPEPAY` | ShopeePay |
 | `TNG` | TOUCH N GO eWALLET |
 | `UOB` | UNITED OVERSEAS BANK BERHAD |
+
+#### RHB Interbank Destinations (47 banks — Malaysia)
+
+| Bank Code | Display Name |
+|-----------|-------------|
+| `AEONBANK` | AEON BANK |
+| `AFFIN` | Affin Bank Berhad |
+| `AGRO` | AGRO Bank |
+| `ALRAJHI` | Al-Rajhi Bank |
+| `ABMB` | Alliance Bank Malaysia Berhad |
+| `AMMB` | AMBank |
+| `BANGKOK` | Bangkok Bank |
+| `BIMB` | Bank Islam Malaysia Berhad |
+| `BKRM` | Bank Kerjasama Rakyat Malaysia |
+| `BMMB` | Bank Mualamat Malaysia Berhad |
+| `BOFA` | Bank of America (Malaysia) Bhd |
+| `BOC` | Bank of China (Malaysia) Bhd |
+| `BSN` | Bank Simpanan Malaysia |
+| `BIGPAY` | BigPay |
+| `BNPPARIBAS` | BNP Paribas Malaysia Berhad |
+| `BOOSTBANK` | Boost Bank |
+| `BOOSTEWALLET` | Boost eWallet |
+| `CCBM` | China Construction Bank (M) Bhd |
+| `CIMB` | CIMB |
+| `CITI` | Citibank Berhad |
+| `COOPBANK` | Koperasi Co-opbank Pertama Malaysia Berhad |
+| `DEUTSCHE` | Deutsche Bank |
+| `FASSPAY` | Fass Payment Solutions Sdn Bhd |
+| `FINEXUS` | Finexus Cards Sdn Bhd |
+| `GX` | GXBank |
+| `HLB` | Hong Leong Bank Berhad |
+| `HSBC` | HSBC Bank |
+| `ICBC` | Industrial & Commercial Bank of China (ICBC) |
+| `JPMORGAN` | J.P.Morgan Chase Bank Berhad |
+| `KAF` | KAF Digital Bank |
+| `KFH` | Kuwait Finance House |
+| `MBB` | Maybank |
+| `MBSB` | MBSB Bank Berhad |
+| `MCASH` | MCash |
+| `MERCHANTRADE` | Merchantrade |
+| `MIZUHO` | Mizuho Corporate Bank (M) Bhd |
+| `MUFG` | MUFG Bank (Malaysia) Berhad |
+| `OCBC` | OCBC Bank Malaysia Berhad |
+| `PBE` | Public Bank |
+| `RYTBANK` | Ryt Bank |
+| `SETEL` | Setel Ventures Sdn Bhd |
+| `SHOPEPAY` | ShopeePay |
+| `SCB` | Standard Chartered Bank |
+| `SMBC` | Sumitomo Mitsui Banking Corporation (M) Berhad |
+| `TNG` | Touch N Go Digital |
+| `UOB` | United Overseas Bank Berhad |
+| `WANPAY` | WanPay |
 
 ---
 
