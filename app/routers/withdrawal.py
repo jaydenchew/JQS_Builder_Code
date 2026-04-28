@@ -3,6 +3,7 @@
 Task assignment: bank_apps.station_id → stations.arm_id → route to correct worker.
 """
 import logging
+import re
 from fastapi import APIRouter, Depends
 from pymysql.err import IntegrityError
 from app.models import WithdrawalRequest, StandardResponse, HealthResponse, StatusResponse
@@ -13,9 +14,24 @@ from app.worker_manager import manager
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Strips ASCII/Unicode whitespace + zero-width formatting chars (U+200B/C/D, U+FEFF).
+# Account numbers must be plain digits before they reach the keyboard typer
+# and the OCR matcher; PAS sometimes ships values like '000 515 302' or
+# '001\u200b 514 964' that would otherwise leak through.
+_ACCOUNT_NO_STRIP = re.compile(r'[\s\u200b\u200c\u200d\ufeff]+')
+
+
+def _sanitize_account_no(value):
+    if not value:
+        return value
+    return _ACCOUNT_NO_STRIP.sub('', str(value))
+
 
 @router.post("/process-withdrawal", response_model=StandardResponse, dependencies=[Depends(verify_api_key)])
 async def process_withdrawal(req: WithdrawalRequest):
+    req.pay_from_account_no = _sanitize_account_no(req.pay_from_account_no)
+    req.pay_to_account_no = _sanitize_account_no(req.pay_to_account_no)
+
     if req.pay_from_bank_code == req.pay_to_bank_code and req.pay_from_account_no == req.pay_to_account_no:
         return StandardResponse(status=False, message="Self-transfer rejected: sender and receiver are the same account")
 

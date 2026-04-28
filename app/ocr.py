@@ -79,9 +79,14 @@ def _quick_match(text, field_name, expected):
     if field_name == "pay_to_account_no":
         text_digits = re.sub(r'[^0-9]', '', text)
         text_clean = re.sub(r'\s+', '', text)
-        candidates = [expected, expected.lstrip("0")]
-        for i in range(len(expected)):
-            suffix = expected[i:]
+        # Normalize expected to digits-only so PAS-supplied formats like
+        # '000 515 302' or '001\u200b 514 964' still match against pure-digit OCR text.
+        expected_digits = re.sub(r'[^0-9]', '', str(expected))
+        if not expected_digits:
+            return False
+        candidates = [expected_digits, expected_digits.lstrip("0")]
+        for i in range(len(expected_digits)):
+            suffix = expected_digits[i:]
             if len(suffix) >= 6:
                 candidates.append(suffix)
         return any(c and (c in text_digits or c in text_clean) for c in candidates)
@@ -311,9 +316,14 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
     def _match_account(text, expected):
         text_clean = re.sub(r'\s+', '', text)
         text_digits = re.sub(r'[^0-9]', '', text)
-        candidates = [expected, expected.lstrip("0")]
-        for i in range(len(expected)):
-            suffix = expected[i:]
+        # Normalize expected to digits-only — PAS-supplied account numbers may
+        # contain spaces, dashes or zero-width characters (U+200B etc).
+        expected_digits = re.sub(r'[^0-9]', '', str(expected))
+        if not expected_digits:
+            return False
+        candidates = [expected_digits, expected_digits.lstrip("0")]
+        for i in range(len(expected_digits)):
+            suffix = expected_digits[i:]
             if len(suffix) >= 6:
                 candidates.append(suffix)
         for c in candidates:
