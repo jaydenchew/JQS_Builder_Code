@@ -115,7 +115,11 @@ flow_steps.ui_element_key = step_name
 
 ### Stall 队列处理
 
-当 arm stall 时，除了当前失败的任务回调 PAS status=4 外，该 arm 上所有 queued 状态的任务也会自动标记为 failed 并回调 PAS status=4，附带错误信息。不会让排队任务无限等待。
+PAS 已经改为串行下发（同一 arm 同一时刻只有一个任务，必须等当前任务终态回调后才发下一单），所以 worker 队列在正常情况下不会堆积。
+
+软错（OCR/screen mismatch、点击异常等）发生时只回调当前 task 一次 PAS status=4，arm 自动恢复后继续等下一单（见下方 PAS Callback Status / Stall 设计原则）。
+
+硬件错（`port open failed` / `not responding`）由于 arm 无法自恢复，仍执行旧的"批量拒绝队列内 queued 任务 + arm 进 offline + paused"流程作为兜底，避免万一队列残留任务时无限等待。详见 DD-011 / DD-024。
 
 ### 非阻塞架构
 
@@ -148,21 +152,35 @@ arm_worker._process_task 读取 _ocr_result：
   │
   ├→ success (无 receipt_check) → callback status=1
   │
-  └→ 任何步骤失败（OCR 验证失败、步骤执行异常等）
-       → DB status='stall' + 截图
-       → callback status=4
-       → arm offline + 暂停（需人工检查手机状态）
-       → 不尝试自动关闭 APP（状态不确定，交给人工处理）
+  └→ 任何步骤失败:
+       │
+       ├→ 软错（OCR / CHECK_SCREEN / 步骤执行异常等）
+       │    → 拍 stall photo + DB status='stall' + 截图
+       │    → 跑 per-arm STALL flow（关闭当前 APP，回到 home screen）
+       │    → cleanup_arm 回 (0,0) + 关串口
+       │    → callback status=4（回 0 之后才通知 PAS）
+       │    → arms.status='idle'（worker 不暂停，立即接下一单）
+       │
+       └→ 硬件错（port open failed / not responding）
+            → 30s sleep + 拍 stall photo + DB status='stall'
+            → cleanup_arm（多半 no-op，因为 port 已断）
+            → callback status=4
+            → arms.status='offline' + paused + 拒队列（需人工 resume）
 ```
 
-所有 callback 都带 receipt 截图，以 `multipart/form-data` file 方式发送（非 base64 JSON）。DB 仍存 base64，发送时 decode 为文件字节。不重试，失败交给 PAS 人工处理。
+所有 callback 都带 receipt 截图，以 `multipart/form-data` file 方式发送（非 base64 JSON）。DB 仍存 base64，发送时 decode 为文件字节。callback 内部带 3 次 backoff 重试（5s/15s/30s），仍失败则 log 报错、`callback_sent_at` 保持 NULL（PAS 端凭此对账重发）。
 
-**回调一致性保证：** `callback_result` 检查 HTTP 状态码，仅 2xx 视为成功。非 2xx 或网络异常返回 None，worker 不写 `callback_sent_at`，保留 NULL 以便后续对账/重发。Stall 时该 arm 所有 queued 任务也会自动回调 status=4 后标记 failed。
+**回调一致性保证：** `callback_result` 检查 HTTP 状态码，仅 2xx 视为成功。非 2xx 或网络异常返回 None，worker 不写 `callback_sent_at`，保留 NULL 以便后续对账/重发。
 
-**Stall 设计原则：** 任何步骤级失败一律走 stall（DB status='stall', PAS status=4），因为：
-- 机器无法判断转账是否已经成功（可能已走到确认步骤）
-- 自动关闭 APP 依赖 `all_apps_btn`，不是所有银行都有，且状态不确定时操作危险
-- arm 必须 offline + 暂停，等人工检查手机屏幕后再 resume
+**Stall 设计原则（2026-04-29 更新，详见 DD-024）：**
+
+软错走自恢复路径：拍照 → 跑 STALL flow 关闭当前 APP → 回 (0,0) → 通知 PAS → idle。基于 PAS 串行下发的语义（一次只一单），下一单到达时 arm 一定已经物理回到原点 + 手机回到 home screen，不会和上一单的残留状态冲突。
+
+硬件错仍走人工介入路径：arm 自身失联（COM 打不开），无法跑 close flow 也无法自归零，必须 offline + paused 等运维处理。
+
+副作用风险（已接受）：在"PIN 已发出 / 确认页面"等末端步骤 stall，关闭 APP 可能丢失"已发但回执未到"的中间态。靠后续 PAS 对账解决。
+
+**Per-arm STALL flow：** 通过 `flow_templates` 表新增一行 `bank_code='STALL', arm_id=<X>, status='active'` 来定义；步骤数和动作可自由编辑（推荐 CLICK 最近任务键 → SWIPE 上滑关闭 → ARM_MOVE done）。坐标录在 `bank_code='STALL'` 名下，独立于任何银行的录制。STALL flow 缺失时软错降级为"只回 (0,0) + idle"，不会再 stall。
 
 **Stall 拍照：** stall 时 arm 先移动到 `stations.stall_photo_x/y` 位置拍摄手机全屏截图，附在 PAS 回调和 DB `receipt_base64` 里，方便远程排查。位置在 Settings 页面配置，跟 flow 里各步骤的 ui_element 独立。未配置时在当前位置拍。
 

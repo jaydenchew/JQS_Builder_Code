@@ -188,12 +188,14 @@ class ArmWorker:
 
         success = False
         error_msg = None
+        is_hardware_error = False
 
         try:
             success = await self._execute_task(task, bank_code, station_id, password, transaction_id)
         except RuntimeError as e:
             error_str = str(e)
             if "port open failed" in error_str.lower() or "not responding" in error_str.lower():
+                is_hardware_error = True
                 logger.error("[%s] Hardware error, pausing 30s: %s", self.name, e)
                 await asyncio.sleep(30)
             error_msg = error_str
@@ -231,6 +233,10 @@ class ArmWorker:
                 logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.info("[%s] === DONE process_id=%d pas_status=%d receipt=%s ===",
                         self.name, process_id, pas_status, rr)
+            await self._cleanup_arm()
+            await database.execute(
+                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+                (self.arm_id,))
 
         elif success:
             await database.execute(
@@ -243,6 +249,10 @@ class ArmWorker:
             else:
                 logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.info("[%s] === SUCCESS process_id=%d ===", self.name, process_id)
+            await self._cleanup_arm()
+            await database.execute(
+                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+                (self.arm_id,))
 
         else:
             if not error_msg:
@@ -260,6 +270,19 @@ class ArmWorker:
             await database.execute(
                 "UPDATE transactions SET status = 'stall', error_message = %s, receipt_base64 = %s, finished_at = NOW() WHERE id = %s",
                 (error_msg, receipt_b64, transaction_id))
+
+            # Soft error + arm still connected: auto-close the open APP via per-arm STALL flow
+            # so the phone is back at home screen before the next task arrives.
+            if not is_hardware_error and self.arm_client.is_connected():
+                try:
+                    await self._run_stall_close_flow(station_id, transaction_id)
+                except Exception as e:
+                    logger.warning("[%s] Stall close flow failed (ignored): %s", self.name, e)
+
+            # Reset to (0,0) and close port BEFORE notifying PAS, so by the time PAS
+            # may dispatch the next task the arm is physically at origin.
+            await self._cleanup_arm()
+
             cb_result = await pas_client.callback_result(process_id, 4, now, receipt_b64)
             if cb_result is not None:
                 await database.execute(
@@ -268,20 +291,24 @@ class ArmWorker:
                 logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
             logger.warning("[%s] === STALL process_id=%d error=%s ===", self.name, process_id, error_msg)
 
-        await self._cleanup_arm()
-
-        if not success:
             stall_detail = "Step %s: %s" % (self._current_step or "?", error_msg or "unknown")
-            await database.execute(
-                "UPDATE arms SET status = 'offline', stall_reason = %s, stall_details = %s WHERE id = %s",
-                (self._stall_reason, stall_detail, self.arm_id))
-            await self._fail_queued_tasks("ARM %s stalled — previous task failed, queued tasks auto-rejected" % self.name)
-            self._paused = True
-            logger.warning("[%s] ARM PAUSED — reason=%s detail=%s", self.name, self._stall_reason, stall_detail)
-        else:
-            await database.execute(
-                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
-                (self.arm_id,))
+            if is_hardware_error:
+                # Hardware error keeps legacy behaviour: arm goes offline + paused, queue rejected.
+                await database.execute(
+                    "UPDATE arms SET status = 'offline', stall_reason = %s, stall_details = %s WHERE id = %s",
+                    (self._stall_reason, stall_detail, self.arm_id))
+                await self._fail_queued_tasks(
+                    "ARM %s stalled — previous task failed, queued tasks auto-rejected" % self.name)
+                self._paused = True
+                logger.warning("[%s] ARM PAUSED (hardware) — reason=%s detail=%s",
+                               self.name, self._stall_reason, stall_detail)
+            else:
+                # Soft error: arm stays online and ready for the next task.
+                await database.execute(
+                    "UPDATE arms SET status = 'idle', stall_reason = %s, stall_details = %s WHERE id = %s",
+                    (self._stall_reason, stall_detail, self.arm_id))
+                logger.warning("[%s] STALL recovered — arm stays online; reason=%s detail=%s",
+                               self.name, self._stall_reason, stall_detail)
 
         self._current_task = None
         self._current_step = None
@@ -398,6 +425,55 @@ class ArmWorker:
         except Exception as e:
             logger.error("[%s] Stall photo capture failed: %s", self.name, e)
             return None
+
+    async def _run_stall_close_flow(self, station_id: int, transaction_id: int):
+        """Run the per-arm STALL flow to close any open APP after a soft stall.
+
+        Looks up flow_templates with bank_code='STALL' and arm_id=self.arm_id; the
+        template's steps are executed using bank_code='STALL' so coordinates are
+        resolved against the same bank_code (with the usual NULL-bank fallback in
+        actions.lookup_*). 'done' / 'done_inter' steps mark the end of the flow.
+
+        Errors are logged and swallowed — never re-raised — so a missing flow,
+        unrecorded coordinate, or single-step failure cannot recurse into another
+        stall. The caller still proceeds to _cleanup_arm and PAS callback.
+        """
+        flow = await database.fetchone(
+            "SELECT id FROM flow_templates "
+            "WHERE bank_code = 'STALL' AND arm_id = %s AND status = 'active' "
+            "ORDER BY version DESC LIMIT 1",
+            (self.arm_id,))
+        if not flow:
+            logger.info("[%s] No STALL flow defined for this arm, skipping close", self.name)
+            return
+
+        steps = await database.fetchall(
+            "SELECT * FROM flow_steps WHERE flow_template_id = %s ORDER BY step_number ASC",
+            (flow["id"],))
+        if not steps:
+            logger.info("[%s] STALL flow has no steps, skipping close", self.name)
+            return
+
+        logger.info("[%s] Running STALL close flow: %d step(s)", self.name, len(steps))
+
+        # Minimal transaction dict for actions.execute_step. STALL flow should not
+        # contain TYPE/OCR/CHECK_SCREEN steps that read transaction fields, but if
+        # someone adds them later, missing keys raise inside the per-step try/except
+        # below and the loop continues.
+        fake_tx = {"id": transaction_id, "_arm_name": self.name}
+
+        for step in steps:
+            if step["step_name"] in ("done", "done_inter"):
+                break
+            try:
+                await actions.execute_step(
+                    step, "STALL", station_id, fake_tx, password="",
+                    transaction_id=transaction_id,
+                    arm=self.arm_client, cam=self.camera, executor=self._executor,
+                )
+            except Exception as e:
+                logger.warning("[%s] STALL step '%s' failed (continuing): %s",
+                               self.name, step["step_name"], e)
 
     async def _cleanup_arm(self):
         if self.arm_client.is_connected():

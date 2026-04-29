@@ -1,5 +1,55 @@
 # Changelog
 
+## stall: auto-close APP via per-arm STALL flow + arm stays online (2026-04-29)
+
+### Problem
+
+When any flow step failed (OCR mismatch, screen mismatch, click error, etc.), the arm went `offline + paused`, all queued tasks were rejected, and a human had to inspect the phone before resuming. With PAS now serializing requests (one task at a time, never overlapping), this manual recovery turned every transient failure into downtime.
+
+### New behaviour
+
+A failed task still reports `status=4` to PAS (one transaction = one stall callback), but the arm now self-recovers:
+
+1. Capture stall photo (unchanged) and write `transactions.status='stall'` + receipt.
+2. **NEW** — execute the per-arm STALL flow (close the open APP) so the phone returns to home screen.
+3. `_cleanup_arm` resets the arm to (0,0) and closes the COM port.
+4. PAS callback `status=4` (moved to AFTER cleanup, so PAS only sees the stall once the arm is physically at origin).
+5. `arms.status = 'idle'` — worker stays unpaused and immediately fetches the next task.
+
+Hardware errors (`port open failed` / `not responding`) still take the legacy path: arm goes `offline + paused`, queued tasks rejected with `status=4`, requires human resume. The 30s sleep on hardware error is unchanged.
+
+### STALL flow definition (per arm)
+
+A new convention reuses existing tables: each arm has a row in `flow_templates` with `bank_code='STALL'`, `arm_id=<X>`, `status='active'`. The flow's steps execute under `bank_code='STALL'` so coordinates are recorded once per station under that bank_code (independent of any bank's recordings; reuses no per-bank data).
+
+Recommended steps: `CLICK` recents/all-apps button → `SWIPE` close-app gesture → `ARM_MOVE done` (the `done` step is a marker — worker breaks at it without executing). Step names are user-defined; only the `done` / `done_inter` sentinels are special.
+
+If no STALL flow is defined for an arm, the close step is silently skipped and the original behaviour (just cleanup + idle for soft errors, offline + paused for hardware errors) takes over.
+
+### Files changed
+
+- `app/arm_worker.py` — added `_run_stall_close_flow`, restructured `_process_task` failure branch into soft vs hardware paths; success branches now own their own `_cleanup_arm + idle` calls (the global `_cleanup_arm` after the if/elif/else was split into three per-branch calls).
+
+### Operator action required after deploy
+
+In Builder, for each arm that should self-recover:
+
+1. Create `flow_template` with `bank_code='STALL'`, `arm_id=<X>`, no transfer_type.
+2. Add steps: `CLICK <name>`, `SWIPE <name>`, `ARM_MOVE done`.
+3. For each station, record coordinates and swipe action under `bank_code='STALL'`.
+
+Without this, soft stalls degrade gracefully (just don't auto-close the app) but the next task may interact with a leftover bank app on screen.
+
+### Risks accepted
+
+- If a stall happens between "PIN sent" and "receipt visible", auto-closing the app may dismiss a partially completed transfer. The current stall-photo + PAS callback already informs the operator; reconciliation is on PAS side. This trade-off was explicitly accepted in exchange for self-recovery.
+
+### Trade-off vs prior design
+
+Supersedes DD-011 (queue auto-rejection on stall) and the old "Stall design principle" in ARCHITECTURE_PLAN that mandated `offline + paused` for every failure. Both are now scoped to hardware errors only.
+
+---
+
 ## random_pin: annotated debug image saved to transaction_logs (2026-04-22)
 
 After each successful random_pin TYPE step, the system now saves an annotated JPEG to `transaction_logs.screenshot_base64` (same column used by PHOTO steps, no schema change). The image shows the first wide-view camera frame with each digit cell outlined:

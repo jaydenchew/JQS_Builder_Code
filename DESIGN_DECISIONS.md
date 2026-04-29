@@ -106,11 +106,15 @@ Architectural and design decisions that may look like bugs to someone unfamiliar
 
 ---
 
-## DD-011: Stall Auto-rejects All Queued Tasks
+## DD-011: Stall Auto-rejects All Queued Tasks (Superseded by DD-024)
 
-**What**: When an arm stalls, all `queued` transactions for that arm are immediately failed and reported to PAS with status=4.
+**Status**: Superseded — applies only to hardware errors (`port open failed` / `not responding`).
 
-**Why**: A stalled arm cannot process any more tasks until a human inspects and resumes it. Leaving tasks in the queue would cause PAS to wait indefinitely for callbacks that will never come. Auto-rejecting lets PAS know immediately so it can route to other channels or notify the operator.
+**What (legacy)**: When an arm stalled, all `queued` transactions for that arm were immediately failed and reported to PAS with status=4.
+
+**Why (legacy)**: A stalled arm could not process any more tasks until a human inspected and resumed it. Leaving tasks in the queue would cause PAS to wait indefinitely for callbacks that would never come.
+
+**Update (2026-04-29)**: PAS now serializes requests (one task at a time, never overlapping), so under normal operation no queue exists during a stall. Soft errors (OCR mismatch, screen mismatch, click error, etc.) take the new self-recovery path defined in DD-024 — arm closes the open APP, returns to idle, no queue rejection. Queue auto-rejection still runs for hardware errors because the arm cannot self-recover when the COM port is unreachable.
 
 ---
 
@@ -293,3 +297,37 @@ Any single-gate approach has a known failure mode; the dual-gate (inliers + SSIM
 **What this does NOT change**: `pixel_to_arm`, `save_calibration`, the `calibrations` DB table schema, and every downstream consumer of the transform matrix (production CLICK steps, `keyboard_engine.py`'s random-PIN offset calculation, `settings.html`'s matrix display) are **all unchanged**. The new matrix has the same 2x3 JSON shape, same semantics (`M @ [raw_x, raw_y, 1] = arm_pos_at_park`), same companion fields (`camera_park_pos`, `scale_mm_per_pixel`, `rotation_degrees`, `raw_height`).
 
 **Rollback**: Single commit revert restores the old endpoints and UI. Existing calibration rows (produced by either method) remain usable throughout.
+
+---
+
+## DD-024: Soft Stall Auto-recovers via Per-Arm STALL Flow
+
+**What**: When a flow step fails with a non-hardware error (OCR mismatch, screen mismatch, click anomaly, exception in actions, etc.), the worker no longer pauses or marks the arm offline. Instead it:
+
+1. Captures the stall photo (unchanged).
+2. Looks up the arm's STALL flow (`flow_templates WHERE bank_code='STALL' AND arm_id=<self> AND status='active'`) and runs its steps via the normal `actions.execute_step` path. Steps named `done` / `done_inter` are sentinels that break the loop.
+3. Calls `_cleanup_arm` (reset to (0,0), close port).
+4. Sends PAS callback `status=4` for the failed task.
+5. Sets `arms.status = 'idle'` and the worker fetches the next task.
+
+Hardware errors (`port open failed` / `not responding`) keep the legacy DD-011 / pre-DD-024 behaviour: arm goes `offline + paused`, queued tasks rejected, requires human resume.
+
+**Why now**: PAS now serializes withdrawal requests (one task at a time, no queue overlap). With single-task semantics, a soft failure does not cascade; the only thing the system has to guarantee before accepting the next task is that the phone is in a known state (home screen) and the arm is at origin. That can be accomplished mechanically without human inspection.
+
+**Why per-arm STALL flow rather than hardcoded actions**: Each arm controls a different physical phone with different recents/swipe coordinates. The handler-flow precedent (DD-010) already establishes the pattern of "a separate flow_template that owns its own bank_code and coordinates". STALL flow reuses that pattern: `bank_code='STALL'` is recorded once per station independent of any banking app's recordings, the operator authors arbitrary step sequences in Builder, and adding/removing arms requires no code change.
+
+**Why move PAS callback to AFTER cleanup_arm in the stall branch**: PAS may dispatch the next task as soon as it receives the callback. By cleaning up first, we guarantee the arm is physically at origin before PAS knows the stall completed — eliminating a race where the next task could begin while the arm is still mid-cleanup. Success branches keep their original ordering (callback → cleanup) because they don't change arm state expectations for PAS.
+
+**Why error inside STALL flow is swallowed, not re-stalled**: A STALL flow that itself raises would recurse into another stall (infinite loop). Any per-step error (missing coord, swipe out-of-range, etc.) is logged at `WARNING` and the loop continues with the next step. If the entire flow fails, `_cleanup_arm` still runs and the arm still returns to idle. The transaction was already marked stall + reported to PAS before the close flow ran, so even total failure of the close flow doesn't lose the failure record.
+
+**Why DB `transactions.status='stall'` is set BEFORE running the close flow**: If the close flow or cleanup crashes (process kill, hardware fault mid-recovery), the transaction is still recorded as stall in the database. The PAS callback may not have been sent yet (`callback_sent_at IS NULL` is the signal), but the truth-of-record is consistent.
+
+**What this does NOT change**:
+- DD-012 (no automatic retry) still holds — a stalled transaction is never re-queued or re-attempted by WA.
+- The success path's PAS callback timing.
+- `stall_reason` / `stall_details` semantics — written on stall, cleared on next successful task.
+- Hardware error handling (DD-011 still applies for that subset).
+
+**Files**: `app/arm_worker.py` only. New method `_run_stall_close_flow`, restructured `_process_task` failure branch with `is_hardware_error` flag, per-branch `_cleanup_arm` calls (replacing the previous shared call).
+
+**Rollback**: Single-file revert restores the legacy "always offline + paused on stall" behaviour. STALL flow_template rows in the database become inert (no code reads them).

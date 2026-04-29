@@ -170,12 +170,29 @@ When PAS sends a request for bank_code=ACLEDA, account_no=123:
 
 ### When an Arm Stalls
 
-1. A step fails during execution
-2. System captures a stall photo (full phone screen)
-3. Callbacks PAS with status=4 + screenshot
-4. All queued tasks for this arm are auto-rejected (status=4 to PAS)
-5. Arm goes offline and pauses
-6. **Human must**: check phone screen, resolve the issue, then Resume on Dashboard
+There are two stall paths, decided by the type of error.
+
+**Soft stall** (OCR mismatch, screen mismatch, click anomaly, exception during step execution):
+
+1. A step fails during execution.
+2. System captures a stall photo (full phone screen).
+3. Marks the transaction `status='stall'` in DB with the screenshot attached.
+4. Runs the arm's per-arm STALL flow (`flow_templates` row with `bank_code='STALL'`) — this typically taps the recent-apps button and swipes to close the open banking app, leaving the phone at home screen.
+5. Resets the arm to (0,0) and closes the COM port.
+6. Sends PAS callback `status=4` + screenshot — this happens AFTER the arm is back at origin so PAS knows the arm is ready before it dispatches the next task.
+7. Arm stays online (`arms.status='idle'`); the worker fetches the next task as soon as PAS sends one.
+8. The `stall_reason` / `stall_details` columns on `arms` keep the previous failure visible on the Dashboard until the next task succeeds (it then clears them).
+9. **Human action**: typically none — operators only intervene when stalls become frequent or look systemic. Inspect via Transactions page to see the stall photo and `stall_reason`.
+
+**Hardware stall** (`port open failed`, `not responding` — COM port unreachable):
+
+1. Worker logs the hardware error and pauses 30 seconds.
+2. Captures stall photo (no-op if camera is also unreachable; otherwise still saved).
+3. Marks the transaction `status='stall'`, sends PAS callback `status=4`.
+4. Arm goes `offline` + worker `paused`. Any queued tasks for this arm are batch-rejected to PAS with `status=4` (defensive — should not happen under PAS serialized dispatch, but kept for safety).
+5. **Human must**: power-cycle / re-seat the arm or COM cable, then Resume on Dashboard.
+
+**Per-arm STALL flow setup**: Each arm should have its own STALL flow defined in Builder (one `flow_template` per arm with `bank_code='STALL'`, plus per-station coordinates recorded under the same `bank_code='STALL'`). If the STALL flow is missing for a given arm, soft stalls degrade gracefully — the arm still cleans up to (0,0) and goes idle, just without auto-closing whatever banking app was open.
 
 ### Adding a New Bank
 
