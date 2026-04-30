@@ -54,6 +54,12 @@ env/
 *.log
 deploy/logs/
 
+# 调试输出 / 临时脚本（截图、热力图、ad-hoc 分析脚本）
+test_output/
+
+# 临时调试工具脚本（per-machine debug helpers）
+tools/
+
 # OS
 Thumbs.db
 .DS_Store

@@ -1,5 +1,57 @@
 # Changelog
 
+## FIND_AND_CLICK: visually locate buttons that drift inside an ROI (2026-04-30)
+
+### Problem
+
+When a banking app pops up a banner or notification bar, the rest of the UI shifts a few millimetres in the camera frame. A flow step recorded against a fixed coordinate misses the button and fails. CHECK_SCREEN can detect the drift, but currently the only options were `stall` or a hand-written handler flow that re-navigates from a known anchor — neither is great when the UI is otherwise correct, just translated.
+
+### New action_type
+
+`FIND_AND_CLICK` adds a vision-driven click:
+
+1. Arm moves to a recorded camera anchor (same semantics as CHECK_SCREEN's `ui_element_key`).
+2. Camera capture (capture_fresh + rotate, same path CHECK_SCREEN uses to dodge DSHOW buffer staleness).
+3. Crop the rotated frame to a percentage ROI (same convention as `app/ocr.py` `verify_configurable`).
+4. Locate the button in the ROI by:
+   - `template_only`: cv2.matchTemplate against a saved button crop
+   - `ocr_only`: EasyOCR finds the configured text and returns its bounding-box centre
+   - `template_then_ocr`: template gives candidate locations; OCR verifies the text near each candidate
+5. If multiple candidates pass threshold, a `disambiguation` strategy picks one: `best_score` (default), `closest_to_center`, or `unique_only` (more than one above threshold = retry).
+6. Pixel hit -> arm coordinates via `app/calibration.py` `pixel_to_arm`, then `arm.click(arm_x, arm_y)`.
+7. If not found, walk through `camera_offsets_mm` (default `[(0,0), (-2,0), (0,-2)]` — symmetric with random_pin's safety pattern) and retry. Offsets are clamped to `arms.max_x` / `arms.max_y`.
+8. After all retries fail, raise `RuntimeError`. The arm_worker stall branch then runs the per-arm STALL flow (DD-024) and the arm returns to idle, ready for the next task.
+
+### Files
+
+- New: `app/find_and_click.py` (locator + orchestrator)
+- `app/actions.py`: register `execute_find_and_click` in `ACTION_MAP`, add to the per-handler `transaction_logs` exclusion set so the executor writes a single row with diagnostics JSON (or a fail row with screenshot)
+- `app/routers/opencv_router.py`: 4 new endpoints — `POST /api/opencv/capture-template` (save the cropped button as `references/<arm>/<bank>/<name>_tpl.jpg`), `GET /api/opencv/templates/{bank}/{name}/preview`, `DELETE /api/opencv/templates/{bank}/{name}`, `POST /api/opencv/find-and-click` (Builder live test)
+- `db/schema.sql`: ENUM extended to include `FIND_AND_CLICK`. Existing deployments need:
+  ```sql
+  ALTER TABLE flow_steps MODIFY COLUMN action_type
+    ENUM('CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE',
+         'OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK') NOT NULL;
+  ```
+- `static/recorder.html`: action dropdown gains FIND_AND_CLICK; new render block (Capture Template / template dropdown / OCR config / threshold / ROI editor / camera offsets); readForm serialises the description JSON; saveFlow's coords-sync list includes FIND_AND_CLICK so the camera anchor is persisted as a `ui_elements` row; testOne / testAll dispatch through `/api/opencv/find-and-click`
+
+### Compatibility
+
+- Adding to the ENUM is forward-compatible. Existing rows are untouched.
+- Old code paths that don't recognise `FIND_AND_CLICK` fall through `actions.execute_step`'s "unknown action_type" branch (silent skip with warning); they don't crash.
+- `app/screen_checker.py` and CHECK_SCREEN flow are not touched — same `references/<arm>/<bank>/` directory, but template files use a `_tpl.jpg` suffix to avoid clashing with whole-frame references.
+
+### Operator workflow
+
+1. In Builder, set step type to FIND_AND_CLICK, give it a `step_name`.
+2. Move camera to anchor, click "Use Camera Pos".
+3. Click "Capture Template", drag a small rectangle around the button on the snapshot — saves as `<step_name>_tpl.jpg` (or whatever name you give).
+4. Adjust ROI percentages so the search area covers the button's possible drift envelope.
+5. Pick combine mode (most icons-only buttons: `template_only`; text-only buttons: `ocr_only`; icon+text: `template_then_ocr`).
+6. Save flow, click "Test Find" to validate end-to-end (arm moves, locates, clicks).
+
+---
+
 ## stall: auto-close APP via per-arm STALL flow + arm stays online (2026-04-29)
 
 ### Problem

@@ -1725,6 +1725,100 @@ function renderForm(step, isNew) {
                 </div>
                 <span style="font-size:10px;color:var(--text2);">Example: Top=0, Bottom=70 → only compare upper 70% (ignore bottom notices)</span>
             </div>`;
+    } else if (step.action_type === 'FIND_AND_CLICK') {
+        let cfg = {};
+        try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        const cx = step.coords?.x ?? '', cy = step.coords?.y ?? '';
+        const tplCfg = cfg.template || { enabled: true, name: '' };
+        const ocrCfg = cfg.ocr || { enabled: false, text: '', match: 'contains', case_sensitive: false };
+        const tplOpts = (S.facTemplates || []).map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+        const combineVal = cfg.combine || (tplCfg.enabled && ocrCfg.enabled ? 'template_then_ocr' : (ocrCfg.enabled ? 'ocr_only' : 'template_only'));
+        const offsets = JSON.stringify(cfg.camera_offsets_mm || [[0,0],[-2,0],[0,-2]]);
+        extra = `
+            <div class="form-group full">
+                <label>Camera position (anchor — arm moves here before searching)</label>
+                <div style="display:flex;gap:5px;align-items:center;">
+                    <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;" value="${cx}">
+                    <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;" value="${cy}">
+                    <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? `(${cx}, ${cy})` : 'move camera, then click below'}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Camera Pos</button>
+                </div>
+            </div>
+            <div class="form-group full">
+                <label>Combine Mode</label>
+                <select id="sf-fac-combine" style="width:200px;">
+                    <option value="template_only" ${combineVal==='template_only'?'selected':''}>template only</option>
+                    <option value="ocr_only" ${combineVal==='ocr_only'?'selected':''}>OCR only</option>
+                    <option value="template_then_ocr" ${combineVal==='template_then_ocr'?'selected':''}>template + OCR verify</option>
+                </select>
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">template_then_ocr: 模板找位置 + OCR 验证文字</span>
+            </div>
+            <div class="form-group full">
+                <label><input id="sf-fac-tpl-enabled" type="checkbox" ${tplCfg.enabled?'checked':''}> Enable Template Match</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                    <select id="sf-fac-tpl-name" style="width:160px;"><option value="">-- select template --</option>${tplOpts}</select>
+                    <button class="btn btn-sm btn-primary" onclick="captureFacTemplate()" type="button">Capture Template</button>
+                    <button class="btn btn-sm btn-secondary" onclick="previewFacTemplate()" type="button">Preview</button>
+                    <button class="btn btn-sm btn-success" onclick="testFacFind()" type="button">Test Find</button>
+                </div>
+                <span style="font-size:10px;color:var(--text2);">Capture: 拖一个小矩形（按钮本身），保存为 references/&lt;arm&gt;/&lt;bank&gt;/&lt;name&gt;_tpl.jpg</span>
+            </div>
+            <div class="form-group full">
+                <label><input id="sf-fac-ocr-enabled" type="checkbox" ${ocrCfg.enabled?'checked':''}> Enable OCR (verify / locate text)</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                    <input id="sf-fac-ocr-text" type="text" placeholder="text to find" value="${(ocrCfg.text||'').replace(/"/g,'&quot;')}" style="width:140px;">
+                    <select id="sf-fac-ocr-match" style="width:110px;">
+                        <option value="contains" ${ocrCfg.match==='contains'?'selected':''}>contains</option>
+                        <option value="exact" ${ocrCfg.match==='exact'?'selected':''}>exact</option>
+                        <option value="regex" ${ocrCfg.match==='regex'?'selected':''}>regex</option>
+                    </select>
+                    <label style="font-size:11px;"><input id="sf-fac-ocr-case" type="checkbox" ${ocrCfg.case_sensitive?'checked':''}> case-sensitive</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Match Threshold (0-1)</label>
+                <input id="sf-fac-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.80}" style="width:80px;">
+            </div>
+            <div class="form-group">
+                <label>Max Retries</label>
+                <input id="sf-fac-retries" type="number" min="1" max="10" value="${cfg.max_retries ?? 3}" style="width:80px;">
+            </div>
+            <div class="form-group">
+                <label>Retry Delay (ms)</label>
+                <input id="sf-fac-retry-delay" type="number" min="100" max="5000" step="100" value="${cfg.retry_delay_ms ?? 800}" style="width:90px;">
+            </div>
+            <div class="form-group">
+                <label>Verify Radius (px)</label>
+                <input id="sf-fac-verify-radius" type="number" min="5" max="200" value="${cfg.verify_radius_px ?? 30}" style="width:80px;">
+            </div>
+            <div class="form-group full">
+                <label>Disambiguation</label>
+                <select id="sf-fac-disambiguation" style="width:200px;">
+                    <option value="best_score" ${(cfg.disambiguation||'best_score')==='best_score'?'selected':''}>best_score</option>
+                    <option value="closest_to_center" ${cfg.disambiguation==='closest_to_center'?'selected':''}>closest_to_center</option>
+                    <option value="unique_only" ${cfg.disambiguation==='unique_only'?'selected':''}>unique_only</option>
+                </select>
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">多匹配时如何选</span>
+            </div>
+            <div class="form-group full">
+                <label>Search ROI (% of rotated frame)</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:11px;">Top:</span>
+                    <input id="sf-fac-roi-top" type="number" min="0" max="100" value="${cfg.roi?.top_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Bottom:</span>
+                    <input id="sf-fac-roi-bottom" type="number" min="0" max="100" value="${cfg.roi?.bottom_percent ?? 100}" style="width:55px;">
+                    <span style="font-size:11px;">Left:</span>
+                    <input id="sf-fac-roi-left" type="number" min="0" max="100" value="${cfg.roi?.left_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Right:</span>
+                    <input id="sf-fac-roi-right" type="number" min="0" max="100" value="${cfg.roi?.right_percent ?? 100}" style="width:55px;">
+                    <button class="btn btn-sm btn-primary" onclick="selectFieldRoi('_findclick')" type="button">Select on Photo</button>
+                </div>
+            </div>
+            <div class="form-group full">
+                <label>Camera Offsets (mm) — first attempt + retries</label>
+                <input id="sf-fac-offsets" type="text" value='${offsets}' style="width:280px;font-family:monospace;font-size:11px;">
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">JSON array of [dx, dy] pairs</span>
+            </div>`;
     }
 
     document.getElementById('step-form').innerHTML = `
@@ -1737,7 +1831,7 @@ function renderForm(step, isNew) {
                 <input id="sf-name" value="${step.step_name}" placeholder="e.g. click_send"></div>
             <div class="form-group"><label>Action Type</label>
                 <select id="sf-action" onchange="onTypeChange()">
-                    ${['CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE','OCR_VERIFY','CHECK_SCREEN'].map(a =>
+                    ${['CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE','OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK'].map(a =>
                         `<option value="${a}" ${a===step.action_type?'selected':''}>${a}</option>`).join('')}
                 </select></div>
             <div class="form-group"><label>Pre-delay (ms)</label>
@@ -1769,6 +1863,15 @@ function renderForm(step, isNew) {
             const el = document.getElementById('sf-handler');
             if (el) { el.value = cfg.handler_flow; loadHandlerSteps(); }
         }
+    }
+    if (step.action_type === 'FIND_AND_CLICK') {
+        let cfg = {};
+        try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        // Refresh template list async; preserve current selection on completion.
+        loadFacTemplates().then(() => {
+            const sel = document.getElementById('sf-fac-tpl-name');
+            if (sel && cfg.template?.name) sel.value = cfg.template.name;
+        });
     }
 
     if (step.action_type === 'SWIPE') setMode('swipe');
@@ -1876,6 +1979,45 @@ function readForm() {
             threshold: parseFloat(document.getElementById('sf-threshold')?.value) || 0.80,
             max_retries: parseInt(document.getElementById('sf-retries')?.value) || 3,
             roi,
+        });
+    } else if (action === 'FIND_AND_CLICK') {
+        if (!s.step_name) s.step_name = 'find_button';
+        s.ui_element_key = s.step_name;
+        const x = parseFloat(document.getElementById('sf-x')?.value);
+        const y = parseFloat(document.getElementById('sf-y')?.value);
+        if (!isNaN(x) && !isNaN(y)) s.coords = { x, y };
+        const roiT = parseInt(document.getElementById('sf-fac-roi-top')?.value) || 0;
+        const roiB = parseInt(document.getElementById('sf-fac-roi-bottom')?.value) || 100;
+        const roiL = parseInt(document.getElementById('sf-fac-roi-left')?.value) || 0;
+        const roiR = parseInt(document.getElementById('sf-fac-roi-right')?.value) || 100;
+        const roi = (roiT === 0 && roiB === 100 && roiL === 0 && roiR === 100) ? null
+            : { top_percent: roiT, bottom_percent: roiB, left_percent: roiL, right_percent: roiR };
+        let offsets;
+        try {
+            offsets = JSON.parse(document.getElementById('sf-fac-offsets')?.value || '[]');
+            if (!Array.isArray(offsets) || offsets.length === 0) offsets = [[0,0],[-2,0],[0,-2]];
+        } catch(e) {
+            offsets = [[0,0],[-2,0],[0,-2]];
+        }
+        s.description = JSON.stringify({
+            template: {
+                enabled: document.getElementById('sf-fac-tpl-enabled')?.checked !== false,
+                name: document.getElementById('sf-fac-tpl-name')?.value || '',
+            },
+            ocr: {
+                enabled: !!document.getElementById('sf-fac-ocr-enabled')?.checked,
+                text: document.getElementById('sf-fac-ocr-text')?.value || '',
+                match: document.getElementById('sf-fac-ocr-match')?.value || 'contains',
+                case_sensitive: !!document.getElementById('sf-fac-ocr-case')?.checked,
+            },
+            combine: document.getElementById('sf-fac-combine')?.value || 'template_only',
+            threshold: parseFloat(document.getElementById('sf-fac-threshold')?.value) || 0.80,
+            max_retries: parseInt(document.getElementById('sf-fac-retries')?.value) || 3,
+            retry_delay_ms: parseInt(document.getElementById('sf-fac-retry-delay')?.value) || 800,
+            verify_radius_px: parseInt(document.getElementById('sf-fac-verify-radius')?.value) || 30,
+            disambiguation: document.getElementById('sf-fac-disambiguation')?.value || 'best_score',
+            roi,
+            camera_offsets_mm: offsets,
         });
     }
 
@@ -2037,7 +2179,7 @@ async function saveFlow() {
         for (let i = 0; i < S.steps.length; i++) {
             const s = S.steps[i];
 
-            if (['CLICK','ARM_MOVE','PHOTO','OCR_VERIFY','CHECK_SCREEN'].includes(s.action_type) && s.coords && s.ui_element_key && !savedUiKeys.has(s.ui_element_key)) {
+            if (['CLICK','ARM_MOVE','PHOTO','OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK'].includes(s.action_type) && s.coords && s.ui_element_key && !savedUiKeys.has(s.ui_element_key)) {
                 savedUiKeys.add(s.ui_element_key);
                 const ex = S.uiEls[s.ui_element_key];
                 if (ex && ex.id) {
@@ -2309,6 +2451,24 @@ async function testOne(i) {
                 action_type: 'SWIPE', start_x: c.start_x, start_y: c.start_y, end_x: c.end_x, end_y: c.end_y, arm_id: getArmId(),
             });
             S.curX = c.end_x; S.curY = c.end_y; showPos();
+        } else if (s.action_type === 'FIND_AND_CLICK') {
+            if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+            let cfg = {};
+            try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+            const r = await API.post('/api/opencv/find-and-click', {
+                arm_id: getArmId(),
+                station_id: S.station,
+                bank_code: S.bank,
+                ui_element_key: s.ui_element_key,
+                config: cfg,
+                click_after_find: true,
+            });
+            if (r.error || r.found === false) {
+                toast('FIND failed: ' + (r.error || 'not found'), 'error');
+            } else {
+                toast(`FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}`, 'success');
+                if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; showPos(); }
+            }
         } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
             const camPos = s.coords || S.uiEls[s.ui_element_key];
             if (camPos && S.armOn) {
@@ -2396,6 +2556,23 @@ async function testAll() {
                 const c = s.coords || S.swipes[s.swipe_key];
                 if (c) { await API.post('/api/recorder/test-step', { action_type:'SWIPE', start_x:c.start_x, start_y:c.start_y, end_x:c.end_x, end_y:c.end_y, arm_id: getArmId() }); S.curX = c.end_x; S.curY = c.end_y; }
                 else addLog(log, '  no swipe coords, skip', 'error');
+            } else if (s.action_type === 'FIND_AND_CLICK') {
+                let cfg = {};
+                try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+                const r = await API.post('/api/opencv/find-and-click', {
+                    arm_id: getArmId(),
+                    station_id: S.station,
+                    bank_code: S.bank,
+                    ui_element_key: s.ui_element_key,
+                    config: cfg,
+                    click_after_find: true,
+                });
+                if (r.error || r.found === false) {
+                    addLog(log, `  FIND failed: ${r.error || 'not found'}`, 'error');
+                } else {
+                    addLog(log, `  FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}`, 'done');
+                    if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; }
+                }
             } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
                 const camPos = s.coords || S.uiEls[s.ui_element_key];
                 if (camPos) {
@@ -3166,6 +3343,11 @@ async function selectFieldRoi(fieldName) {
                     document.getElementById('sf-roi-bottom').value = bottomPct;
                     document.getElementById('sf-roi-left').value = leftPct;
                     document.getElementById('sf-roi-right').value = rightPct;
+                } else if (fieldName === '_findclick') {
+                    document.getElementById('sf-fac-roi-top').value = topPct;
+                    document.getElementById('sf-fac-roi-bottom').value = bottomPct;
+                    document.getElementById('sf-fac-roi-left').value = leftPct;
+                    document.getElementById('sf-fac-roi-right').value = rightPct;
                 } else {
                     document.getElementById('sf-froi-' + fieldName + '-top').value = topPct;
                     document.getElementById('sf-froi-' + fieldName + '-bottom').value = bottomPct;
@@ -3200,6 +3382,160 @@ async function selectFieldRoi(fieldName) {
     if (r.error) { toast(r.error, 'error'); return; }
     _roiSnapshot = 'data:image/jpeg;base64,' + r.image;
     showModal(_roiSnapshot);
+}
+
+/* ============================================================
+   FIND_AND_CLICK helpers (template management + live test)
+   ============================================================ */
+
+async function loadFacTemplates() {
+    if (!S.bank) { S.facTemplates = []; return; }
+    const list = await API.get(`/api/opencv/references/${S.bank}?arm_id=${getArmId() || ''}`);
+    // Templates use the *_tpl.jpg suffix; the references list returns plain
+    // .jpg names so filter and strip the suffix to recover the canonical name.
+    const tpls = (Array.isArray(list) ? list : [])
+        .filter(r => r.name.endsWith('_tpl'))
+        .map(r => ({ name: r.name.slice(0, -4) }));
+    S.facTemplates = tpls;
+    const sel = document.getElementById('sf-fac-tpl-name');
+    if (sel) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">-- select template --</option>' +
+            tpls.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+        if (cur) sel.value = cur;
+    }
+}
+
+async function captureFacTemplate() {
+    if (!S.bank) { toast('Select bank first', 'error'); return; }
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+
+    const name = prompt('Template name (no extension):', document.getElementById('sf-fac-tpl-name')?.value || 'btn');
+    if (!name || !name.trim()) return;
+
+    // Capture a snapshot for cropping.
+    toast('Capturing photo...', 'info');
+    const snap = await API.post('/api/opencv/snapshot', { arm_id: getArmId() });
+    if (snap.error) { toast(snap.error, 'error'); return; }
+    const imgSrc = 'data:image/jpeg;base64,' + snap.image;
+
+    // Reuse the roi-modal canvas to drag a small rectangle in PIXEL coords.
+    const img = new Image();
+    img.onload = () => {
+        const modal = document.getElementById('roi-modal');
+        const canvas = document.getElementById('roi-canvas');
+        const ctx = canvas.getContext('2d');
+        const maxW = Math.min(window.innerWidth - 80, 500);
+        const scale = maxW / img.width;
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        document.getElementById('roi-info').textContent = 'Drag a SMALL rectangle around the button (template crop).';
+        modal.classList.add('active');
+        let startX, startY, dragging = false;
+
+        canvas.onmousedown = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            dragging = true;
+        };
+        canvas.onmousemove = (e) => {
+            if (!dragging) return;
+            const rect = canvas.getBoundingClientRect();
+            const curX = e.clientX - rect.left;
+            const curY = e.clientY - rect.top;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#3ed598';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(startX, startY, curX - startX, curY - startY);
+            ctx.setLineDash([]);
+        };
+        canvas.onmouseup = async (e) => {
+            if (!dragging) return;
+            dragging = false;
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            const x1 = Math.max(0, Math.min(startX, endX));
+            const y1 = Math.max(0, Math.min(startY, endY));
+            const x2 = Math.min(canvas.width, Math.max(startX, endX));
+            const y2 = Math.min(canvas.height, Math.max(startY, endY));
+            // Convert canvas coords back to original frame pixels.
+            const fx = Math.round(x1 / scale);
+            const fy = Math.round(y1 / scale);
+            const fw = Math.round((x2 - x1) / scale);
+            const fh = Math.round((y2 - y1) / scale);
+            if (fw < 8 || fh < 8) { toast('Rectangle too small', 'error'); return; }
+
+            // The user-cropped rect is keyed off the pre-captured snapshot, but the
+            // server captures a fresh frame on its own. To stay consistent, re-issue
+            // the rectangle against a fresh frame; small UI shifts between snapshot
+            // and capture are acceptable since the operator picked a margin.
+            const r = await API.post('/api/opencv/capture-template', {
+                bank_code: S.bank,
+                name: name.trim(),
+                arm_id: getArmId(),
+                rect: { x: fx, y: fy, w: fw, h: fh },
+            });
+            if (r.error) { toast('Capture failed: ' + r.error, 'error'); return; }
+            toast(`Template '${r.name}' saved (${r.width}x${r.height})`, 'success');
+            await loadFacTemplates();
+            const sel = document.getElementById('sf-fac-tpl-name');
+            if (sel) sel.value = r.name;
+            modal.classList.remove('active');
+        };
+    };
+    img.src = imgSrc;
+}
+
+async function previewFacTemplate() {
+    const name = document.getElementById('sf-fac-tpl-name')?.value;
+    if (!name) { toast('Select a template first', 'error'); return; }
+    const r = await API.get(`/api/opencv/templates/${S.bank}/${name}/preview?arm_id=${getArmId() || ''}`);
+    if (r.error) { toast('Preview failed: ' + r.error, 'error'); return; }
+    const w = window.open('', '_blank');
+    w.document.write(`<title>Template ${name}</title><style>body{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;}img{max-width:100%;}</style><img src="data:image/jpeg;base64,${r.preview}">`);
+}
+
+async function testFacFind() {
+    if (!S.bank) { toast('Select bank first', 'error'); return; }
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    const cur = readForm();
+    if (!cur.step_name) { toast('Enter step name first', 'error'); return; }
+    if (!cur.coords) { toast('Set camera position first', 'error'); return; }
+    let cfg = {};
+    try { cfg = JSON.parse(cur.description || '{}'); } catch(e) {}
+
+    // Camera anchor must be persisted to ui_elements before the test endpoint
+    // can resolve it. If unsaved, write a one-off temporary entry.
+    const ex = S.uiEls[cur.ui_element_key];
+    if (!ex || !ex.id) {
+        const r = await API.post('/api/coords/ui', {
+            bank_code: S.bank, station_id: S.station,
+            element_key: cur.ui_element_key, x: cur.coords.x, y: cur.coords.y,
+        });
+        if (r.error) { toast('Save anchor failed: ' + r.error, 'error'); return; }
+        S.uiEls[cur.ui_element_key] = { x: cur.coords.x, y: cur.coords.y, id: r.id };
+    }
+
+    toast('Running FIND_AND_CLICK test...', 'info');
+    const r = await API.post('/api/opencv/find-and-click', {
+        arm_id: getArmId(),
+        station_id: S.station,
+        bank_code: S.bank,
+        ui_element_key: cur.ui_element_key,
+        config: cfg,
+        click_after_find: true,
+    });
+    if (r.error || r.found === false) {
+        toast('FIND failed: ' + (r.error || 'not found'), 'error');
+        return;
+    }
+    toast(`FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts} method=${r.method}`, 'success');
+    if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; showPos(); }
 }
 
 /* ============================================================

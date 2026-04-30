@@ -331,3 +331,35 @@ Hardware errors (`port open failed` / `not responding`) keep the legacy DD-011 /
 **Files**: `app/arm_worker.py` only. New method `_run_stall_close_flow`, restructured `_process_task` failure branch with `is_hardware_error` flag, per-branch `_cleanup_arm` calls (replacing the previous shared call).
 
 **Rollback**: Single-file revert restores the legacy "always offline + paused on stall" behaviour. STALL flow_template rows in the database become inert (no code reads them).
+
+---
+
+## DD-025: FIND_AND_CLICK Uses Template Crop + Inverse-Projected ROI
+
+**What**: New `flow_steps.action_type` value `FIND_AND_CLICK` locates a button at runtime via `cv2.matchTemplate` and / or EasyOCR within an ROI, then converts the pixel hit to arm coordinates with `calibration.pixel_to_arm` and clicks. Fully implemented in `app/find_and_click.py` + a thin `execute_find_and_click` in `app/actions.py`.
+
+**Why this design over alternatives**:
+
+- **`cv2.matchTemplate`, not ORB**: CHECK_SCREEN already uses ORB+Similarity for whole-screen alignment. For locating a small button that *translates within* an ROI, `matchTemplate` is more direct: its score is interpretable as "how well does this template match here", and there's exactly one peak per real button. ORB would over-engineer for cases the user explicitly described (banner shifts UI by a small amount; no scale or rotation change).
+- **Template is a separate small crop, not the existing reference image**: CHECK_SCREEN stores whole rotated frames at `references/<arm>/<bank>/<name>.jpg`. FIND_AND_CLICK could have reused them by adding a "crop rect" field, but storing a dedicated `<name>_tpl.jpg` (typically 60x60 px) keeps the two namespaces orthogonal: a CHECK_SCREEN reference can change without invalidating an unrelated FIND_AND_CLICK template, and operators don't have to define crop coords inside a JSON config. Storage cost is negligible (template files are <5 KB).
+- **ROI percentages are applied to the rotated frame**: same convention as `app/ocr.py` `verify_configurable`. CHECK_SCREEN's ROI applies post-alignment to the reference's gray image, which is conceptually different (it's about where to compare) — that subtle inconsistency was kept because rewriting CHECK_SCREEN's ROI semantics would touch more code than it's worth.
+- **Camera offsets follow the random_pin pattern**: `[(0,0), (-2,0), (0,-2)]` by default. First attempt at the recorded anchor; subsequent attempts step into safe directions away from `arms.max_x` / `max_y`. Operators can override `camera_offsets_mm` per step. Boundary-clamped (not skipped) so a misconfigured offset can't crash the arm.
+- **`disambiguation` is configurable**: `best_score` works for the common case but operators may hit edge cases (two visually identical icons, banners with the same text). Adding `closest_to_center` and `unique_only` upfront avoids forcing a code change later. Defaults stay friendly.
+- **Failure raises into the existing stall path**: instead of building a parallel recovery mechanism, `execute_find_and_click` raises after retries; `arm_worker._process_task` then routes through DD-024's STALL flow (auto-close app, return to (0,0), arm stays idle). This means one stall pathway, not two.
+
+**Why a new ENUM value rather than a flag on CLICK**:
+
+- ENUM keeps the executor dispatch table clean (one handler per type).
+- Builder UI's per-action conditional rendering naturally extends with another `else if` branch instead of conditionally branching inside the CLICK form.
+- Telemetry (`transaction_logs.action_type`) gets a distinct identifier for monitoring and rollups.
+- Mirrors how CHECK_SCREEN was added when "click after visual confirmation" was needed, rather than overloading CLICK.
+
+**Trade-offs accepted**:
+
+- Lighting / scale variations beyond a few mm break `matchTemplate`. Acceptable because the use case is fixed-distance camera + flat phone screen; if real failures appear, ORB-based fallback can be slotted into `find_and_click.locate_button` without changing the action_type or DB schema.
+- OCR-only mode is slower than template (one EasyOCR call per attempt vs one matchTemplate). Operators choose mode per-step in Builder; defaults bias toward template_only.
+- The `verify_radius_px` knob (default 30) is empirical; works for typical button-with-label sizes (40-100 px tall on a 480-wide rotated frame). If buttons are much larger or smaller the operator may have to tune it. Documented in the description JSON schema.
+
+**Files**: `app/find_and_click.py` (new, ~370 lines), `app/actions.py` (registration + new executor + transaction_logs exclusion), `app/routers/opencv_router.py` (4 endpoints: capture-template, template preview, template delete, find-and-click test), `db/schema.sql` (ENUM extension), `static/recorder.html` (8 small edits across action dropdown, render/read form blocks, saveFlow coord-sync list, testOne / testAll, selectFieldRoi handler, plus 4 new JS helpers).
+
+**Rollback**: Revert the actions.py + find_and_click.py + opencv_router.py + recorder.html changes. The ENUM extension is forward-compatible (drop existing FIND_AND_CLICK rows or `ALTER` to remove the value); no data migration is required for other tables.

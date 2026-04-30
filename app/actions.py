@@ -424,6 +424,79 @@ async def _run_handler_flow(handler_flow_ref: str, bank_code: str, station_id: i
                 logger.error("CHECK_SCREEN handler step %s failed: %s", s["step_name"], e)
 
 
+async def execute_find_and_click(step, bank_code, station_id, transaction, password, arm=None, cam=None, executor=None):
+    """Locate a button via template + optional OCR within ROI, then click it.
+
+    Description JSON config (see app/find_and_click.py for full schema):
+        template: {enabled, name}
+        ocr: {enabled, text, match, case_sensitive}
+        combine: 'template_only' | 'ocr_only' | 'template_then_ocr'
+            (only honored when both template and OCR are enabled; otherwise
+            auto-derived from the enabled flags)
+        threshold, max_retries, retry_delay_ms, verify_radius_px,
+        disambiguation, roi, camera_offsets_mm
+
+    On success: writes transaction_logs result='ok' with diagnostics JSON.
+    On failure (after retries): writes result='fail' with stall screenshot,
+    then re-raises so arm_worker takes the soft-error stall path (which now
+    auto-runs the per-arm STALL flow per DD-024).
+    """
+    import json as _json
+    from app import find_and_click as fac
+
+    a = _arm(arm)
+    c = _cam(cam)
+
+    config = _json.loads(step.get("description") or "{}")
+    if not config:
+        raise RuntimeError("FIND_AND_CLICK: missing description config")
+
+    cam_x, cam_y = await lookup_ui_element(bank_code, station_id, step["ui_element_key"])
+    arm_name = transaction.get("_arm_name")
+    transaction_id = transaction["id"]
+
+    start_time = time.time()
+    try:
+        result = await fac.find_and_click(
+            config=config,
+            station_id=station_id,
+            bank_code=bank_code,
+            arm_name=arm_name,
+            arm=a,
+            cam=c,
+            executor=executor,
+            anchor_pos=(cam_x, cam_y),
+            click_after_find=True,
+        )
+        duration_ms = int((time.time() - start_time) * 1000)
+        await database.execute(
+            """INSERT INTO transaction_logs
+            (transaction_id, step_number, step_name, action_type, result, duration_ms, message)
+            VALUES (%s, %s, %s, 'FIND_AND_CLICK', 'ok', %s, %s)""",
+            (transaction_id, step["step_number"], step["step_name"],
+             duration_ms, _json.dumps(result, default=float))
+        )
+        logger.info("FIND_AND_CLICK: hit at (%.1f, %.1f) score=%.3f attempts=%d",
+                    result.get("arm_x", 0), result.get("arm_y", 0),
+                    result.get("score", 0.0), result.get("attempts", 0))
+        return True
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        try:
+            fail_screenshot = await _hw(executor, c.capture_base64)
+        except Exception:
+            fail_screenshot = None
+        await database.execute(
+            """INSERT INTO transaction_logs
+            (transaction_id, step_number, step_name, action_type, result, duration_ms,
+             screenshot_base64, message)
+            VALUES (%s, %s, %s, 'FIND_AND_CLICK', 'fail', %s, %s, %s)""",
+            (transaction_id, step["step_number"], step["step_name"],
+             duration_ms, fail_screenshot, str(e))
+        )
+        raise
+
+
 ACTION_MAP = {
     "CLICK": execute_click,
     "TYPE": execute_type,
@@ -432,6 +505,7 @@ ACTION_MAP = {
     "ARM_MOVE": execute_arm_move,
     "OCR_VERIFY": execute_ocr_verify,
     "CHECK_SCREEN": execute_check_screen,
+    "FIND_AND_CLICK": execute_find_and_click,
 }
 
 
@@ -479,7 +553,7 @@ async def execute_step(step, bank_code, station_id, transaction, password, trans
     if post_delay > 0:
         await asyncio.sleep(post_delay / 1000.0)
 
-    if action_type not in ("OCR_VERIFY", "CHECK_SCREEN"):
+    if action_type not in ("OCR_VERIFY", "CHECK_SCREEN", "FIND_AND_CLICK"):
         await database.execute(
             """INSERT INTO transaction_logs 
             (transaction_id, step_number, step_name, action_type, result, duration_ms, screenshot_base64, message)
