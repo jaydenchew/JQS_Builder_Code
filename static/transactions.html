@@ -197,11 +197,11 @@
             (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
-    function toGMT8(utcStr) {
+    function toGMT7(utcStr) {
         if (!utcStr) return '-';
         const d = new Date(utcStr + (utcStr.includes('Z') || utcStr.includes('+') ? '' : 'Z'));
-        const gmt8 = new Date(d.getTime() + 8 * 60 * 60 * 1000);
-        return gmt8.toISOString().replace('T', ' ').substring(0, 19);
+        const gmt7 = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+        return gmt7.toISOString().replace('T', ' ').substring(0, 19);
     }
 
     function clearFilters() {
@@ -247,7 +247,7 @@
                 <td>${tx.pay_to_bank_code || '-'}</td>
                 <td>$${tx.amount}</td>
                 <td><span class="status-${tx.status}">${tx.status}</span></td>
-                <td>${toGMT8(tx.created_at)}</td>
+                <td>${toGMT7(tx.created_at)}</td>
                 <td>${dur}</td>
             </tr>`;
         }).join('') || '<tr><td colspan="8" class="empty-tip">No transactions</td></tr>';
@@ -266,9 +266,9 @@
                 <div><label>Amount</label><div>$${tx.amount}</div></div>
                 <div><label>Status</label><div class="status-${tx.status}">${tx.status}</div></div>
                 <div><label>To Account</label><div>${tx.pay_to_account_no}</div></div>
-                <div><label>Created</label><div>${toGMT8(tx.created_at)}</div></div>
-                <div><label>Started</label><div>${toGMT8(tx.started_at)}</div></div>
-                <div><label>Finished</label><div>${toGMT8(tx.finished_at)}</div></div>
+                <div><label>Created</label><div>${toGMT7(tx.created_at)}</div></div>
+                <div><label>Started</label><div>${toGMT7(tx.started_at)}</div></div>
+                <div><label>Finished</label><div>${toGMT7(tx.finished_at)}</div></div>
                 <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
             </div>
             ${tx.error_message ? '<div class="detail-error">Error: ' + tx.error_message + '</div>' : ''}

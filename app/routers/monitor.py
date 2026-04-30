@@ -5,6 +5,7 @@ import json
 import logging
 import subprocess
 import time
+from datetime import datetime, timezone, timedelta
 import cv2
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,6 +15,10 @@ from app.worker_manager import manager
 from app.config import ARM_SERVICE_URL
 
 _start_time = time.time()
+
+# Display / business timezone. DB stores everything in UTC; user-facing date
+# filters and "today" boundaries are anchored to this offset (UTC+7, Indochina).
+DISPLAY_TZ = timezone(timedelta(hours=7))
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -35,11 +40,18 @@ async def get_queue_status():
 
 @router.get("/stats/today")
 async def get_today_stats():
-    """Today's transaction statistics."""
+    """Today's transaction statistics, where 'today' is the DISPLAY_TZ day."""
+    today_local = datetime.now(DISPLAY_TZ).date()
+    start_local = datetime.combine(today_local, datetime.min.time(), tzinfo=DISPLAY_TZ)
+    end_local = datetime.combine(today_local, datetime.max.time(), tzinfo=DISPLAY_TZ)
+    start_utc = start_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    end_utc = end_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
     rows = await database.fetchall(
-        """SELECT status, COUNT(*) as cnt FROM transactions 
-        WHERE DATE(created_at) = CURDATE()
-        GROUP BY status"""
+        "SELECT status, COUNT(*) as cnt FROM transactions "
+        "WHERE created_at >= %s AND created_at <= %s "
+        "GROUP BY status",
+        (start_utc, end_utc),
     )
     stats = {r["status"]: r["cnt"] for r in rows}
     return {
@@ -265,11 +277,25 @@ async def list_transactions(status: str = None, bank: str = None, to_bank: str =
         where.append("s.arm_id = %s")
         params.append(arm_id)
     if date_from:
+        # date_from is the DISPLAY_TZ calendar date; convert its 00:00 boundary to UTC.
+        dt_utc = (
+            datetime.strptime(date_from, "%Y-%m-%d")
+            .replace(hour=0, minute=0, second=0, tzinfo=DISPLAY_TZ)
+            .astimezone(timezone.utc)
+            .strftime("%Y-%m-%d %H:%M:%S")
+        )
         where.append("t.created_at >= %s")
-        params.append(date_from + " 00:00:00")
+        params.append(dt_utc)
     if date_to:
+        # date_to inclusive end-of-day in DISPLAY_TZ, converted to UTC.
+        dt_utc = (
+            datetime.strptime(date_to, "%Y-%m-%d")
+            .replace(hour=23, minute=59, second=59, tzinfo=DISPLAY_TZ)
+            .astimezone(timezone.utc)
+            .strftime("%Y-%m-%d %H:%M:%S")
+        )
         where.append("t.created_at <= %s")
-        params.append(date_to + " 23:59:59")
+        params.append(dt_utc)
 
     where_sql = " AND ".join(where) if where else "1=1"
     actual_limit = min(limit, 5000) if limit > 0 else 5000
