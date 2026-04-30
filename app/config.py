@@ -16,7 +16,7 @@ ARM_SERVICE_URL = os.getenv("ARM_SERVICE_URL", "http://127.0.0.1:8082/MyWcfServi
 ARM_COM_PORT = os.getenv("ARM_COM_PORT", "COM6")
 ARM_Z_DOWN = int(os.getenv("ARM_Z_DOWN", "10"))
 ARM_MOVE_DELAY = float(os.getenv("ARM_MOVE_DELAY", "0.3"))
-ARM_PRESS_DELAY = float(os.getenv("ARM_PRESS_DELAY", "0.08"))
+ARM_PRESS_DELAY = float(os.getenv("ARM_PRESS_DELAY", "0.15"))
 ARM_DIGIT_DELAY = float(os.getenv("ARM_DIGIT_DELAY", "0.5"))
 
 # Camera defaults
