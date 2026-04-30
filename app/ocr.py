@@ -215,7 +215,10 @@ def _ocr_field(cropped_frame, field_name, expected=None):
 
 
 def extract_numbers(text):
-    return re.findall(r'[\d]+\.?[\d]*', text)
+    # Strip thousand-separator commas first so "1,214.00" parses as one
+    # number (1214.00), not two ("1" and "214.00"). Banking apps display
+    # amounts with comma separators once they cross 1000.
+    return re.findall(r'[\d]+\.?[\d]*', text.replace(',', ''))
 
 
 def verify_transfer_from_frame(frame, expected_account: str, expected_amount: str):

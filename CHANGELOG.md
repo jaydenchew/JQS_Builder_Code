@@ -1,5 +1,35 @@
 # Changelog
 
+## fix(ocr): strip thousand-separator commas in `extract_numbers` so amounts ≥ 1,000 verify (2026-05-01)
+
+### Problem
+
+`OCR_VERIFY` failed every transfer with amount ≥ \$1,000. Banking apps render large numbers with thousand separators (e.g. `1,214.00`), and `app/ocr.py` `extract_numbers` used the regex `[\d]+\.?[\d]*` — comma is not in the digit class, so the OCR text `1,214.00` was split into `['1', '214.00']`. The matcher then looked for the expected `1214.00` in that list and never found it, sending the transaction to STALL with `error_message='OCR verification failed'`.
+
+Concrete victim: transaction id=183, amount \$1,214.00, message `OCR FAILED: amount '1214.00' not found (numbers: ['1', '214.00']) | raw: amount='1,214.00'`. Hitherto only one historical row crossed \$1,000, so the bug stayed dormant — but production volumes will hit it whenever a payment crosses 1k.
+
+### Fix
+
+`extract_numbers` strips commas before applying the regex:
+
+```python
+def extract_numbers(text):
+    return re.findall(r'[\d]+\.?[\d]*', text.replace(',', ''))
+```
+
+Both call sites in `app/ocr.py` (`verify_configurable` and `verify_transfer_from_frame`'s legacy `_match_amount`) consume the same helper, so a single-line fix covers both code paths.
+
+### Side effects
+
+- A pathological string like `12,34` now parses as `1234` rather than `['12', '34']`. The OCR_VERIFY call site only uses this for the `amount` field whose expected value is supplied by PAS, so a false-positive match would require the OCR'd screen text to literally equal the expected amount as a digit run after comma removal — extremely unlikely on bank UI text. Acceptable trade.
+- Diagnostics output (`numbers: [...]` in `transaction_logs.message`) now shows the corrected list, which is more useful when triaging future OCR failures.
+
+### Files
+
+- `app/ocr.py` — one-line change inside `extract_numbers` plus a 4-line comment explaining why.
+
+---
+
 ## ux(transactions): close modal via overlay click or ESC, prevent scroll chaining (2026-04-30)
 
 ### Problem
