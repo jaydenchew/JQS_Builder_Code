@@ -1,5 +1,65 @@
 # Changelog
 
+## ux(transactions): close modal via overlay click or ESC, prevent scroll chaining (2026-04-30)
+
+### Problem
+
+Operators reviewing transaction details could only dismiss the detail / screenshot modals via the small "Close" button. Standard UI conventions (click outside the modal, press ESC) were not wired up. Separately, scrolling the inner step-logs container to its end caused the underlying transaction list to scroll, disorienting the operator mid-review.
+
+### Changes
+
+- Click on the modal overlay (outside the inner panel) closes the modal.
+- ESC closes the topmost open modal — screenshot first if both are open (it visually stacks above detail).
+- `overscroll-behavior: contain` on `#detail-modal .modal` and `#detail-logs-container` prevents wheel events from chaining to the parent or page body when the inner scroll reaches its end.
+
+### Files
+
+- `static/transactions.html` — added `closeScreenshot()` for symmetry with `closeDetail()`, two overlay click handlers, one global ESC keydown handler, plus two `overscroll-behavior: contain` declarations on the scrollable containers.
+
+---
+
+## fix(monitor): use GMT+7 for "today" filter and stats so timestamps match displayed timezone (2026-04-30)
+
+### Problem
+
+`/api/monitor/stats/today` and `/api/monitor/transactions?date_from=…` filtered using server-local time / parsed `date_from` as a UTC date. The dashboard renders all timestamps in GMT+7 (Phnom Penh). During GMT+7 morning hours (00:00–07:00), the "Today" stats card and the date filter showed the wrong day's data — operators saw rows whose visible timestamps said today but the count said zero, or vice versa.
+
+### Fix
+
+Both endpoints anchor date math in GMT+7 explicitly, then convert the boundary times to UTC for the SQL comparison (DB rows are stored in UTC).
+
+### Files
+
+- `app/routers/monitor.py` — added `DISPLAY_TZ = timezone(timedelta(hours=7))`. `/stats/today` builds `start_local = datetime.combine(today_local, min, tzinfo=DISPLAY_TZ)` then `.astimezone(utc)` before binding to SQL. The `/transactions` date-range filter applies the same pattern to `date_from` / `date_to`.
+- `static/transactions.html` — `toGMT7(utcStr)` helper formats stored UTC timestamps back to GMT+7 strings for the Created / Started / Finished columns and the detail modal.
+
+### Compatibility
+
+Pure read-side change. No DB schema or stored data is affected; historical rows remain in UTC and queryable by absolute timestamp. The fix only changes how the API interprets "today" / a `YYYY-MM-DD` filter.
+
+---
+
+## tweak(arm): bump ARM_PRESS_DELAY default to 0.15 s for more reliable Android touch detection (2026-04-30)
+
+### Problem
+
+`ARM_PRESS_DELAY` is the dwell time the stylus stays on the screen between `move` and `lift`. The previous default 0.08 s was at the lower edge of what some Android touch dispatchers classify as a tap (especially after sleep / under load), causing intermittent "the press happened but the app didn't react" symptoms — the OS treated the contact as a hover or cancelled gesture.
+
+### Fix
+
+Default raised to 0.15 s in both `app/config.py` and `.env.example`. Operators with an explicit `ARM_PRESS_DELAY` value in their local `.env` are unaffected (env override still wins); only fresh installs and operators reading from `.env.example` see the new default.
+
+### Trade-off
+
+Each tap is ~70 ms slower. A typical bank flow has 5–15 click steps, so a transaction takes roughly 0.4–1.0 s longer end-to-end. In exchange, the tap is far more likely to land on the first try — a missed tap costs a STALL flow + retry (multiple seconds), so the slower-but-reliable default is a net win.
+
+### Files
+
+- `app/config.py` — `ARM_PRESS_DELAY = float(os.getenv("ARM_PRESS_DELAY", "0.15"))`
+- `.env.example` — same default for new clones.
+
+---
+
 ## FIND_AND_CLICK: visually locate buttons that drift inside an ROI (2026-04-30)
 
 ### Problem
@@ -49,6 +109,19 @@ When a banking app pops up a banner or notification bar, the rest of the UI shif
 4. Adjust ROI percentages so the search area covers the button's possible drift envelope.
 5. Pick combine mode (most icons-only buttons: `template_only`; text-only buttons: `ocr_only`; icon+text: `template_then_ocr`).
 6. Save flow, click "Test Find" to validate end-to-end (arm moves, locates, clicks).
+
+### Combine resolution rule
+
+The `combine` field in the description JSON is **only honoured when both `template.enabled` and `ocr.enabled` are true**. In any other case the runtime auto-derives the mode from the enabled flags:
+
+| `template.enabled` | `ocr.enabled` | effective `combine` |
+|---|---|---|
+| true | true | config value (or `template_then_ocr` if missing) |
+| true | false | `template_only` |
+| false | true | `ocr_only` |
+| false | false | runtime error: "both template and OCR disabled" |
+
+Without this rule, a Builder user who unchecks Template but leaves the `combine` dropdown on `template_then_ocr` from a previous session would see the runtime fail with `template_disabled`. With it, the checkboxes are the source of truth and the dropdown only matters when both providers are enabled.
 
 ---
 
