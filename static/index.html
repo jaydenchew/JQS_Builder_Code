@@ -241,11 +241,16 @@
     let lastArms = [];
 
     function renderArmCards(arms, queued) {
-        if (arms && arms.length > 0) updateLogArmSelect(arms);
-        lastArms = arms || [];
+        // Dashboard only shows arms with active=true. Inactive arms are hidden
+        // here (still visible in Settings for admin); flip via Settings to
+        // re-enable. This keeps the operations view focused on machines that
+        // are actually in service.
+        arms = (arms || []).filter(a => a.active);
+        if (arms.length > 0) updateLogArmSelect(arms);
+        lastArms = arms;
         const cards = document.getElementById('arm-cards');
-        if (!arms || arms.length === 0) {
-            cards.innerHTML = '<div class="card full-span-center-muted">No machines configured. <a href="/settings">Add one in Settings</a>.</div>';
+        if (arms.length === 0) {
+            cards.innerHTML = '<div class="card full-span-center-muted">No active machines. <a href="/settings">Activate one in Settings</a>.</div>';
             return;
         }
         cards.innerHTML = arms.map(a => {
