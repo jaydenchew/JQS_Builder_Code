@@ -497,6 +497,84 @@ async def execute_find_and_click(step, bank_code, station_id, transaction, passw
         raise
 
 
+async def execute_find_and_swipe(step, bank_code, station_id, transaction, password, arm=None, cam=None, executor=None):
+    """Locate the slider start handle visually, apply recorded (end - start)
+    offset to compute new end, then arm.swipe.
+
+    Description JSON config (see app/find_and_swipe.py / find_and_click.py):
+        template: {enabled, name}
+        ocr: {enabled, text, match, case_sensitive}
+        combine: 'template_only' | 'ocr_only' | 'template_then_ocr'
+            (only honored when both template and OCR are enabled; otherwise
+            auto-derived from the enabled flags)
+        threshold, max_retries, retry_delay_ms, verify_radius_px,
+        disambiguation, roi, camera_offsets_mm
+
+    The swipe start/end coords come from `swipe_actions` table (looked up
+    via step['swipe_key']), not from description JSON.
+
+    On success: writes transaction_logs result='ok' with diagnostics JSON.
+    On failure (after retries): writes result='fail' with stall screenshot,
+    then re-raises so arm_worker takes the soft-error stall path (DD-024).
+    """
+    import json as _json
+    from app import find_and_swipe as fas
+
+    a = _arm(arm)
+    c = _cam(cam)
+
+    config = _json.loads(step.get("description") or "{}")
+    if not config:
+        raise RuntimeError("FIND_AND_SWIPE: missing description config")
+
+    sx_rec, sy_rec, ex_rec, ey_rec = await lookup_swipe(
+        bank_code, station_id, step["swipe_key"])
+    arm_name = transaction.get("_arm_name")
+    transaction_id = transaction["id"]
+
+    start_time = time.time()
+    try:
+        result = await fas.find_and_swipe(
+            config=config,
+            station_id=station_id,
+            bank_code=bank_code,
+            arm_name=arm_name,
+            arm=a,
+            cam=c,
+            executor=executor,
+            recorded_swipe=(sx_rec, sy_rec, ex_rec, ey_rec),
+            swipe_after_find=True,
+        )
+        duration_ms = int((time.time() - start_time) * 1000)
+        await database.execute(
+            """INSERT INTO transaction_logs
+            (transaction_id, step_number, step_name, action_type, result, duration_ms, message)
+            VALUES (%s, %s, %s, 'FIND_AND_SWIPE', 'ok', %s, %s)""",
+            (transaction_id, step["step_number"], step["step_name"],
+             duration_ms, _json.dumps(result, default=float))
+        )
+        logger.info("FIND_AND_SWIPE: (%.1f,%.1f)->(%.1f,%.1f) score=%.3f attempts=%d",
+                    result.get("sx_new", 0), result.get("sy_new", 0),
+                    result.get("ex_new", 0), result.get("ey_new", 0),
+                    result.get("score", 0.0), result.get("attempts", 0))
+        return True
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        try:
+            fail_screenshot = await _hw(executor, c.capture_base64)
+        except Exception:
+            fail_screenshot = None
+        await database.execute(
+            """INSERT INTO transaction_logs
+            (transaction_id, step_number, step_name, action_type, result, duration_ms,
+             screenshot_base64, message)
+            VALUES (%s, %s, %s, 'FIND_AND_SWIPE', 'fail', %s, %s, %s)""",
+            (transaction_id, step["step_number"], step["step_name"],
+             duration_ms, fail_screenshot, str(e))
+        )
+        raise
+
+
 ACTION_MAP = {
     "CLICK": execute_click,
     "TYPE": execute_type,
@@ -506,6 +584,7 @@ ACTION_MAP = {
     "OCR_VERIFY": execute_ocr_verify,
     "CHECK_SCREEN": execute_check_screen,
     "FIND_AND_CLICK": execute_find_and_click,
+    "FIND_AND_SWIPE": execute_find_and_swipe,
 }
 
 
@@ -553,7 +632,7 @@ async def execute_step(step, bank_code, station_id, transaction, password, trans
     if post_delay > 0:
         await asyncio.sleep(post_delay / 1000.0)
 
-    if action_type not in ("OCR_VERIFY", "CHECK_SCREEN", "FIND_AND_CLICK"):
+    if action_type not in ("OCR_VERIFY", "CHECK_SCREEN", "FIND_AND_CLICK", "FIND_AND_SWIPE"):
         await database.execute(
             """INSERT INTO transaction_logs 
             (transaction_id, step_number, step_name, action_type, result, duration_ms, screenshot_base64, message)

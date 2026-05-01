@@ -364,3 +364,34 @@ Hardware errors (`port open failed` / `not responding`) keep the legacy DD-011 /
 **Files**: `app/find_and_click.py` (new, ~370 lines), `app/actions.py` (registration + new executor + transaction_logs exclusion), `app/routers/opencv_router.py` (4 endpoints: capture-template, template preview, template delete, find-and-click test), `db/schema.sql` (ENUM extension), `static/recorder.html` (8 small edits across action dropdown, render/read form blocks, saveFlow coord-sync list, testOne / testAll, selectFieldRoi handler, plus 4 new JS helpers).
 
 **Rollback**: Revert the actions.py + find_and_click.py + opencv_router.py + recorder.html changes. The ENUM extension is forward-compatible (drop existing FIND_AND_CLICK rows or `ALTER` to remove the value); no data migration is required for other tables.
+
+---
+
+## DD-026: FIND_AND_SWIPE Reuses Recorded (start, end) as Offset Baseline
+
+**What**: New `flow_steps.action_type` value `FIND_AND_SWIPE` extends FIND_AND_CLICK's vision-locate pattern to swipe gestures. Implemented in `app/find_and_swipe.py` as a thin orchestrator that imports `locate_button` and helpers from `find_and_click.py` (no fork). The recorded swipe `(start, end)` from `swipe_actions` is used not as a physical position but as a vector — `(end - start)` is the offset that gets re-applied on top of the matched runtime position.
+
+**Why this design over alternatives**:
+
+- **Recorded `(end - start)` offset, not two separate templates**: an alternative was to record one template for the slider start handle and another for the slider end mark, then locate both at runtime. Rejected because slider end positions usually have no distinctive visual feature (gradient, blank space, or text that drifts) — operators couldn't reliably record an end-template. Using the recorded offset assumes the slider track length is constant across UI states, which holds for every banking app we've seen (card width is fixed by screen width, not transfer type).
+- **Camera anchor as separate field, not "Start = camera anchor"**: an earlier draft made `swipe_actions.start_x/y` double as the camera anchor. Rejected after operator feedback: it broke the analogy with FIND_AND_CLICK (which has its own explicit camera position field) and introduced a hidden invariant ("Start must equal Camera Position"). Now `description.camera_anchor_mm` is independent — operators can position the camera at a wider view and still record a tight slider start, mirroring how FIND_AND_CLICK handles its anchor. Backward compatibility kept via a fallback: if `camera_anchor_mm` is missing, the runtime uses `(sx_recorded, sy_recorded)` (legacy dual-purpose).
+- **Reuses `swipe_actions` table, not a new column or new table**: the table's `(start_x, start_y, end_x, end_y)` schema is exactly right. Each FIND_AND_SWIPE step still gets its own row keyed by its own `swipe_key`; operators don't need to create a SWIPE first. The shared table does not imply step-level coupling — it's the same engineering convenience as FIND_AND_CLICK reusing `ui_elements` for its camera anchor (CLICK uses that table too, but the steps are independent).
+- **Direct import from `find_and_click.py`, no shared utility module**: `app/find_and_swipe.py` does `from app.find_and_click import locate_button, load_template, _hw, _get_arm_id_for_station, _get_arm_limits, _clamp, DEFAULT_*`. A "cleaner" refactor would extract these into `app/visual_locator.py`, but that's a bigger surface change with no immediate benefit. If a third visual action_type appears, refactor then. This preserves a small diff and a clear "find-and-swipe is find-and-click + swipe" reading.
+- **Clamp + warning on shrunk swipes, not abort**: when the matched start + recorded offset would push the end past `arms.max_x` / `max_y`, we clamp and surface a warning if the swipe shrinks below 70% of recorded length. Aborting was rejected because most "shrunk" swipes still trigger the underlying Android slide gesture (the system cares about gesture velocity + final point, not absolute distance), and we'd rather try than auto-stall. The 70% threshold is empirical; operators monitoring `transaction_logs.message` can re-tune the camera anchor if warnings cluster.
+
+**Why a new ENUM value rather than extending SWIPE with a flag**:
+
+- ENUM keeps the executor dispatch table clean (`SWIPE` → `execute_swipe`, `FIND_AND_SWIPE` → `execute_find_and_swipe`).
+- Builder UI's per-action conditional rendering naturally extends with another `else if` branch.
+- Telemetry (`transaction_logs.action_type`) gets a distinct identifier for stall analysis (count failed FIND_AND_SWIPEs separately from plain SWIPE failures).
+- Mirrors FIND_AND_CLICK's choice over "extend CLICK with a flag".
+
+**Trade-offs accepted**:
+
+- Slider track length is assumed constant. Holds today; if a future banking app stretches its slider per transfer type, we'd need to either record two templates or expose a `swipe_distance_scale` config field. Not anticipated; not pre-built.
+- Two foreign keys per step (`swipe_key` + `description.camera_anchor_mm`) is slightly heavier than FIND_AND_CLICK's one (`ui_element_key` + description). Acceptable because swipes inherently need two anchor positions (start/end), not one.
+- Operator must remember "arm should be at Camera Position when click-to-record Start/End" — otherwise the calibration's pixel-to-arm conversion will miss. Same hidden invariant FIND_AND_CLICK has, just twice (once per coord). Documented in the form's tip text; if real recording errors emerge, add a pre-save sanity check.
+
+**Files**: `app/find_and_swipe.py` (new, ~250 lines), `app/actions.py` (registration + new executor + transaction_logs exclusion at line 556), `app/routers/opencv_router.py` (1 new endpoint: find-and-swipe test; capture-template / template preview / template delete reused from FIND_AND_CLICK), `db/schema.sql` (ENUM extension), `static/recorder.html` (9 small edits: action dropdown, render branch, post-render template-load hook, setMode trigger, readForm branch, saveFlow swipe coord-sync predicate, testOne / testAll branches, plus a new `testFasFind()` JS helper).
+
+**Rollback**: Revert actions.py + find_and_swipe.py + opencv_router.py + recorder.html changes. ENUM extension is forward-compatible (drop existing FIND_AND_SWIPE rows or `ALTER` to remove the value).

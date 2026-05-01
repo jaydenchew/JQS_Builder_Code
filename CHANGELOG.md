@@ -1,5 +1,80 @@
 # Changelog
 
+## FIND_AND_SWIPE: visually locate slider handle, swipe with recorded offset (2026-05-01)
+
+### Problem
+
+`FIND_AND_CLICK` solved button drift by re-locating the button each run, but slide-to-confirm steps still failed when the same banner pushed the slider down a few millimetres. A recorded `SWIPE` step has fixed (start, end) arm coordinates — once the slider moves, the swipe lands on empty card area and the transfer never confirms. The OCR_VERIFY step before it might pass (or might not), but either way the swipe is stuck on the old position.
+
+### New action_type
+
+`FIND_AND_SWIPE` extends FIND_AND_CLICK's pattern to swipes:
+
+1. Arm moves to a recorded `camera_anchor_mm` position (separate from the swipe coords; same role as FIND_AND_CLICK's camera position).
+2. Camera capture (`capture_fresh + cv2.rotate`, same path as CHECK_SCREEN / FIND_AND_CLICK).
+3. Crop the rotated frame to a percentage ROI.
+4. Locate the slider handle in the ROI by `template_only` / `ocr_only` / `template_then_ocr` (identical schema and resolution rules to FIND_AND_CLICK; the same `_tpl.jpg` files are reusable).
+5. Convert the matched pixel back to arm coordinates → that's the new swipe start `(sx_new, sy_new)`.
+6. Compute the swipe vector from the recorded baseline: `offset = (end_recorded - start_recorded)`. Apply: `(ex_new, ey_new) = (sx_new + offset.x, sy_new + offset.y)`, clamped to `arms.max_x` / `max_y`.
+7. `arm.swipe(sx_new, sy_new, ex_new, ey_new)`.
+8. If retries exhaust without locating the handle, raise `RuntimeError`. The arm_worker stall branch then runs the per-arm STALL flow (DD-024) and the arm returns to idle, ready for the next task.
+
+### Why the recorded (start, end) baseline
+
+The recorded swipe coords aren't used as physical positions at runtime — they're an offset baseline so the operator can record once and have the swipe vector preserved (length + direction). The actual swipe always starts at the location the template matcher found, which is the whole point.
+
+If the matched location pushes the end past `max_x` / `max_y`, we clamp and log a warning when the swipe distance shrinks below 70% of recorded — short swipes can fail to trigger Android's slide gesture. We don't abort on shrink (most cases still trigger), just surface it for operator review.
+
+### Files
+
+- New: `app/find_and_swipe.py` (orchestrator; imports `locate_button` and helpers from `find_and_click.py` so the visual stack is shared, not forked).
+- `app/actions.py`: register `execute_find_and_swipe` in `ACTION_MAP`, add `'FIND_AND_SWIPE'` to the `transaction_logs` exclusion tuple (line 556 inside `execute_step`) so the executor's own success / fail INSERTs aren't double-written by the generic logging path.
+- `app/routers/opencv_router.py`: new `POST /api/opencv/find-and-swipe` (Builder live test). The existing capture-template / template preview / template delete endpoints from FIND_AND_CLICK are reused — templates live at the same `references/<arm>/<bank>/<name>_tpl.jpg` path.
+- `db/schema.sql`: ENUM extended to include `FIND_AND_SWIPE`. Existing deployments need:
+  ```sql
+  ALTER TABLE flow_steps MODIFY COLUMN action_type
+    ENUM('CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE',
+         'OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK',
+         'FIND_AND_SWIPE') NOT NULL;
+  ```
+- `static/recorder.html`: 9 small touchpoints — action dropdown, render branch (Camera Position + Swipe Baseline + Capture Template + ROI + same config rows as FIND_AND_CLICK), post-render template-load hook, `setMode('swipe')` trigger extended to `FIND_AND_SWIPE`, readForm branch (serialises `camera_anchor_mm` into description JSON, swipe coords into `s.coords`), saveFlow's swipe coord-sync predicate extended to include FIND_AND_SWIPE, testOne / testAll branches that POST to `/api/opencv/find-and-swipe`, plus a new `testFasFind()` JS helper for the form's Test Find button.
+
+### Storage layout
+
+| Field | Storage | Why |
+|---|---|---|
+| Camera anchor `(cx, cy)` | `flow_steps.description.camera_anchor_mm` | step-specific, lives in JSON like other vision config |
+| Swipe baseline `(sx, sy, ex, ey)` | `swipe_actions` row, keyed by `swipe_key` | reuses the existing table SWIPE already populates; same `swipe_key = step_name` convention |
+| Visual config (template / OCR / ROI / threshold / ...) | `flow_steps.description.*` | identical schema to FIND_AND_CLICK |
+
+Sharing `swipe_actions` is engineering convenience — the table structure is exactly right. Each `FIND_AND_SWIPE` step still gets its own row keyed by its own `swipe_key`. **Operators do not need to create a SWIPE step first.**
+
+### Compatibility
+
+- Adding to the ENUM is forward-compatible. Existing rows are untouched.
+- Old code that doesn't recognise `FIND_AND_SWIPE` falls through `actions.execute_step`'s "unknown action_type → log warning + return True" branch (no crash).
+- Steps saved without `camera_anchor_mm` in description (e.g. legacy / hand-edited rows) fall back to using `(sx_recorded, sy_recorded)` as the camera anchor — preserves the dual-purpose design as a safety net.
+- Existing SWIPE steps that simply change their `action_type` to FIND_AND_SWIPE keep their `swipe_key` and recorded coords; operator just adds template / ROI / camera_anchor_mm via Builder.
+
+### Operator workflow
+
+1. In Builder, set step type to FIND_AND_SWIPE, give it a `step_name`.
+2. Move arm to where the camera should look from, click "Use Camera Pos" (fills Camera X/Y).
+3. With arm at that position, click on the snapshot at the slider handle centre (records Start), then click at the slider end position (records End).
+4. Click "Capture Template", drag a small rectangle around the slider handle on the snapshot — saves as `<step_name>_tpl.jpg` (or whatever name you give).
+5. Adjust ROI percentages so the search area covers the slider's possible drift envelope (banner present + banner absent).
+6. Save flow, click "Test Find" to validate end-to-end (arm moves to camera anchor, locates, swipes, returns matched + computed coords + any clamp_warning).
+
+### Testing
+
+Verified with ABA's slide-to-confirm flow on ARM-03:
+
+- Banner-absent state: `tpl_best=0.99`, swipe matches recorded position, slider triggers cleanly.
+- Banner-present state (UI shifted ~7%): handle re-located at offset Y, swipe end recomputed, slider triggers.
+- `threshold=0.99` simulates "not found" → `RuntimeError` raised → arm_worker soft-error path → STALL flow runs.
+
+---
+
 ## fix(ocr): strip thousand-separator commas in `extract_numbers` so amounts ≥ 1,000 verify (2026-05-01)
 
 ### Problem

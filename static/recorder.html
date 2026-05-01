@@ -1819,6 +1819,116 @@ function renderForm(step, isNew) {
                 <input id="sf-fac-offsets" type="text" value='${offsets}' style="width:280px;font-family:monospace;font-size:11px;">
                 <span style="font-size:10px;color:var(--text2);margin-left:8px;">JSON array of [dx, dy] pairs</span>
             </div>`;
+    } else if (step.action_type === 'FIND_AND_SWIPE') {
+        let cfg = {};
+        try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
+        const sw = step.coords || {};
+        const camAnchor = cfg.camera_anchor_mm || [];
+        const cx = camAnchor[0] ?? '';
+        const cy = camAnchor[1] ?? '';
+        const tplCfg = cfg.template || { enabled: true, name: '' };
+        const ocrCfg = cfg.ocr || { enabled: false, text: '', match: 'contains', case_sensitive: false };
+        const tplOpts = (S.facTemplates || []).map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+        const combineVal = cfg.combine || (tplCfg.enabled && ocrCfg.enabled ? 'template_then_ocr' : (ocrCfg.enabled ? 'ocr_only' : 'template_only'));
+        const offsets = JSON.stringify(cfg.camera_offsets_mm || [[0,0],[-2,0],[0,-2]]);
+        extra = `
+            <div class="form-group full">
+                <label>Camera Position (anchor — arm moves here to capture; same role as FIND_AND_CLICK)</label>
+                <div style="display:flex;gap:5px;align-items:center;">
+                    <input id="sf-x" type="number" step="0.1" placeholder="X" style="width:75px;" value="${cx}">
+                    <input id="sf-y" type="number" step="0.1" placeholder="Y" style="width:75px;" value="${cy}">
+                    <span id="sf-coords" style="color:var(--accent);font-size:11px;">${cx !== '' ? `(${cx}, ${cy})` : 'move camera, then click button →'}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="useArmPos()" type="button">Use Camera Pos</button>
+                </div>
+            </div>
+            <div class="form-group full">
+                <label>Swipe Baseline — Start / End recorded so runtime can compute (End - Start) offset</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:10px;">Start:</span>
+                    <input id="sf-sx" type="number" step="0.1" placeholder="X" style="width:65px;" value="${sw.start_x??''}">
+                    <input id="sf-sy" type="number" step="0.1" placeholder="Y" style="width:65px;" value="${sw.start_y??''}">
+                    <span style="font-size:10px;">End:</span>
+                    <input id="sf-ex" type="number" step="0.1" placeholder="X" style="width:65px;" value="${sw.end_x??''}">
+                    <input id="sf-ey" type="number" step="0.1" placeholder="Y" style="width:65px;" value="${sw.end_y??''}">
+                </div>
+                <span id="sf-swipe-lbl" style="color:var(--accent);font-size:11px;">${sw.start_x!=null ? `(${fmt(sw.start_x)},${fmt(sw.start_y)})→(${fmt(sw.end_x)},${fmt(sw.end_y)})` : 'with arm at Camera Position, click photo: 1st = slider center (Start), 2nd = swipe end (End)'}</span>
+                <span style="display:block;font-size:10px;color:var(--text2);margin-top:4px;">录制时 arm 应在 Camera Position；Start = 滑块中心，End = 滑动终点。Runtime 用 (End - Start) 偏移把 match 到的位置推到正确终点。</span>
+            </div>
+            <div class="form-group full">
+                <label>Combine Mode</label>
+                <select id="sf-fac-combine" style="width:200px;">
+                    <option value="template_only" ${combineVal==='template_only'?'selected':''}>template only</option>
+                    <option value="ocr_only" ${combineVal==='ocr_only'?'selected':''}>OCR only</option>
+                    <option value="template_then_ocr" ${combineVal==='template_then_ocr'?'selected':''}>template + OCR verify</option>
+                </select>
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">template_then_ocr: 模板找位置 + OCR 验证文字</span>
+            </div>
+            <div class="form-group full">
+                <label><input id="sf-fac-tpl-enabled" type="checkbox" ${tplCfg.enabled?'checked':''}> Enable Template Match</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                    <select id="sf-fac-tpl-name" style="width:160px;"><option value="">-- select template --</option>${tplOpts}</select>
+                    <button class="btn btn-sm btn-primary" onclick="captureFacTemplate()" type="button">Capture Template</button>
+                    <button class="btn btn-sm btn-secondary" onclick="previewFacTemplate()" type="button">Preview</button>
+                    <button class="btn btn-sm btn-success" onclick="testFasFind()" type="button">Test Find</button>
+                </div>
+                <span style="font-size:10px;color:var(--text2);">Capture: 拖一个小矩形（滑块按钮本身），保存为 references/&lt;arm&gt;/&lt;bank&gt;/&lt;name&gt;_tpl.jpg</span>
+            </div>
+            <div class="form-group full">
+                <label><input id="sf-fac-ocr-enabled" type="checkbox" ${ocrCfg.enabled?'checked':''}> Enable OCR (verify / locate text)</label>
+                <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                    <input id="sf-fac-ocr-text" type="text" placeholder="text to find" value="${(ocrCfg.text||'').replace(/"/g,'&quot;')}" style="width:140px;">
+                    <select id="sf-fac-ocr-match" style="width:110px;">
+                        <option value="contains" ${ocrCfg.match==='contains'?'selected':''}>contains</option>
+                        <option value="exact" ${ocrCfg.match==='exact'?'selected':''}>exact</option>
+                        <option value="regex" ${ocrCfg.match==='regex'?'selected':''}>regex</option>
+                    </select>
+                    <label style="font-size:11px;"><input id="sf-fac-ocr-case" type="checkbox" ${ocrCfg.case_sensitive?'checked':''}> case-sensitive</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Match Threshold (0-1)</label>
+                <input id="sf-fac-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.70}" style="width:80px;">
+            </div>
+            <div class="form-group">
+                <label>Max Retries</label>
+                <input id="sf-fac-retries" type="number" min="1" max="10" value="${cfg.max_retries ?? 3}" style="width:80px;">
+            </div>
+            <div class="form-group">
+                <label>Retry Delay (ms)</label>
+                <input id="sf-fac-retry-delay" type="number" min="100" max="5000" step="100" value="${cfg.retry_delay_ms ?? 800}" style="width:90px;">
+            </div>
+            <div class="form-group">
+                <label>Verify Radius (px)</label>
+                <input id="sf-fac-verify-radius" type="number" min="5" max="200" value="${cfg.verify_radius_px ?? 30}" style="width:80px;">
+            </div>
+            <div class="form-group full">
+                <label>Disambiguation</label>
+                <select id="sf-fac-disambiguation" style="width:200px;">
+                    <option value="best_score" ${(cfg.disambiguation||'best_score')==='best_score'?'selected':''}>best_score</option>
+                    <option value="closest_to_center" ${cfg.disambiguation==='closest_to_center'?'selected':''}>closest_to_center</option>
+                    <option value="unique_only" ${cfg.disambiguation==='unique_only'?'selected':''}>unique_only</option>
+                </select>
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">多匹配时如何选</span>
+            </div>
+            <div class="form-group full">
+                <label>Search ROI (% of rotated frame)</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:11px;">Top:</span>
+                    <input id="sf-fac-roi-top" type="number" min="0" max="100" value="${cfg.roi?.top_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Bottom:</span>
+                    <input id="sf-fac-roi-bottom" type="number" min="0" max="100" value="${cfg.roi?.bottom_percent ?? 100}" style="width:55px;">
+                    <span style="font-size:11px;">Left:</span>
+                    <input id="sf-fac-roi-left" type="number" min="0" max="100" value="${cfg.roi?.left_percent ?? 0}" style="width:55px;">
+                    <span style="font-size:11px;">Right:</span>
+                    <input id="sf-fac-roi-right" type="number" min="0" max="100" value="${cfg.roi?.right_percent ?? 100}" style="width:55px;">
+                    <button class="btn btn-sm btn-primary" onclick="selectFieldRoi('_findclick')" type="button">Select on Photo</button>
+                </div>
+            </div>
+            <div class="form-group full">
+                <label>Camera Offsets (mm) — first attempt + retries</label>
+                <input id="sf-fac-offsets" type="text" value='${offsets}' style="width:280px;font-family:monospace;font-size:11px;">
+                <span style="font-size:10px;color:var(--text2);margin-left:8px;">JSON array of [dx, dy] pairs</span>
+            </div>`;
     }
 
     document.getElementById('step-form').innerHTML = `
@@ -1831,7 +1941,7 @@ function renderForm(step, isNew) {
                 <input id="sf-name" value="${step.step_name}" placeholder="e.g. click_send"></div>
             <div class="form-group"><label>Action Type</label>
                 <select id="sf-action" onchange="onTypeChange()">
-                    ${['CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE','OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK'].map(a =>
+                    ${['CLICK','TYPE','SWIPE','PHOTO','ARM_MOVE','OCR_VERIFY','CHECK_SCREEN','FIND_AND_CLICK','FIND_AND_SWIPE'].map(a =>
                         `<option value="${a}" ${a===step.action_type?'selected':''}>${a}</option>`).join('')}
                 </select></div>
             <div class="form-group"><label>Pre-delay (ms)</label>
@@ -1864,17 +1974,18 @@ function renderForm(step, isNew) {
             if (el) { el.value = cfg.handler_flow; loadHandlerSteps(); }
         }
     }
-    if (step.action_type === 'FIND_AND_CLICK') {
+    if (step.action_type === 'FIND_AND_CLICK' || step.action_type === 'FIND_AND_SWIPE') {
         let cfg = {};
         try { cfg = JSON.parse(step.description || '{}'); } catch(e) {}
         // Refresh template list async; preserve current selection on completion.
+        // FIND_AND_SWIPE shares the same templates folder + UI element IDs.
         loadFacTemplates().then(() => {
             const sel = document.getElementById('sf-fac-tpl-name');
             if (sel && cfg.template?.name) sel.value = cfg.template.name;
         });
     }
 
-    if (step.action_type === 'SWIPE') setMode('swipe');
+    if (step.action_type === 'SWIPE' || step.action_type === 'FIND_AND_SWIPE') setMode('swipe');
     else if (step.action_type === 'ARM_MOVE') setMode('move');
     else if (step.action_type === 'CLICK') setMode('click');
 }
@@ -2019,6 +2130,53 @@ function readForm() {
             roi,
             camera_offsets_mm: offsets,
         });
+    } else if (action === 'FIND_AND_SWIPE') {
+        if (!s.step_name) s.step_name = 'find_swipe';
+        s.swipe_key = s.step_name;
+        const camX = parseFloat(document.getElementById('sf-x')?.value);
+        const camY = parseFloat(document.getElementById('sf-y')?.value);
+        const cameraAnchor = (!isNaN(camX) && !isNaN(camY)) ? [camX, camY] : null;
+        const sx = parseFloat(document.getElementById('sf-sx')?.value);
+        const sy = parseFloat(document.getElementById('sf-sy')?.value);
+        const ex = parseFloat(document.getElementById('sf-ex')?.value);
+        const ey = parseFloat(document.getElementById('sf-ey')?.value);
+        if ([sx,sy,ex,ey].every(v => !isNaN(v)))
+            s.coords = { start_x: sx, start_y: sy, end_x: ex, end_y: ey };
+        const roiT = parseInt(document.getElementById('sf-fac-roi-top')?.value) || 0;
+        const roiB = parseInt(document.getElementById('sf-fac-roi-bottom')?.value) || 100;
+        const roiL = parseInt(document.getElementById('sf-fac-roi-left')?.value) || 0;
+        const roiR = parseInt(document.getElementById('sf-fac-roi-right')?.value) || 100;
+        const roi = (roiT === 0 && roiB === 100 && roiL === 0 && roiR === 100) ? null
+            : { top_percent: roiT, bottom_percent: roiB, left_percent: roiL, right_percent: roiR };
+        let offsets;
+        try {
+            offsets = JSON.parse(document.getElementById('sf-fac-offsets')?.value || '[]');
+            if (!Array.isArray(offsets) || offsets.length === 0) offsets = [[0,0],[-2,0],[0,-2]];
+        } catch(e) {
+            offsets = [[0,0],[-2,0],[0,-2]];
+        }
+        const desc = {
+            template: {
+                enabled: document.getElementById('sf-fac-tpl-enabled')?.checked !== false,
+                name: document.getElementById('sf-fac-tpl-name')?.value || '',
+            },
+            ocr: {
+                enabled: !!document.getElementById('sf-fac-ocr-enabled')?.checked,
+                text: document.getElementById('sf-fac-ocr-text')?.value || '',
+                match: document.getElementById('sf-fac-ocr-match')?.value || 'contains',
+                case_sensitive: !!document.getElementById('sf-fac-ocr-case')?.checked,
+            },
+            combine: document.getElementById('sf-fac-combine')?.value || 'template_only',
+            threshold: parseFloat(document.getElementById('sf-fac-threshold')?.value) || 0.70,
+            max_retries: parseInt(document.getElementById('sf-fac-retries')?.value) || 3,
+            retry_delay_ms: parseInt(document.getElementById('sf-fac-retry-delay')?.value) || 800,
+            verify_radius_px: parseInt(document.getElementById('sf-fac-verify-radius')?.value) || 30,
+            disambiguation: document.getElementById('sf-fac-disambiguation')?.value || 'best_score',
+            roi,
+            camera_offsets_mm: offsets,
+        };
+        if (cameraAnchor) desc.camera_anchor_mm = cameraAnchor;
+        s.description = JSON.stringify(desc);
     }
 
     const ttype = document.getElementById('bank-ttype')?.value;
@@ -2195,7 +2353,7 @@ async function saveFlow() {
                 }
             }
 
-            if (s.action_type === 'SWIPE' && s.coords && s.swipe_key) {
+            if (['SWIPE','FIND_AND_SWIPE'].includes(s.action_type) && s.coords && s.swipe_key) {
                 const ex = S.swipes[s.swipe_key];
                 if (ex && ex.id) {
                     const r = await API.put(`/api/coords/swipes/${ex.id}`, {
@@ -2469,6 +2627,25 @@ async function testOne(i) {
                 toast(`FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}`, 'success');
                 if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; showPos(); }
             }
+        } else if (s.action_type === 'FIND_AND_SWIPE') {
+            if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+            let cfg = {};
+            try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+            const r = await API.post('/api/opencv/find-and-swipe', {
+                arm_id: getArmId(),
+                station_id: S.station,
+                bank_code: S.bank,
+                swipe_key: s.swipe_key,
+                config: cfg,
+                swipe_after_find: true,
+            });
+            if (r.error || r.found === false) {
+                toast('FIND_AND_SWIPE failed: ' + (r.error || 'not found'), 'error');
+            } else {
+                const warn = r.clamp_warning ? ' [' + r.clamp_warning + ']' : '';
+                toast(`SWIPE ok: (${r.sx_new},${r.sy_new})→(${r.ex_new},${r.ey_new}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}${warn}`, 'success');
+                if (typeof r.ex_new === 'number') { S.curX = r.ex_new; S.curY = r.ey_new; showPos(); }
+            }
         } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
             const camPos = s.coords || S.uiEls[s.ui_element_key];
             if (camPos && S.armOn) {
@@ -2572,6 +2749,24 @@ async function testAll() {
                 } else {
                     addLog(log, `  FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}`, 'done');
                     if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; }
+                }
+            } else if (s.action_type === 'FIND_AND_SWIPE') {
+                let cfg = {};
+                try { cfg = JSON.parse(s.description || '{}'); } catch(e) {}
+                const r = await API.post('/api/opencv/find-and-swipe', {
+                    arm_id: getArmId(),
+                    station_id: S.station,
+                    bank_code: S.bank,
+                    swipe_key: s.swipe_key,
+                    config: cfg,
+                    swipe_after_find: true,
+                });
+                if (r.error || r.found === false) {
+                    addLog(log, `  FIND_AND_SWIPE failed: ${r.error || 'not found'}`, 'error');
+                } else {
+                    const warn = r.clamp_warning ? ' [' + r.clamp_warning + ']' : '';
+                    addLog(log, `  SWIPE ok: (${r.sx_new},${r.sy_new})→(${r.ex_new},${r.ey_new}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}${warn}`, 'done');
+                    if (typeof r.ex_new === 'number') { S.curX = r.ex_new; S.curY = r.ey_new; }
                 }
             } else if (s.action_type === 'CHECK_SCREEN' || s.action_type === 'PHOTO' || s.action_type === 'OCR_VERIFY') {
                 const camPos = s.coords || S.uiEls[s.ui_element_key];
@@ -3536,6 +3731,58 @@ async function testFacFind() {
     }
     toast(`FIND ok: arm=(${r.arm_x}, ${r.arm_y}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts} method=${r.method}`, 'success');
     if (typeof r.arm_x === 'number') { S.curX = r.arm_x; S.curY = r.arm_y; showPos(); }
+}
+
+async function testFasFind() {
+    if (!S.bank) { toast('Select bank first', 'error'); return; }
+    if (!S.armOn) { toast('Connect arm first', 'error'); return; }
+    const cur = readForm();
+    if (!cur.step_name) { toast('Enter step name first', 'error'); return; }
+    if (!cur.coords || cur.coords.start_x == null) { toast('Record swipe Start + End first (click photo twice)', 'error'); return; }
+    let cfg = {};
+    try { cfg = JSON.parse(cur.description || '{}'); } catch(e) {}
+    if (!cfg.camera_anchor_mm) { toast('Set Camera Position first (move arm + Use Camera Pos)', 'error'); return; }
+
+    // Persist swipe_actions row before the test endpoint can resolve it.
+    const ex = S.swipes[cur.swipe_key];
+    if (!ex || !ex.id) {
+        const r = await API.post('/api/coords/swipes', {
+            bank_code: S.bank, station_id: S.station, swipe_key: cur.swipe_key,
+            start_x: cur.coords.start_x, start_y: cur.coords.start_y,
+            end_x: cur.coords.end_x, end_y: cur.coords.end_y,
+        });
+        if (r.error) { toast('Save swipe failed: ' + r.error, 'error'); return; }
+        S.swipes[cur.swipe_key] = { ...cur.coords, id: r.id };
+    } else {
+        // Update if user changed coords since last save.
+        const changed = ex.start_x !== cur.coords.start_x || ex.start_y !== cur.coords.start_y
+            || ex.end_x !== cur.coords.end_x || ex.end_y !== cur.coords.end_y;
+        if (changed) {
+            const r = await API.put(`/api/coords/swipes/${ex.id}`, {
+                start_x: cur.coords.start_x, start_y: cur.coords.start_y,
+                end_x: cur.coords.end_x, end_y: cur.coords.end_y,
+            });
+            if (r.error) { toast('Update swipe failed: ' + r.error, 'error'); return; }
+            S.swipes[cur.swipe_key] = { ...cur.coords, id: ex.id };
+        }
+    }
+
+    toast('Running FIND_AND_SWIPE test...', 'info');
+    const r = await API.post('/api/opencv/find-and-swipe', {
+        arm_id: getArmId(),
+        station_id: S.station,
+        bank_code: S.bank,
+        swipe_key: cur.swipe_key,
+        config: cfg,
+        swipe_after_find: true,
+    });
+    if (r.error || r.found === false) {
+        toast('FIND_AND_SWIPE failed: ' + (r.error || 'not found'), 'error');
+        return;
+    }
+    const warn = r.clamp_warning ? ' [' + r.clamp_warning + ']' : '';
+    toast(`SWIPE ok: (${r.sx_new},${r.sy_new})→(${r.ex_new},${r.ey_new}) score=${(r.score||0).toFixed(3)} attempts=${r.attempts}${warn}`, 'success');
+    if (typeof r.ex_new === 'number') { S.curX = r.ex_new; S.curY = r.ey_new; showPos(); }
 }
 
 /* ============================================================

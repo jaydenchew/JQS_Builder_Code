@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS flow_steps (
     flow_template_id INT NOT NULL,
     step_number INT NOT NULL,
     step_name VARCHAR(100) NOT NULL,
-    action_type ENUM('CLICK', 'TYPE', 'SWIPE', 'PHOTO', 'ARM_MOVE', 'OCR_VERIFY', 'CHECK_SCREEN', 'FIND_AND_CLICK') NOT NULL,
+    action_type ENUM('CLICK', 'TYPE', 'SWIPE', 'PHOTO', 'ARM_MOVE', 'OCR_VERIFY', 'CHECK_SCREEN', 'FIND_AND_CLICK', 'FIND_AND_SWIPE') NOT NULL,
     ui_element_key VARCHAR(50) NULL,
     keymap_type VARCHAR(50) NULL,
     swipe_key VARCHAR(50) NULL,

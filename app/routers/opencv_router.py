@@ -301,3 +301,64 @@ async def find_and_click_test(data: dict):
     except Exception as e:
         logger.exception("FIND_AND_CLICK test crashed: %s", e)
         return {"ok": False, "found": False, "error": str(e)}
+
+
+@router.post("/find-and-swipe")
+async def find_and_swipe_test(data: dict):
+    """Builder live test of FIND_AND_SWIPE.
+
+    Body:
+        arm_id (int), station_id (int), bank_code (str)
+        swipe_key (str)             -- looks up start/end in swipe_actions
+        config: dict                -- same shape as flow_step.description JSON
+                                       (template/ocr/combine/threshold/roi/...)
+        swipe_after_find: bool      -- default true; pass false to preview only
+
+    Returns the diagnostics dict from app.find_and_swipe.find_and_swipe,
+    including matched start, computed end, and clamp_warning if applicable.
+    """
+    from app import find_and_swipe as fas
+    from app.actions import lookup_swipe
+
+    arm_id = data.get("arm_id")
+    station_id = data.get("station_id")
+    bank_code = data.get("bank_code")
+    swipe_key = data.get("swipe_key")
+    config = data.get("config") or {}
+    swipe_after_find = bool(data.get("swipe_after_find", True))
+
+    if arm_id is None or station_id is None or not bank_code or not swipe_key:
+        return {"error": "arm_id, station_id, bank_code, swipe_key required"}
+
+    worker = manager.get_worker(int(arm_id))
+    if worker is None:
+        return {"error": "No worker for arm_id=%s (resume from Dashboard first)" % arm_id}
+
+    try:
+        sx_rec, sy_rec, ex_rec, ey_rec = await lookup_swipe(
+            bank_code, int(station_id), swipe_key)
+    except ValueError as e:
+        return {"error": "Swipe coords not found: %s" % e}
+
+    arm_name = await _get_arm_name(int(arm_id))
+
+    try:
+        result = await fas.find_and_swipe(
+            config=config,
+            station_id=int(station_id),
+            bank_code=bank_code,
+            arm_name=arm_name,
+            arm=worker.arm_client,
+            cam=worker.camera,
+            executor=worker._executor,
+            recorded_swipe=(sx_rec, sy_rec, ex_rec, ey_rec),
+            swipe_after_find=swipe_after_find,
+        )
+        result["ok"] = True
+        return result
+    except RuntimeError as e:
+        logger.warning("FIND_AND_SWIPE test failed: %s", e)
+        return {"ok": False, "found": False, "error": str(e)}
+    except Exception as e:
+        logger.exception("FIND_AND_SWIPE test crashed: %s", e)
+        return {"ok": False, "found": False, "error": str(e)}
