@@ -6,6 +6,9 @@
 * text=auto
 
 # Treat known-binary files explicitly so git never tries to normalise them.
+# Without these rules `* text=auto` relies on git's content heuristic; the
+# explicit list documents intent and protects large files (e.g. EasyOCR
+# model weights ~100 MB) from any accidental mangling.
 *.png    binary
 *.jpg    binary
 *.jpeg   binary
@@ -16,6 +19,7 @@
 *.exe    binary
 *.dll    binary
 *.pdb    binary
+*.pth    binary
 *.umd.min.js binary
 
 # Windows-specific scripts force CRLF so Notepad / cmd.exe behave.
