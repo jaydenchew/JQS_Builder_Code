@@ -1,5 +1,52 @@
 # Changelog
 
+## CHECK_SCREEN: trigger field for symmetric "expect-present" / "expect-absent" semantics (2026-05-02)
+
+### Problem
+
+`CHECK_SCREEN` only supported one semantic: "this screen MUST be visible; if it isn't, run the popup-handler flow and retry until it is." That covers the "back-to-home check + dismiss popup" use case but cannot express the symmetric situation: "this popup MAY appear occasionally; if it does, dismiss it; if it doesn't, just continue." Operators had to add brittle workarounds (e.g. blind taps that only succeeded if a popup happened to be on screen) instead of a clean check.
+
+### New behaviour
+
+`CHECK_SCREEN` config now accepts a `trigger` field with two values:
+
+- `on_mismatch` (default — old behaviour): expected state = match. Match → ok; mismatch → run handler + retry up to `max_retries` until match or fail/stall.
+- `on_match` (new): expected state = mismatch (screen NOT present). Mismatch → ok; match → run handler to dismiss + retry up to `max_retries` until gone or fail/stall.
+
+Both modes share the exact same loop, handler-flow plumbing, screenshot capture and stall semantics. The only difference is the success criterion. `max_retries` keeps the same meaning ("how many chances to reach the expected state") in both modes.
+
+Typical use cases:
+- `on_mismatch`: ACLEDA `check_homepage_popup` — must end on home screen, dismiss any popup blocking.
+- `on_match`: optional verification CAPTCHA / promotional popup — close it if present, skip if not.
+
+### Files changed
+
+- `app/actions.py` — `execute_check_screen`: read `trigger` from config, replace `if is_match:` with `if expected_state_reached:`, add `trigger` to the ok/fail metadata, branch the failure RuntimeError text so `on_match` failures read "screen still matches (popup not dismissed)" instead of the misleading "screen does not match".
+- `app/screen_checker.py` — module docstring updated with the new field + symmetric semantics block.
+- `static/recorder.html` — five edits in total:
+  - editor form: trigger `<select>` group inside the CHECK_SCREEN section.
+  - editor load: cfg.trigger pre-fill so opening an existing step shows the right value.
+  - editor save: trigger key written into the saved `description` JSON.
+  - step list summary: `[on_match]` badge so non-default steps are visible at a glance.
+  - **Builder Test One / Test All**: same `expected_state_reached` predicate as actions.py, so the in-Builder simulation reaches the same conclusion as production. Without this, `trigger=on_match` steps under Test would `break` immediately on match (skipping handler), which is the exact opposite of what production does.
+- `CHANGELOG.md`, `DESIGN_DECISIONS.md` (new DD-027), `BUSINESS_CONTEXT.md`, `ARCHITECTURE_PLAN.md`, `CHECK_SCREEN_OPS.md` — documentation synced.
+
+### Backward compatibility
+
+100% transparent. Three layers of defaulting:
+
+1. DB layer: `description` is JSON; existing rows have no `trigger` key. No schema change, no data migration, no `ALTER TABLE`.
+2. Python layer: `config.get("trigger", "on_mismatch")` defaults every existing step to the old behaviour. Runtime output is identical to before.
+3. UI layer: opening an existing step in Builder leaves `sf-trigger` at its first option (`on_mismatch`). Saving rewrites the description with `"trigger":"on_mismatch"` explicit — behaviour stays identical.
+
+No operator action required. Builder operators only touch `trigger` when they actively want to author a new "popup is optional" step.
+
+### Risks accepted
+
+- `on_match` mode at the wrong location can mask real progress problems (e.g. operator marks "Transferring to" page as `on_match` thinking it's a popup, then the flow silently skips when the page is supposed to be there). Mitigated by the explicit `[on_match]` badge in step list and the descriptive label inside the dropdown.
+
+---
+
 ## FIND_AND_SWIPE: visually locate slider handle, swipe with recorded offset (2026-05-01)
 
 ### Problem

@@ -88,7 +88,7 @@ PAS → POST /process-withdrawal
        │    ├→ SWIPE: lookup_swipe → arm.swipe (executor)
        │    ├→ PHOTO: arm.move → camera.capture_base64 (executor)
        │    ├→ OCR_VERIFY: arm.move → camera.capture → ocr.verify (executor)
-       │    └→ CHECK_SCREEN: arm.move → camera.capture → screen_checker.compare (executor)
+       │    └→ CHECK_SCREEN: arm.move → camera.capture → screen_checker.compare → trigger 判断 (on_mismatch=必看到才 ok / on_match=必消失才 ok) → 不达期望则跑 handler+retry (executor)
        │
        ├→ 根据结果决定 PAS callback status
        ├→ close_port（摄像头保持打开，不关闭）

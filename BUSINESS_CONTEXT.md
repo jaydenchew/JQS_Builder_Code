@@ -93,9 +93,11 @@ GET /status/{process_id}
 ### Handler Flows (Popup Handling)
 - Some apps show popups (promotions, notifications) after login
 - CHECK_SCREEN step detects unexpected screens by comparing to a reference image
-- If mismatch detected, runs a "handler flow" (e.g., `ACLEDA_AFTER_POPUP`) to dismiss the popup
+- The step's `trigger` field (in `description` JSON) decides which condition fires the handler:
+  - `trigger=on_mismatch` (default) — the reference image MUST be on screen. If mismatch, run handler to dismiss the blocking popup, then retry. Used for "must-be-on-home-screen" style checks.
+  - `trigger=on_match` — the reference image SHOULD NOT be on screen. If it IS shown (e.g. an optional CAPTCHA / promo popup), run handler to dismiss it, then retry to confirm it's gone. Used for "occasional-popup" style checks.
 - Handler flow has its own `bank_code` (e.g., `ACLEDA_AFTER_POPUP`) and its own coordinates in `ui_elements`
-- After handler completes, CHECK_SCREEN retries the comparison
+- After handler completes, CHECK_SCREEN retries the comparison; both modes share the same retry / stall semantics — `max_retries` exhausted with the wrong state still present always means stall.
 
 ## Physical Deployment Model
 

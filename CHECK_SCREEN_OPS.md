@@ -85,6 +85,31 @@
 
 这样既能过正常波动，又不会太松放过错误页面。
 
+## `trigger` 字段（2026-05-02 起）
+
+每个 CHECK_SCREEN step 在 Builder 表单里多了一个 **Trigger** 下拉，决定"什么算成功"：
+
+| trigger | 期望的最终状态 | 跑 handler 的条件 | 典型用例 |
+|---|---|---|---|
+| **`on_mismatch`**（默认） | 看到参考画面 | 没看到 → 跑 handler 清障碍后重试 | 必看到的页面（已回到主屏、转账确认页等） |
+| **`on_match`**（新） | 看不到参考画面 | 看到了 → 跑 handler 清掉它后重试 | 偶发 popup（CAPTCHA / 广告 / 一次性提示） |
+
+**关键事实**：
+- 两种模式共享同一套循环、同一个 handler、同一个 `max_retries`、同一种 stall 行为。区别只在"成功条件相反"。
+- `max_retries` 在两种模式下都是"给画面变成期望状态的最多机会次数"。
+- 旧 step 的 `description` JSON 没有 `trigger` 键 → 默认 `on_mismatch` → 行为完全等同于改动之前。**不需要重新保存任何现有 step。**
+- Builder 步骤列表里 trigger=on_match 的 step 会显示 `[on_match]` 徽标，方便一眼分辨。
+
+**Builder "Test One" / "Test All" 也按 trigger 行为**（2026-05-02 起）：和生产一致，看 toast / run-log。
+- on_mismatch 模式 toast：`MATCH (score=...)` ok / `NO MATCH ... (trigger=on_mismatch)` 触发 handler
+- on_match 模式 toast：`POPUP ABSENT (score=...)` ok / `POPUP DETECTED ... (trigger=on_match)` 触发 handler
+如果你测试 trigger=on_match 步骤但 handler 没跑，先确认 popup 当时**真的在屏幕上**（`POPUP DETECTED`），否则按设计就是直接 OK 跳过。
+
+**stall 时怎么读 fail log**（`transaction_logs.message` 是 JSON）：
+- `trigger=on_mismatch` 失败：`"screen does not match '<ref>' after N attempts"` —— 期望画面始终没出现，常见是上一步 CLICK 没跳转或 popup handler 失效。
+- `trigger=on_match` 失败：`"screen still matches '<ref>' after N attempts (popup not dismissed)"` —— 期望消失的 popup 一直在，常见是 handler flow 关 popup 的 CLICK 坐标不对。
+- fail_meta JSON 里也带 `"trigger"` 字段直接显示模式。
+
 ## 历史上的黑名单（避免重蹈覆辙）
 
 - **别做**：把 threshold 调到 0.50 强过。你其实只是关闭了保护，下一次错页面也会过。正确做法是查 `reason`：是 `popup` 就加 handler_flow，是 `wrong_screen` 就修上一步。

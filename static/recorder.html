@@ -1461,7 +1461,13 @@ function renderSteps() {
                 : `(${fmt(s.coords.x)},${fmt(s.coords.y)})`;
         }
         if (s.action_type === 'CHECK_SCREEN') {
-            try { const cfg = JSON.parse(s.description || '{}'); c = cfg.reference ? `ref:${cfg.reference}` : ''; } catch(e) {}
+            try {
+                const cfg = JSON.parse(s.description || '{}');
+                const parts = [];
+                if (cfg.reference) parts.push(`ref:${cfg.reference}`);
+                if (cfg.trigger === 'on_match') parts.push('[on_match]');
+                c = parts.join(' ');
+            } catch(e) {}
         }
         const dl = [s.pre_delay_ms ? `pre:${s.pre_delay_ms}` : '', s.post_delay_ms ? `post:${s.post_delay_ms}` : ''].filter(Boolean).join(' ');
         return `<div class="step-item ${i===S.selIdx?'selected':''}" onclick="selStep(${i})"
@@ -1702,6 +1708,14 @@ function renderForm(step, isNew) {
                 </select>
             </div>
             <div id="sf-handler-steps" class="form-group full" style="display:none;"></div>
+            <div class="form-group full">
+                <label>Trigger</label>
+                <select id="sf-trigger" style="width:100%;">
+                    <option value="on_mismatch">on_mismatch (default) - run handler when expected screen is NOT detected</option>
+                    <option value="on_match">on_match - run handler when this screen IS detected; skip otherwise</option>
+                </select>
+                <span style="font-size:10px;color:var(--text2);">on_mismatch: required-screen check (e.g. back-to-home). on_match: optional-popup check (e.g. CAPTCHA, ad).</span>
+            </div>
             <div class="form-group">
                 <label>Match Threshold (0-1)</label>
                 <input id="sf-threshold" type="number" step="0.05" min="0" max="1" value="${cfg.threshold ?? 0.80}" style="width:80px;">
@@ -1973,6 +1987,7 @@ function renderForm(step, isNew) {
             const el = document.getElementById('sf-handler');
             if (el) { el.value = cfg.handler_flow; loadHandlerSteps(); }
         }
+        if (cfg.trigger) { const el = document.getElementById('sf-trigger'); if (el) el.value = cfg.trigger; }
     }
     if (step.action_type === 'FIND_AND_CLICK' || step.action_type === 'FIND_AND_SWIPE') {
         let cfg = {};
@@ -2089,6 +2104,7 @@ function readForm() {
             handler_flow: document.getElementById('sf-handler')?.value || '',
             threshold: parseFloat(document.getElementById('sf-threshold')?.value) || 0.80,
             max_retries: parseInt(document.getElementById('sf-retries')?.value) || 3,
+            trigger: document.getElementById('sf-trigger')?.value || 'on_mismatch',
             roi,
         });
     } else if (action === 'FIND_AND_CLICK') {
@@ -2659,16 +2675,20 @@ async function testOne(i) {
                 if (!cfg.reference) { toast('No reference image configured', 'error'); return; }
 
                 const retries = cfg.max_retries || 3;
+                const trigger = cfg.trigger || 'on_mismatch';
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     const r = await API.post('/api/opencv/compare', {
                         bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.80, roi: cfg.roi || null, arm_id: getArmId(),
                     });
                     if (r.error) { toast('Compare error: ' + r.error, 'error'); return; }
-                    if (r.match) {
-                        toast(`MATCH (score: ${r.score})`, 'success');
+                    const expected = (trigger === 'on_mismatch' && r.match) || (trigger === 'on_match' && !r.match);
+                    if (expected) {
+                        const stateLabel = trigger === 'on_match' ? 'POPUP ABSENT' : 'MATCH';
+                        toast(`${stateLabel} (score: ${r.score}, trigger=${trigger})`, 'success');
                         break;
                     }
-                    toast(`NO MATCH (score: ${r.score}, attempt ${attempt}/${retries})`, 'error');
+                    const failLabel = trigger === 'on_match' ? 'POPUP DETECTED' : 'NO MATCH';
+                    toast(`${failLabel} (score: ${r.score}, attempt ${attempt}/${retries}, trigger=${trigger})`, 'error');
                     if (cfg.handler_flow && attempt < retries) {
                         setStatus('Running popup handler...');
                         const hBankCode = cfg.handler_flow.split('__')[0];
@@ -2783,17 +2803,21 @@ async function testAll() {
                     if (!cfg.reference) { addLog(log, '  no reference, skip', 'error'); }
                     else {
                         const retries = cfg.max_retries || 3;
-                        let matched = false;
-                        for (let attempt = 1; attempt <= retries && !matched && !runAbort; attempt++) {
+                        const trigger = cfg.trigger || 'on_mismatch';
+                        let reachedExpected = false;
+                        for (let attempt = 1; attempt <= retries && !reachedExpected && !runAbort; attempt++) {
                             const cmp = await API.post('/api/opencv/compare', {
                                 bank_code: S.bank, name: cfg.reference, threshold: cfg.threshold || 0.80, roi: cfg.roi || null, arm_id: getArmId(),
                             });
                             if (cmp.error) { addLog(log, `  compare error: ${cmp.error}`, 'error'); break; }
-                            if (cmp.match) {
-                                addLog(log, `  screen OK (score: ${cmp.score})`, 'done');
-                                matched = true;
+                            const expected = (trigger === 'on_mismatch' && cmp.match) || (trigger === 'on_match' && !cmp.match);
+                            if (expected) {
+                                const okLabel = trigger === 'on_match' ? 'popup absent' : 'screen OK';
+                                addLog(log, `  ${okLabel} (score: ${cmp.score}, trigger=${trigger})`, 'done');
+                                reachedExpected = true;
                             } else {
-                                addLog(log, `  no match (score: ${cmp.score}, attempt ${attempt}/${retries})`, 'error');
+                                const failLabel = trigger === 'on_match' ? 'popup detected' : 'no match';
+                                addLog(log, `  ${failLabel} (score: ${cmp.score}, attempt ${attempt}/${retries}, trigger=${trigger})`, 'error');
                                 if (cfg.handler_flow && attempt < retries) {
                                     addLog(log, `  running popup handler...`, 'info');
                                     const hBankCode = cfg.handler_flow.split('__')[0];
@@ -2829,7 +2853,7 @@ async function testAll() {
                                 }
                             }
                         }
-                        if (!matched) addLog(log, `  CHECK_SCREEN failed after retries`, 'error');
+                        if (!reachedExpected) addLog(log, `  CHECK_SCREEN failed after retries (trigger=${trigger})`, 'error');
                     }
                 } else {
                     addLog(log, `  ${s.action_type} at ${s.ui_element_key}`, 'info');

@@ -395,3 +395,56 @@ Hardware errors (`port open failed` / `not responding`) keep the legacy DD-011 /
 **Files**: `app/find_and_swipe.py` (new, ~250 lines), `app/actions.py` (registration + new executor + transaction_logs exclusion at line 556), `app/routers/opencv_router.py` (1 new endpoint: find-and-swipe test; capture-template / template preview / template delete reused from FIND_AND_CLICK), `db/schema.sql` (ENUM extension), `static/recorder.html` (9 small edits: action dropdown, render branch, post-render template-load hook, setMode trigger, readForm branch, saveFlow swipe coord-sync predicate, testOne / testAll branches, plus a new `testFasFind()` JS helper).
 
 **Rollback**: Revert actions.py + find_and_swipe.py + opencv_router.py + recorder.html changes. ENUM extension is forward-compatible (drop existing FIND_AND_SWIPE rows or `ALTER` to remove the value).
+
+---
+
+## DD-027: CHECK_SCREEN trigger Field — Symmetric "Expect-Present" / "Expect-Absent" Semantics
+
+**What**: `flow_steps.description` for `CHECK_SCREEN` accepts a new `trigger` field with two values:
+
+- `on_mismatch` (default — preserves all prior behaviour): the configured reference image MUST be on screen. If the camera frame doesn't match, run the popup-handler flow and retry up to `max_retries`. Loop exhaustion → stall.
+- `on_match` (new): the configured reference image SHOULD NOT be on screen. If the camera frame matches it (e.g. a verification CAPTCHA or promotional popup IS visible), run the popup-handler flow to dismiss it and retry. Loop exhaustion (popup never goes away) → stall.
+
+Both modes share the exact same loop, capture path, handler-flow plumbing, screenshot capture, and stall recording. The only divergence is the success criterion, expressed as one boolean expression in `app/actions.py`:
+
+```
+expected_state_reached = (
+    (trigger == "on_mismatch" and is_match) or
+    (trigger == "on_match" and not is_match)
+)
+```
+
+**Why this design over alternatives**:
+
+- **Single field, symmetric loop, no new code path**: an alternative was to add a separate action_type (e.g. `CHECK_SCREEN_ABSENT`) with its own executor. Rejected because it would duplicate the entire loop, the move-to-camera step, the handler invocation, the screenshot capture, the stall logging — every change to CHECK_SCREEN would have to be mirrored. The two semantics are pure inverses; the one-line predicate captures that exactly without duplicating any infrastructure.
+- **Field name `trigger` over `mode` / `expect` / `invert`**: `trigger` reads naturally with the `on_<event>` value vocabulary already used elsewhere ("trigger this branch when the screen is on_match"). `mode=required/optional` was confusing because both modes can stall. `expect=present/absent` was clearer but doesn't compose with the value `on_match` (we'd write `expect=absent` then the dropdown labels would be inverted). `invert=true/false` was rejected as opaque — a builder operator new to the codebase wouldn't know what's being inverted.
+- **Default to old behaviour, opt-in to new**: backward compatibility is non-negotiable since 6+ existing CHECK_SCREEN steps in production rely on the original "expect present" semantic. `config.get("trigger", "on_mismatch")` in Python + `<option value="on_mismatch">` as the first dropdown option ensures (a) DB rows without the field run identically, (b) Builder operators opening an existing step see the safe default selected, (c) on Save Flow the description gets the explicit `"trigger":"on_mismatch"` written but behaviour does not change.
+- **No new ENUM, no schema change, no migration**: `trigger` lives inside the JSON in `flow_steps.description` (`LONGTEXT`), exactly like `threshold` / `max_retries` / `roi`. This matches how every other CHECK_SCREEN config evolution has been added. Avoids an `ALTER TABLE` round-trip on every deployment machine; avoids needing per-machine DB migration coordination.
+
+**Why `max_retries` keeps its meaning unchanged in both modes**:
+
+- `on_mismatch`: "how many chances does the popup-clearing flow get to bring the expected screen back?"
+- `on_match`: "how many chances does the popup-clearing flow get to make the popup go away?"
+
+In both, the loop ends as soon as the expected state is observed once, and stalls when all attempts are exhausted with the wrong state still present. This symmetry preserves operator intuition — they don't need to remember "in mode X, max_retries means Y, but in mode Z it means W."
+
+**Why `_run_handler_flow` is invoked in both modes without modification**:
+
+The handler-flow block already runs only when `expected_state_reached == False`. For `on_mismatch`, that block fires when the screen doesn't match (handler dismisses the popup that's blocking the expected screen). For `on_match`, it fires when the screen DOES match (handler dismisses the popup that should not be there). The semantic of "handler removes whatever is making the expected state false" applies identically to both modes — the same hardware actions (tap close, swipe away) have the same effect regardless of which mode we're in.
+
+**Why the failure RuntimeError text branches on trigger**:
+
+The original message `"screen does not match '%s' after %d attempts"` reads as a complete misdirection in `on_match` mode (where "does match" is the failure case). Diagnosing a stall by reading `transaction_logs.error_message` would mislead the operator into checking why the screen is missing when in fact the popup is stuck on screen. Two distinct messages keep operations triage straightforward. The `trigger` value is also embedded in `fail_meta` so the per-step JSON in `transaction_logs.message` shows the mode.
+
+**What this does NOT change**:
+
+- `screen_checker.compare_screen` algorithm — pure visual comparison, no semantic awareness, byte-for-byte unchanged.
+- `_run_handler_flow` — handler invocation mechanism unchanged; same `BANK__template_id` parsing, same step iteration.
+- `/api/opencv/compare` endpoint — Builder's "Test Compare" button only does the comparison and returns SSIM/inliers/etc., never executes the trigger logic.
+- DB schema, seed files, seed import/export tooling — all preserve `description` as an opaque JSON string.
+- `arm_worker.py`, `recorder.py`, other action types, PAS / API protocol — none touched.
+- 6+ existing CHECK_SCREEN steps in production — keep working without re-save (default-value path).
+
+**Files**: `app/actions.py` (~12 lines net add inside `execute_check_screen`), `app/screen_checker.py` (docstring only), `static/recorder.html` (3 edits inside the CHECK_SCREEN branch + step list summary badge), `CHANGELOG.md`, `BUSINESS_CONTEXT.md`, `ARCHITECTURE_PLAN.md`, `CHECK_SCREEN_OPS.md`.
+
+**Rollback**: Revert `app/actions.py` + `app/screen_checker.py` + `static/recorder.html` changes. `description` rows that were re-saved with explicit `"trigger":"on_mismatch"` remain readable by the reverted code (the explicit field is silently ignored). Rows authored as `"trigger":"on_match"` will fall back to default behaviour after rollback (i.e. behave like `on_mismatch`); this would be visible if such steps exist — operators should re-author them as inverted CHECK_SCREEN_ABSENT-style flows or remove them.

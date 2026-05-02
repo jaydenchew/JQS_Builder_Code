@@ -13,11 +13,18 @@
     "handler_flow": "BANK__template_id",
     "threshold": 0.80,
     "max_retries": 3,
+    "trigger": "on_mismatch",
     "roi": {"top_percent": 25, "bottom_percent": 90, "left_percent": 20, "right_percent": 87}
 }
 
 threshold 语义：对齐后 SSIM（0.0–1.0）。POC 验证：正例 min=0.95, 异常 max=0.60。
 min_inliers / valid_ratio 作为模块常量，不暴露到 UI。
+
+trigger 语义（在 actions.execute_check_screen 里消费，本模块只存储不解释）：
+  on_mismatch（默认，旧行为）— 期望 match。看到画面 → ok；看不到 → 跑 handler+retry。
+  on_match（新）— 期望 mismatch（画面不应在）。看不到 → ok；看到 → 跑 handler 清掉它+retry。
+两种模式逻辑对称，max_retries 在两种模式下都是"给画面变成期望状态的最多机会次数"。
+on_mismatch 用于"必看画面"（如已回到主屏检查），on_match 用于"偶发 popup"（如验证码弹窗）。
 """
 import cv2
 import numpy as np

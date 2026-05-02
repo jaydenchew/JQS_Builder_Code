@@ -295,6 +295,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
     threshold = config.get("threshold", screen_checker.DEFAULT_SSIM_THRESHOLD)
     max_retries = config.get("max_retries", 3)
     handler_flow = config.get("handler_flow", "")
+    trigger = config.get("trigger", "on_mismatch")
     roi = config.get("roi")
 
     arm_name = transaction.get("_arm_name")
@@ -328,7 +329,11 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
             result["valid_ratio"], result["reason"], threshold, is_match,
         )
 
-        if is_match:
+        expected_state_reached = (
+            (trigger == "on_mismatch" and is_match) or
+            (trigger == "on_match" and not is_match)
+        )
+        if expected_state_reached:
             duration_ms = int((time.time() - start_time) * 1000)
             ok_msg = _json.dumps({
                 "ssim": result["ssim"],
@@ -340,6 +345,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
                 "reason": result["reason"],
                 "attempt": attempt,
                 "threshold": threshold,
+                "trigger": trigger,
             })
             await database.execute(
                 """INSERT INTO transaction_logs
@@ -366,6 +372,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
         "best_ssim": score,
         "attempts": max_retries,
         "threshold": threshold,
+        "trigger": trigger,
     }
     if last_result is not None:
         fail_meta.update({
@@ -385,9 +392,13 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
          duration_ms, fail_screenshot, fail_msg)
     )
     reason = last_result["reason"] if last_result else "no_frame"
+    if trigger == "on_match":
+        fail_reason_text = "screen still matches '%s' after %d attempts (popup not dismissed)" % (ref_name, max_retries)
+    else:
+        fail_reason_text = "screen does not match '%s' after %d attempts" % (ref_name, max_retries)
     raise RuntimeError(
-        "CHECK_SCREEN failed: screen does not match '%s' after %d attempts (best_ssim=%.4f reason=%s)"
-        % (ref_name, max_retries, score, reason)
+        "CHECK_SCREEN failed: %s (best_ssim=%.4f reason=%s trigger=%s)"
+        % (fail_reason_text, score, reason, trigger)
     )
 
 
