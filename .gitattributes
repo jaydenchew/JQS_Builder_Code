@@ -1,0 +1,27 @@
+# Auto-detect text files and normalise line endings to LF in the repo.
+# On Windows checkout, autocrlf=true turns them into CRLF for the working
+# tree; on commit they're stored back as LF. Without this file, git emits
+# "LF will be replaced by CRLF" warnings for files that drifted on a
+# previous machine, even when there's no real content change.
+* text=auto
+
+# Treat known-binary files explicitly so git never tries to normalise them.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.exe    binary
+*.dll    binary
+*.pdb    binary
+*.umd.min.js binary
+
+# Windows-specific scripts force CRLF so Notepad / cmd.exe behave.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Shell scripts force LF (they need it to run on linux / WSL / docker).
+*.sh     text eol=lf
