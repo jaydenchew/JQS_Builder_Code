@@ -40,7 +40,9 @@ Five sections, all driven by a single read-only endpoint `/api/monitor/reports/s
 | Stall Reasons | "Are stalls mostly OCR / screen / hardware?" | Donut chart + table |
 | Slowest Steps | "Which steps to optimize for throughput?" | Horizontal bar (avg ms) + table with avg/max/runs |
 
-Filters: date range (date_from / date_to in selected TZ) + arm dropdown. Quick presets: Today, Yesterday, Last 7 days (default), Last 30 days. Active preset highlighted.
+Filters: date range (date_from / date_to in selected TZ) + arm dropdown. Quick presets: Today (default), Yesterday, Last 7 days, Last 30 days. Active preset highlighted.
+
+Auto-refresh every 30s — invisible (no flicker / no animation): Chart.js instances are kept and updated in place via `chart.update('none')` instead of destroyed + recreated; "Loading…" badge is suppressed on auto-refresh ticks; an in-flight guard prevents overlapping requests if a tick takes longer than 30s. The "Updated HH:MM:SS" badge in the filter bar shows the last successful refresh time.
 
 Chart.js v4.4.6 bundled locally (`static/js/chart.umd.min.js`, ~200KB) — works offline, follows the project's "local-first" convention (parallel to nssm.exe, tesseract-setup.exe in deploy/).
 
@@ -212,6 +214,30 @@ Both call sites in `app/ocr.py` (`verify_configurable` and `verify_transfer_from
 ### Files
 
 - `app/ocr.py` — one-line change inside `extract_numbers` plus a 4-line comment explaining why.
+
+---
+
+## ux(dashboard): hide inactive arms (active=false) from arm cards (2026-04-30)
+
+### Problem
+
+Dashboard's arm grid showed every row in the `arms` table — including ones with `active=false` (admin-disabled / under maintenance / parked machines). Inactive arms always appeared as offline cards, taking visual space and requiring operators to mentally filter "this one doesn't count, ignore it." On a console showing 4-8 arms, the noise was small; once the deployment grows past that, the dashboard becomes harder to scan.
+
+### Fix
+
+Pure frontend: `renderArmCards` filters `arms = arms.filter(a => a.active)` before rendering. Inactive arms simply don't appear. Settings page is unchanged — admins can still see and manage inactive rows there.
+
+The empty-state message was also updated from "No machines configured. Add one in Settings" to "No active machines. Activate one in Settings" so the operator sees the actionable next step when all arms happen to be inactive (vs. truly empty DB).
+
+### Files
+
+- `static/index.html` — single one-line filter inside `renderArmCards` plus the message tweak.
+
+### Compatibility
+
+- No backend change. WS payload still sends every arm; frontend just drops the inactive ones.
+- No DB change.
+- `lastArms` (used downstream by camera-swap UI and the live-logs arm picker) now also reflects only active arms — which is correct, since both UIs only act on active arms anyway.
 
 ---
 

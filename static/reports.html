@@ -140,6 +140,7 @@
             <button class="btn btn-secondary range-btn" onclick="setRange(7, this)">Last 7 days</button>
             <button class="btn btn-secondary range-btn" onclick="setRange(30, this)">Last 30 days</button>
             <span id="range-info" style="margin-left:auto;color:#9fb0e7;font-size:12px;"></span>
+            <span id="refresh-info" style="color:var(--text2);font-size:11px;"></span>
         </div>
 
         <div class="summary-grid" id="summary-grid"></div>
@@ -215,6 +216,32 @@
         if (charts[key]) { charts[key].destroy(); charts[key] = null; }
     }
 
+    // Upsert: create chart on first call, then mutate data + .update('none')
+    // for subsequent calls so auto-refresh doesn't re-animate or flicker.
+    function upsertChart(key, canvasId, config) {
+        const existing = charts[key];
+        if (!existing) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            charts[key] = new Chart(ctx, config);
+            return;
+        }
+        existing.data.labels = config.data.labels;
+        // Mutate dataset arrays in place to keep Chart.js's internal indices.
+        const newDs = config.data.datasets;
+        existing.data.datasets.forEach((ds, i) => {
+            if (newDs[i]) ds.data = newDs[i].data;
+        });
+        // If new config has more datasets (rare), add them.
+        for (let i = existing.data.datasets.length; i < newDs.length; i++) {
+            existing.data.datasets.push(newDs[i]);
+        }
+        // Trim if fewer datasets in new payload.
+        if (newDs.length < existing.data.datasets.length) {
+            existing.data.datasets.length = newDs.length;
+        }
+        existing.update('none');  // no animation = invisible refresh
+    }
+
     function setActiveRangeBtn(btn) {
         document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
@@ -249,28 +276,57 @@
             (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
-    async function loadReport() {
-        const dateFrom = document.getElementById('filter-date-from').value;
-        const dateTo = document.getElementById('filter-date-to').value;
-        const armId = document.getElementById('filter-arm').value;
-        if (!dateFrom || !dateTo) { return; }
-        const params = ['date_from=' + dateFrom, 'date_to=' + dateTo, 'tz=' + getDisplayTZ()];
-        if (armId) params.push('arm_id=' + armId);
-        const url = '/api/monitor/reports/summary?' + params.join('&');
-        document.getElementById('range-info').textContent = `Loading…`;
-        const r = await API.get(url);
-        if (r.error) {
-            document.getElementById('range-info').textContent = 'Error: ' + r.error;
-            return;
+    // In-flight guard: if a refresh takes longer than the auto-refresh tick,
+    // skip the next tick rather than queue a second concurrent request.
+    let loadInFlight = false;
+
+    // silent=true (auto-refresh) skips the "Loading…" flash so the user
+    // doesn't see flicker when nothing is wrong. Manual button click passes
+    // silent=false (default) so the operator gets feedback.
+    async function loadReport(silent = false) {
+        if (loadInFlight) return;
+        loadInFlight = true;
+        try {
+            const dateFrom = document.getElementById('filter-date-from').value;
+            const dateTo = document.getElementById('filter-date-to').value;
+            const armId = document.getElementById('filter-arm').value;
+            if (!dateFrom || !dateTo) return;
+            const params = ['date_from=' + dateFrom, 'date_to=' + dateTo, 'tz=' + getDisplayTZ()];
+            if (armId) params.push('arm_id=' + armId);
+            const url = '/api/monitor/reports/summary?' + params.join('&');
+            if (!silent) document.getElementById('range-info').textContent = `Loading…`;
+            const r = await API.get(url);
+            if (r.error) {
+                document.getElementById('range-info').textContent = 'Error: ' + r.error;
+                return;
+            }
+            document.getElementById('range-info').textContent =
+                `${dateFrom} → ${dateTo} (GMT+${getDisplayTZ()})`;
+            const now = new Date();
+            const offsetMs = getDisplayTZ() * 60 * 60 * 1000;
+            const tsInTz = new Date(now.getTime() + offsetMs).toISOString().substring(11, 19);
+            document.getElementById('refresh-info').textContent = `Updated ${tsInTz}`;
+            renderSummary(r.summary);
+            renderPerArm(r.per_arm);
+            renderPerBank(r.per_bank);
+            renderFailingSteps(r.top_failing_steps);
+            renderStallReasons(r.stall_reasons);
+            renderSlowestSteps(r.slowest_steps);
+        } finally {
+            loadInFlight = false;
         }
-        document.getElementById('range-info').textContent =
-            `${dateFrom} → ${dateTo} (GMT+${getDisplayTZ()})`;
-        renderSummary(r.summary);
-        renderPerArm(r.per_arm);
-        renderPerBank(r.per_bank);
-        renderFailingSteps(r.top_failing_steps);
-        renderStallReasons(r.stall_reasons);
-        renderSlowestSteps(r.slowest_steps);
+    }
+
+    // Auto-refresh every 30 s. Each refresh re-runs the 5 SQL queries so
+    // numbers stay live without operator action. Filter state is preserved
+    // because loadReport reads the current input values each time. Tab in
+    // background still ticks (browsers throttle setInterval but call it).
+    const REFRESH_INTERVAL_MS = 30_000;
+    let refreshTimer = null;
+    function startAutoRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        // silent=true on every tick so the "Loading…" badge doesn't flash.
+        refreshTimer = setInterval(() => loadReport(true), REFRESH_INTERVAL_MS);
     }
 
     function renderSummary(s) {
@@ -321,9 +377,7 @@
                 <td>${r.avg_duration_s ? r.avg_duration_s.toFixed(1) + 's' : '-'}</td>
             </tr>`).join('')}</tbody></table>`;
 
-        destroyChart('perArm');
-        const ctx = document.getElementById('chart-per-arm').getContext('2d');
-        charts.perArm = new Chart(ctx, {
+        upsertChart('perArm', 'chart-per-arm', {
             type: 'bar',
             data: {
                 labels: rows.map(r => r.arm_name),
@@ -361,9 +415,7 @@
                 <td class="${rateClass(r.success_rate)}">${r.success_rate}%</td>
             </tr>`).join('')}</tbody></table>`;
 
-        destroyChart('perBank');
-        const ctx = document.getElementById('chart-per-bank').getContext('2d');
-        charts.perBank = new Chart(ctx, {
+        upsertChart('perBank', 'chart-per-bank', {
             type: 'bar',
             data: {
                 labels: rows.map(r => r.bank_code),
@@ -414,10 +466,8 @@
                 <td>${r.count}</td>
             </tr>`).join('')}</tbody></table>`;
 
-        destroyChart('stall');
         const palette = ['#f44336', '#ff9800', '#ffc107', '#9c6dff', '#2196f3', '#00bcd4', '#4caf50', '#e91e63', '#3f51b5', '#795548'];
-        const ctx = document.getElementById('chart-stall').getContext('2d');
-        charts.stall = new Chart(ctx, {
+        upsertChart('stall', 'chart-stall', {
             type: 'doughnut',
             data: {
                 labels: rows.map(r => (r.reason || '(empty)').substring(0, 40)),
@@ -449,9 +499,7 @@
                 <td>${r.cnt}</td>
             </tr>`).join('')}</tbody></table>`;
 
-        destroyChart('slow');
-        const ctx = document.getElementById('chart-slow').getContext('2d');
-        charts.slow = new Chart(ctx, {
+        upsertChart('slow', 'chart-slow', {
             type: 'bar',
             data: {
                 labels: rows.map(r => r.step_name.substring(0, 22)),
@@ -474,10 +522,11 @@
     // Re-fetch + re-render whenever the user toggles GMT+7/+8 in the nav.
     window.addEventListener('displaytz:changed', loadReport);
 
-    // Default: Last 7 days; mark its button as active.
-    const initBtn = document.querySelector('.range-btn[onclick*="setRange(7"]');
-    setRange(7, initBtn);
+    // Default: Today; mark its button as active.
+    const initBtn = document.querySelector('.range-btn[onclick*="setSingleDay(0"]');
+    setSingleDay(0, initBtn);
     loadArms();
+    startAutoRefresh();
     </script>
 </body>
 </html>
