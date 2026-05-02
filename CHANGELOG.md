@@ -1,5 +1,68 @@
 # Changelog
 
+## Reports page + GMT+7/+8 display toggle + per-arm today rate (2026-05-03)
+
+### Problem
+
+Three related operator-facing gaps:
+
+1. **Dashboard `Completed: N` was misleading**: that number is the worker process's in-memory task counter — it resets on restart, includes all statuses, and ignores time-of-day. Operators reading the dashboard at midday couldn't see "how many transactions has this arm completed today".
+2. **Cross-checking with another timezone required SQL**: ops occasionally needed to view stats in GMT+8 (Singapore / China visitors) but the app hardcoded GMT+7. The only options were "remember to add 1 hour mentally" or run ad-hoc DB queries.
+3. **No aggregate report**: identifying which arm / which bank / which step is responsible for stalls required reading transactions one by one, or writing custom SQL. Made it hard to prioritize fixes.
+
+### What changed
+
+#### A. GMT+7/+8 display toggle (browser-local, never writes DB)
+
+- New badge in nav: `GMT+7` ↔ `GMT+8`. Single click toggles. Choice persists in `localStorage` (per-browser) and emits a `displaytz:changed` event so listening pages refresh.
+- Backend read-only endpoints accept `?tz=7|8`: `/api/monitor/stats/today`, `/api/monitor/transactions`, and the new `/api/monitor/reports/summary`. Whitelist `{7, 8}`; anything else falls back to GMT+7.
+- Affected user-facing date math (purely display):
+  - "Today" boundary on stats card, dashboard arm card, reports page summary
+  - `date_from` / `date_to` filter parsing on transactions list and reports
+  - Row timestamp display on transactions list / detail modal
+- **NOT touched**: any write path. All `datetime.now(timezone.utc)` calls in `arm_worker.py`, `actions.py`, `main.py` stay UTC. Schema unchanged. Worker / arm / transaction processing completely untouched.
+
+#### B. Dashboard improvements
+
+- Arm cards now show `Today: success/total (rate%)` instead of the worker counter. Falls back to `Completed: N` when the backend hasn't been restarted yet (so old service + new frontend doesn't misleadingly show `Today: 0`).
+- Top stat cards (Success / Failed / Stall) display an inline rate alongside the count: `120 (78%)`. Rates are computed against today's finished total (= success + failed + stall) so the three rates always sum to ~100%.
+- Both react to the GMT+7/+8 toggle (refresh stats + re-render arm cards).
+
+#### C. New `/reports` page
+
+Five sections, all driven by a single read-only endpoint `/api/monitor/reports/summary`:
+
+| Section | Purpose | Visual |
+|---|---|---|
+| Per-Arm Performance | "Which machine is underperforming?" | Stacked bar (success/failed/stall) + table (rate, avg duration) |
+| Per-Bank Performance | "Which bank flow is least stable?" | Stacked bar + table |
+| Top Failing Steps | "What exact step is causing fails?" | Table with sample error message |
+| Stall Reasons | "Are stalls mostly OCR / screen / hardware?" | Donut chart + table |
+| Slowest Steps | "Which steps to optimize for throughput?" | Horizontal bar (avg ms) + table with avg/max/runs |
+
+Filters: date range (date_from / date_to in selected TZ) + arm dropdown. Quick presets: Today, Yesterday, Last 7 days (default), Last 30 days. Active preset highlighted.
+
+Chart.js v4.4.6 bundled locally (`static/js/chart.umd.min.js`, ~200KB) — works offline, follows the project's "local-first" convention (parallel to nssm.exe, tesseract-setup.exe in deploy/).
+
+### Files
+
+- New: `static/reports.html` (~430 lines), `static/js/chart.umd.min.js` (Chart.js lib)
+- `app/main.py` — `/reports` route (FileResponse, same pattern as other pages)
+- `app/routers/monitor.py` — `_resolve_display_tz` helper, `tz` param added to `/stats/today` + `/transactions`, `per_arm` field added to `/stats/today`, new `/reports/summary` endpoint (5 SELECT queries, ~180 lines)
+- `static/js/api.js` — `getDisplayTZ` / `setDisplayTZ` / `formatTZ` helpers, nav adds `Reports` link + TZ toggle button
+- `static/css/style.css` — `.nav-tz` styling
+- `static/index.html` — TZ toggle integration, arm card today rate, stat card rates, listens to `displaytz:changed`
+- `static/transactions.html` — TZ-aware date filter passing, removed local `toGMT7` in favour of shared `formatTZ`, listens to `displaytz:changed`
+
+### Compatibility
+
+- TZ default is 7 — old API callers and old frontend behave identically.
+- Old service (without `tz` param support) silently ignores the query string; the frontend still works, just stats won't recompute when toggling. Frontend has a fallback that detects this via missing `per_arm` field.
+- No DB schema change. No data migration.
+- Reports page is purely additive: doesn't affect any existing page or runtime logic.
+
+---
+
 ## CHECK_SCREEN: trigger field for symmetric "expect-present" / "expect-absent" semantics (2026-05-02)
 
 ### Problem
