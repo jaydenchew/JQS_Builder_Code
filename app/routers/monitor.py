@@ -16,9 +16,18 @@ from app.config import ARM_SERVICE_URL
 
 _start_time = time.time()
 
-# Display / business timezone. DB stores everything in UTC; user-facing date
-# filters and "today" boundaries are anchored to this offset (UTC+7, Indochina).
+# Display timezone for read-only endpoints. DB always stores UTC; this is only
+# applied when computing "today" boundaries or interpreting date_from/date_to
+# filter inputs. Default GMT+7 (Indochina) preserves historical behaviour.
+# Endpoints that touch user-facing dates accept ?tz=7|8 query param to support
+# the dashboard's TZ toggle (browser-local switch only, never writes to DB).
 DISPLAY_TZ = timezone(timedelta(hours=7))
+
+
+def _resolve_display_tz(tz: int) -> timezone:
+    """Whitelist tz to {7, 8}; anything else falls back to GMT+7. This is a
+    purely read-side concern — no business logic depends on the result."""
+    return timezone(timedelta(hours=tz if tz in (7, 8) else 7))
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -39,11 +48,13 @@ async def get_queue_status():
 
 
 @router.get("/stats/today")
-async def get_today_stats():
-    """Today's transaction statistics, where 'today' is the DISPLAY_TZ day."""
-    today_local = datetime.now(DISPLAY_TZ).date()
-    start_local = datetime.combine(today_local, datetime.min.time(), tzinfo=DISPLAY_TZ)
-    end_local = datetime.combine(today_local, datetime.max.time(), tzinfo=DISPLAY_TZ)
+async def get_today_stats(tz: int = 7):
+    """Today's transaction statistics. `tz` (7 or 8) selects the calendar day
+    boundary used to count rows; defaults to GMT+7 for backward compat."""
+    display_tz = _resolve_display_tz(tz)
+    today_local = datetime.now(display_tz).date()
+    start_local = datetime.combine(today_local, datetime.min.time(), tzinfo=display_tz)
+    end_local = datetime.combine(today_local, datetime.max.time(), tzinfo=display_tz)
     start_utc = start_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     end_utc = end_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -54,6 +65,26 @@ async def get_today_stats():
         (start_utc, end_utc),
     )
     stats = {r["status"]: r["cnt"] for r in rows}
+
+    # Per-arm breakdown for today: {arm_id: {success, total}} where total
+    # counts success + failed + stall. Used by the dashboard arm cards to
+    # show "Today: success/total". Replaces the old worker in-memory counter
+    # which was independent of date / timezone.
+    per_arm_rows = await database.fetchall(
+        "SELECT s.arm_id, t.status, COUNT(*) AS cnt FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s "
+        "AND t.status IN ('success', 'failed', 'stall') "
+        "GROUP BY s.arm_id, t.status",
+        (start_utc, end_utc),
+    )
+    per_arm = {}
+    for row in per_arm_rows:
+        bucket = per_arm.setdefault(row["arm_id"], {"success": 0, "total": 0})
+        if row["status"] == "success":
+            bucket["success"] = row["cnt"]
+        bucket["total"] += row["cnt"]
+
     return {
         "success": stats.get("success", 0),
         "failed": stats.get("failed", 0),
@@ -61,6 +92,193 @@ async def get_today_stats():
         "queued": stats.get("queued", 0),
         "running": stats.get("running", 0),
         "total": sum(stats.values()),
+        "per_arm": per_arm,
+    }
+
+
+@router.get("/reports/summary")
+async def reports_summary(date_from: str, date_to: str,
+                          tz: int = 7, arm_id: int = None):
+    """Aggregate report for a date range, in the requested display timezone.
+
+    Returns 5 sections:
+        summary             — overall {success, failed, stall, total, success_rate}
+        per_arm             — list of {arm_id, arm_name, success, failed, stall, total, success_rate, avg_duration_s}
+        per_bank            — list of {bank_code, success, failed, stall, total, success_rate}
+        top_failing_steps   — list of {step_name, action_type, fail_count, sample_message}
+        stall_reasons       — list of {reason, count} (top error_message values)
+        slowest_steps       — list of {step_name, action_type, avg_ms, max_ms, count}
+
+    All read-only; no business logic affected.
+    """
+    display_tz = _resolve_display_tz(tz)
+    try:
+        start_utc = (
+            datetime.strptime(date_from, "%Y-%m-%d")
+            .replace(hour=0, minute=0, second=0, tzinfo=display_tz)
+            .astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+        end_utc = (
+            datetime.strptime(date_to, "%Y-%m-%d")
+            .replace(hour=23, minute=59, second=59, tzinfo=display_tz)
+            .astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+    except ValueError:
+        return {"error": "date_from / date_to must be YYYY-MM-DD"}
+
+    # Optional arm filter applied to all sections that have a station_id link.
+    arm_clause = ""
+    arm_params = ()
+    if arm_id:
+        arm_clause = " AND s.arm_id = %s"
+        arm_params = (int(arm_id),)
+
+    # --- 1. Overall summary -------------------------------------------------
+    overall_rows = await database.fetchall(
+        "SELECT t.status, COUNT(*) as cnt FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "GROUP BY t.status",
+        (start_utc, end_utc) + arm_params,
+    )
+    by_status = {r["status"]: r["cnt"] for r in overall_rows}
+    overall_success = by_status.get("success", 0)
+    overall_failed = by_status.get("failed", 0)
+    overall_stall = by_status.get("stall", 0)
+    overall_finished = overall_success + overall_failed + overall_stall
+    summary = {
+        "success": overall_success,
+        "failed": overall_failed,
+        "stall": overall_stall,
+        "queued": by_status.get("queued", 0),
+        "running": by_status.get("running", 0),
+        "total": sum(by_status.values()),
+        "finished": overall_finished,
+        "success_rate": (round(overall_success / overall_finished * 100, 1)
+                         if overall_finished > 0 else 0.0),
+    }
+
+    # --- 2. Per-arm ---------------------------------------------------------
+    arm_status_rows = await database.fetchall(
+        "SELECT a.id AS arm_id, a.name AS arm_name, t.status, COUNT(*) AS cnt "
+        "FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "JOIN arms a ON s.arm_id = a.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.status IN ('success', 'failed', 'stall') "
+        "GROUP BY a.id, a.name, t.status",
+        (start_utc, end_utc) + arm_params,
+    )
+    arm_dur_rows = await database.fetchall(
+        "SELECT a.id AS arm_id, "
+        "AVG(TIMESTAMPDIFF(SECOND, t.started_at, t.finished_at)) AS avg_dur_s "
+        "FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "JOIN arms a ON s.arm_id = a.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.started_at IS NOT NULL AND t.finished_at IS NOT NULL "
+        "AND t.status IN ('success', 'failed', 'stall') "
+        "GROUP BY a.id",
+        (start_utc, end_utc) + arm_params,
+    )
+    arm_dur = {r["arm_id"]: float(r["avg_dur_s"] or 0) for r in arm_dur_rows}
+    per_arm_map = {}
+    for r in arm_status_rows:
+        bucket = per_arm_map.setdefault(r["arm_id"], {
+            "arm_id": r["arm_id"], "arm_name": r["arm_name"],
+            "success": 0, "failed": 0, "stall": 0, "total": 0,
+        })
+        bucket[r["status"]] = r["cnt"]
+        bucket["total"] += r["cnt"]
+    per_arm = []
+    for b in per_arm_map.values():
+        b["success_rate"] = (round(b["success"] / b["total"] * 100, 1)
+                             if b["total"] > 0 else 0.0)
+        b["avg_duration_s"] = round(arm_dur.get(b["arm_id"], 0), 1)
+        per_arm.append(b)
+    per_arm.sort(key=lambda x: -x["total"])
+
+    # --- 3. Per-bank --------------------------------------------------------
+    bank_status_rows = await database.fetchall(
+        "SELECT t.pay_from_bank_code AS bank_code, t.status, COUNT(*) AS cnt "
+        "FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.status IN ('success', 'failed', 'stall') "
+        "GROUP BY t.pay_from_bank_code, t.status",
+        (start_utc, end_utc) + arm_params,
+    )
+    per_bank_map = {}
+    for r in bank_status_rows:
+        bucket = per_bank_map.setdefault(r["bank_code"], {
+            "bank_code": r["bank_code"],
+            "success": 0, "failed": 0, "stall": 0, "total": 0,
+        })
+        bucket[r["status"]] = r["cnt"]
+        bucket["total"] += r["cnt"]
+    per_bank = []
+    for b in per_bank_map.values():
+        b["success_rate"] = (round(b["success"] / b["total"] * 100, 1)
+                             if b["total"] > 0 else 0.0)
+        per_bank.append(b)
+    per_bank.sort(key=lambda x: -x["total"])
+
+    # --- 4. Top failing steps (from transaction_logs) -----------------------
+    # Filter logs by joining back to transactions for arm filter + date range.
+    failing_rows = await database.fetchall(
+        "SELECT l.step_name, l.action_type, COUNT(*) AS fail_count, "
+        "MAX(LEFT(l.message, 200)) AS sample_message "
+        "FROM transaction_logs l "
+        "JOIN transactions t ON l.transaction_id = t.id "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE l.result = 'fail' "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "GROUP BY l.step_name, l.action_type "
+        "ORDER BY fail_count DESC LIMIT 10",
+        (start_utc, end_utc) + arm_params,
+    )
+    top_failing_steps = [dict(r) for r in failing_rows]
+
+    # --- 5. Stall reasons (truncated error_message buckets) -----------------
+    stall_rows = await database.fetchall(
+        "SELECT LEFT(t.error_message, 80) AS reason, COUNT(*) AS cnt "
+        "FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE t.status = 'stall' AND t.error_message IS NOT NULL "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "GROUP BY reason ORDER BY cnt DESC LIMIT 10",
+        (start_utc, end_utc) + arm_params,
+    )
+    stall_reasons = [{"reason": r["reason"], "count": r["cnt"]} for r in stall_rows]
+
+    # --- 6. Slowest steps (avg duration_ms across all logs) -----------------
+    slow_rows = await database.fetchall(
+        "SELECT l.step_name, l.action_type, "
+        "ROUND(AVG(l.duration_ms)) AS avg_ms, MAX(l.duration_ms) AS max_ms, "
+        "COUNT(*) AS cnt "
+        "FROM transaction_logs l "
+        "JOIN transactions t ON l.transaction_id = t.id "
+        "JOIN stations s ON t.station_id = s.id "
+        "WHERE l.duration_ms IS NOT NULL AND l.duration_ms > 0 "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "GROUP BY l.step_name, l.action_type "
+        "HAVING cnt >= 5 "
+        "ORDER BY avg_ms DESC LIMIT 10",
+        (start_utc, end_utc) + arm_params,
+    )
+    slowest_steps = [dict(r) for r in slow_rows]
+
+    return {
+        "summary": summary,
+        "per_arm": per_arm,
+        "per_bank": per_bank,
+        "top_failing_steps": top_failing_steps,
+        "stall_reasons": stall_reasons,
+        "slowest_steps": slowest_steps,
+        "filter": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "tz": tz,
+            "arm_id": arm_id,
+        },
     }
 
 
@@ -260,8 +478,12 @@ async def swap_camera(data: dict):
 async def list_transactions(status: str = None, bank: str = None, to_bank: str = None,
                             arm_id: int = None,
                             date_from: str = None, date_to: str = None,
-                            limit: int = 50, offset: int = 0):
-    """List transactions with optional filters: status, bank, to_bank, arm_id, date range."""
+                            limit: int = 50, offset: int = 0,
+                            tz: int = 7):
+    """List transactions with optional filters: status, bank, to_bank, arm_id,
+    date range. `tz` (7 or 8) controls how date_from/date_to are interpreted
+    as calendar-day boundaries; defaults to GMT+7."""
+    display_tz = _resolve_display_tz(tz)
     where = []
     params = []
     if status:
@@ -277,20 +499,20 @@ async def list_transactions(status: str = None, bank: str = None, to_bank: str =
         where.append("s.arm_id = %s")
         params.append(arm_id)
     if date_from:
-        # date_from is the DISPLAY_TZ calendar date; convert its 00:00 boundary to UTC.
+        # date_from is the display_tz calendar date; convert 00:00 boundary to UTC.
         dt_utc = (
             datetime.strptime(date_from, "%Y-%m-%d")
-            .replace(hour=0, minute=0, second=0, tzinfo=DISPLAY_TZ)
+            .replace(hour=0, minute=0, second=0, tzinfo=display_tz)
             .astimezone(timezone.utc)
             .strftime("%Y-%m-%d %H:%M:%S")
         )
         where.append("t.created_at >= %s")
         params.append(dt_utc)
     if date_to:
-        # date_to inclusive end-of-day in DISPLAY_TZ, converted to UTC.
+        # date_to inclusive end-of-day in display_tz, converted to UTC.
         dt_utc = (
             datetime.strptime(date_to, "%Y-%m-%d")
-            .replace(hour=23, minute=59, second=59, tzinfo=DISPLAY_TZ)
+            .replace(hour=23, minute=59, second=59, tzinfo=display_tz)
             .astimezone(timezone.utc)
             .strftime("%Y-%m-%d %H:%M:%S")
         )

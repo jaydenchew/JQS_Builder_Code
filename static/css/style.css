@@ -59,6 +59,21 @@ nav .nav-svc {
     white-space: nowrap;
 }
 nav .nav-svc:hover { color: var(--text); }
+nav .nav-tz {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    margin-right: 8px;
+    border-radius: var(--radius);
+    background: var(--bg3);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    user-select: none;
+    white-space: nowrap;
+}
+nav .nav-tz:hover { color: var(--text); }
 nav .nav-svc-dot {
     display: inline-block;
     width: 8px;

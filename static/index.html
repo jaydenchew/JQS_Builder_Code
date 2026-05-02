@@ -91,6 +91,13 @@
         .card-stat .num.stat-num-stall { color: #ff9800; }
         .card-stat .num.stat-num-queue { color: var(--warning); }
         .arm-extra { font-size: 11px; color: var(--text2); margin-top: 4px; }
+        .arm-extra .arm-rate { color: #93a7ff; font-weight: 500; }
+        .card-stat .num .stat-rate {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text2);
+            margin-left: 4px;
+        }
         .arm-error { font-size: 11px; color: var(--danger); margin-top: 4px; }
         .cam-loading { text-align: center; color: var(--text2); padding: 24px 4px; }
         .arm-grid .card.arm-card {
@@ -201,24 +208,42 @@
     <script>
     let ws = null;
 
+    // Per-arm finished-task count for today, in selected TZ. Backed by the
+    // /stats/today endpoint's `per_arm` field (added in the TZ toggle change).
+    // null = backend hasn't been restarted yet → fall back to the worker
+    // counter (a.task_count) so we don't misleadingly show "Today: 0".
+    let lastPerArm = null;
+
     async function loadStats() {
         let s;
-        try { s = await API.get('/api/monitor/stats/today'); }
+        try { s = await API.get('/api/monitor/stats/today?tz=' + getDisplayTZ()); }
         catch (e) { return; }
         if (!s || s.error) return;
+        // Rates are computed against today's finished total (success+failed+stall)
+        // so the three rates always sum to 100%. Queued/running are excluded.
+        const finished = (s.success || 0) + (s.failed || 0) + (s.stall || 0);
+        const pct = (n) => finished > 0 ? Math.round((n || 0) / finished * 100) : 0;
         document.getElementById('stats').innerHTML = `
             <div class="card card-stat stat-total"><div class="num">${s.total || 0}</div><div class="label">Today Total</div></div>
-            <div class="card card-stat stat-success"><div class="num stat-num-success">${s.success || 0}</div><div class="label">Success</div></div>
-            <div class="card card-stat stat-failed"><div class="num stat-num-failed">${s.failed || 0}</div><div class="label">Failed</div></div>
-            <div class="card card-stat stat-stall"><div class="num stat-num-stall">${s.stall || 0}</div><div class="label">Stall</div></div>
+            <div class="card card-stat stat-success"><div class="num stat-num-success">${s.success || 0} <span class="stat-rate">${pct(s.success)}%</span></div><div class="label">Success</div></div>
+            <div class="card card-stat stat-failed"><div class="num stat-num-failed">${s.failed || 0} <span class="stat-rate">${pct(s.failed)}%</span></div><div class="label">Failed</div></div>
+            <div class="card card-stat stat-stall"><div class="num stat-num-stall">${s.stall || 0} <span class="stat-rate">${pct(s.stall)}%</span></div><div class="label">Stall</div></div>
             <div class="card card-stat stat-queue"><div class="num stat-num-queue">${s.queued || 0}</div><div class="label">In Queue</div></div>
         `;
+        lastPerArm = s.per_arm || null;
+        // Snappier feedback after TZ toggle: re-render cards immediately with
+        // the freshly fetched per-arm counts (rather than waiting up to 2s
+        // for the next WS push to trigger a render).
+        if (lastArms.length > 0) renderArmCards(lastArms, null);
     }
 
     async function load() {
         await loadStats();
         setInterval(loadStats, 5000);
         connectWS();
+        // When user toggles GMT+7/+8 in nav, refresh today's stats so the
+        // count reflects the new calendar day boundary.
+        window.addEventListener('displaytz:changed', loadStats);
     }
 
     function connectWS() {
@@ -290,7 +315,12 @@
                     ${a.current_task ? 'Task: ' + a.current_task : 'No active task'}
                     ${a.current_step ? '<br>Step: ' + a.current_step : ''}
                 </div>
-                <div class="arm-extra">Completed: ${a.task_count}</div>
+                <div class="arm-extra">${(() => {
+                    if (lastPerArm === null) return `Completed: ${a.task_count}`;
+                    const b = lastPerArm[a.arm_id] || {success: 0, total: 0};
+                    const rate = b.total > 0 ? Math.round(b.success / b.total * 100) : 0;
+                    return `Today: ${b.success}/${b.total} <span class="arm-rate">(${rate}%)</span>`;
+                })()}</div>
                 ${a.last_error ? '<div class="arm-error">' + a.last_error.substring(0,80) + '</div>' : ''}
                 <div class="arm-controls">${btns}</div>
             </div>`;

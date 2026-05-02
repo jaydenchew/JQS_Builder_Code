@@ -199,13 +199,6 @@
             (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
-    function toGMT7(utcStr) {
-        if (!utcStr) return '-';
-        const d = new Date(utcStr + (utcStr.includes('Z') || utcStr.includes('+') ? '' : 'Z'));
-        const gmt7 = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-        return gmt7.toISOString().replace('T', ' ').substring(0, 19);
-    }
-
     function clearFilters() {
         document.getElementById('filter-status').value = '';
         document.getElementById('filter-bank').value = '';
@@ -226,6 +219,7 @@
         const dateTo = document.getElementById('filter-date-to').value;
         const pageSize = document.getElementById('filter-pagesize').value;
         const params = pageSize ? ['limit=' + pageSize] : ['limit=0'];
+        params.push('tz=' + getDisplayTZ());
         if (status) params.push('status=' + status);
         if (bank) params.push('bank=' + bank);
         if (toBank) params.push('to_bank=' + toBank);
@@ -249,7 +243,7 @@
                 <td>${tx.pay_to_bank_code || '-'}</td>
                 <td>$${tx.amount}</td>
                 <td><span class="status-${tx.status}">${tx.status}</span></td>
-                <td>${toGMT7(tx.created_at)}</td>
+                <td>${formatTZ(tx.created_at)}</td>
                 <td>${dur}</td>
             </tr>`;
         }).join('') || '<tr><td colspan="8" class="empty-tip">No transactions</td></tr>';
@@ -268,9 +262,9 @@
                 <div><label>Amount</label><div>$${tx.amount}</div></div>
                 <div><label>Status</label><div class="status-${tx.status}">${tx.status}</div></div>
                 <div><label>To Account</label><div>${tx.pay_to_account_no}</div></div>
-                <div><label>Created</label><div>${toGMT7(tx.created_at)}</div></div>
-                <div><label>Started</label><div>${toGMT7(tx.started_at)}</div></div>
-                <div><label>Finished</label><div>${toGMT7(tx.finished_at)}</div></div>
+                <div><label>Created</label><div>${formatTZ(tx.created_at)}</div></div>
+                <div><label>Started</label><div>${formatTZ(tx.started_at)}</div></div>
+                <div><label>Finished</label><div>${formatTZ(tx.finished_at)}</div></div>
                 <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
             </div>
             ${tx.error_message ? '<div class="detail-error">Error: ' + tx.error_message + '</div>' : ''}
@@ -324,6 +318,13 @@
         } else if (document.getElementById('detail-modal').classList.contains('active')) {
             closeDetail();
         }
+    });
+
+    // When user toggles GMT+7/+8 in nav, re-fetch + re-render so the visible
+    // timestamps switch immediately. Cheaper than a full page reload because
+    // it preserves filter state and scroll position.
+    window.addEventListener('displaytz:changed', () => {
+        loadTransactions();
     });
 
     loadFilters();

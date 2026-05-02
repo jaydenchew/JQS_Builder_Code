@@ -115,6 +115,11 @@ async def transactions_page():
     return FileResponse("static/transactions.html")
 
 
+@app.get("/reports")
+async def reports_page():
+    return FileResponse("static/reports.html")
+
+
 @app.get("/settings")
 async def settings_page():
     return FileResponse("static/settings.html")

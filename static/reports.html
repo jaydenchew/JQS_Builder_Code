@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports — WA System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        html, body { min-height: 100%; }
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
+                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
+                #0a1020;
+            color: #e8ecff;
+            overflow-x: hidden;
+        }
+        .app-shell { width: 111.1112%; transform: scale(0.9); transform-origin: top left; }
+        .container { max-width: 1520px; padding-top: 20px; }
+        .page-head { margin-bottom: 14px; }
+        .page-kicker {
+            margin: 0 0 6px;
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #93a7ff;
+        }
+        .page-title { margin: 0; font-size: 27px; color: #e6ecff; }
+        .page-subtitle { margin: 6px 0 0; color: #acb6de; font-size: 13px; }
+        .filters {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+        }
+        .filters select, .filters input { width: auto; min-width: 120px; }
+        .filters label { font-size: 11px; color: #9fb0e7; }
+        .filters .btn { border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .summary-card {
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
+        }
+        .summary-card .label { font-size: 11px; color: #9fb0e7; text-transform: uppercase; letter-spacing: 0.06em; }
+        .summary-card .num { font-size: 28px; font-weight: 700; margin-top: 4px; color: #e6ecff; }
+        .summary-card .num .stat-rate { font-size: 14px; font-weight: 500; color: var(--text2); margin-left: 4px; }
+        .num.stat-num-success { color: var(--success); }
+        .num.stat-num-failed { color: var(--danger); }
+        .num.stat-num-stall { color: #ff9800; }
+        .section {
+            margin-bottom: 22px;
+            padding: 16px 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(109, 127, 206, 0.3);
+            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+        }
+        .section-title { font-size: 16px; margin: 0 0 12px; color: #d3dbff; font-weight: 600; }
+        .section-subtitle { font-size: 11px; color: #9fb0e7; margin-bottom: 10px; margin-top: -8px; }
+        .section-body { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; align-items: start; }
+        .section-body.single { grid-template-columns: 1fr; }
+        .section-body.stacked { grid-template-columns: 1fr; gap: 12px; }
+        .section-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 22px;
+        }
+        .section-pair .section { margin-bottom: 0; }
+        .chart-wrap { position: relative; min-height: 260px; }
+        .chart-wrap canvas { max-height: 320px; }
+        .chart-wrap.compact { min-height: 200px; }
+        .chart-wrap.compact canvas { max-height: 220px; }
+        .filters .range-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .report-table th {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(96, 117, 191, 0.4);
+            color: #b8c5f1;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .report-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(96, 117, 191, 0.18);
+        }
+        .report-table tr:last-child td { border-bottom: none; }
+        .rate-good { color: var(--success); font-weight: 600; }
+        .rate-mid  { color: var(--warning); font-weight: 600; }
+        .rate-bad  { color: var(--danger);  font-weight: 600; }
+        .empty-tip { color: var(--text2); padding: 18px; text-align: center; font-size: 13px; }
+        .sample-msg {
+            font-size: 11px;
+            color: var(--text2);
+            font-family: monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 380px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+    <div id="nav"></div>
+    <div class="container">
+        <div class="page-head">
+            <p class="page-kicker">Operations Console</p>
+            <h2 class="page-title">Reports</h2>
+            <p class="page-subtitle">Aggregate statistics and bottleneck analysis. Date range filter respects the GMT+7/+8 toggle in the nav.</p>
+        </div>
+
+        <div class="filters">
+            <label>From <input type="date" id="filter-date-from"></label>
+            <label>To <input type="date" id="filter-date-to"></label>
+            <label>Arm <select id="filter-arm"><option value="">All Arms</option></select></label>
+            <button class="btn btn-primary" onclick="loadReport()">Refresh</button>
+            <button class="btn btn-secondary range-btn" onclick="setSingleDay(0, this)">Today</button>
+            <button class="btn btn-secondary range-btn" onclick="setSingleDay(1, this)">Yesterday</button>
+            <button class="btn btn-secondary range-btn" onclick="setRange(7, this)">Last 7 days</button>
+            <button class="btn btn-secondary range-btn" onclick="setRange(30, this)">Last 30 days</button>
+            <span id="range-info" style="margin-left:auto;color:#9fb0e7;font-size:12px;"></span>
+        </div>
+
+        <div class="summary-grid" id="summary-grid"></div>
+
+        <div class="section-pair">
+            <div class="section">
+                <h3 class="section-title">Per-Arm Performance</h3>
+                <p class="section-subtitle">Success rate and avg duration per arm.</p>
+                <div class="section-body stacked">
+                    <div class="chart-wrap compact"><canvas id="chart-per-arm"></canvas></div>
+                    <div id="table-per-arm"></div>
+                </div>
+            </div>
+            <div class="section">
+                <h3 class="section-title">Per-Bank Performance</h3>
+                <p class="section-subtitle">Which bank flow is least stable.</p>
+                <div class="section-body stacked">
+                    <div class="chart-wrap compact"><canvas id="chart-per-bank"></canvas></div>
+                    <div id="table-per-bank"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3 class="section-title">Top Failing Steps</h3>
+            <p class="section-subtitle">From <code>transaction_logs</code> where result='fail'. Shows the exact step + sample error message — pinpoints what to fix.</p>
+            <div class="section-body single"><div id="table-failing"></div></div>
+        </div>
+
+        <div class="section">
+            <h3 class="section-title">Stall Reasons</h3>
+            <p class="section-subtitle">Distribution of <code>error_message</code> values for stalled transactions (truncated to 80 chars). Reveals whether stalls are mostly OCR / screen / hardware.</p>
+            <div class="section-body">
+                <div class="chart-wrap"><canvas id="chart-stall"></canvas></div>
+                <div id="table-stall"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3 class="section-title">Slowest Steps</h3>
+            <p class="section-subtitle">Top 10 steps by avg duration_ms (≥5 occurrences). Bottleneck candidates for optimization.</p>
+            <div class="section-body">
+                <div class="chart-wrap"><canvas id="chart-slow"></canvas></div>
+                <div id="table-slow"></div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/chart.umd.min.js"></script>
+    <script>
+    // Chart.js global theme to match the dark dashboard.
+    Chart.defaults.color = '#acb6de';
+    Chart.defaults.borderColor = 'rgba(109, 127, 206, 0.2)';
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+    const charts = {};
+
+    function rateClass(rate) {
+        if (rate >= 90) return 'rate-good';
+        if (rate >= 75) return 'rate-mid';
+        return 'rate-bad';
+    }
+
+    function fmtDuration(ms) {
+        if (!ms) return '-';
+        if (ms < 1000) return ms + 'ms';
+        return (ms / 1000).toFixed(1) + 's';
+    }
+
+    function destroyChart(key) {
+        if (charts[key]) { charts[key].destroy(); charts[key] = null; }
+    }
+
+    function setActiveRangeBtn(btn) {
+        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+    }
+
+    // setRange(N) sets [today - N days, today]. Used for "Last 7 / 30 days".
+    function setRange(days, btn) {
+        const end = new Date();
+        const start = new Date(end.getTime() - days * 86400000);
+        document.getElementById('filter-date-from').value = start.toISOString().substring(0, 10);
+        document.getElementById('filter-date-to').value = end.toISOString().substring(0, 10);
+        setActiveRangeBtn(btn);
+        loadReport();
+    }
+
+    // setSingleDay(daysAgo) sets both start and end to the same day, computed
+    // in the user's selected display TZ. daysAgo=0 -> today, 1 -> yesterday.
+    function setSingleDay(daysAgo, btn) {
+        const offsetMs = getDisplayTZ() * 60 * 60 * 1000;
+        const nowInTz = new Date(Date.now() + offsetMs);
+        const targetInTz = new Date(nowInTz.getTime() - daysAgo * 86400000);
+        const dateStr = targetInTz.toISOString().substring(0, 10);
+        document.getElementById('filter-date-from').value = dateStr;
+        document.getElementById('filter-date-to').value = dateStr;
+        setActiveRangeBtn(btn);
+        loadReport();
+    }
+
+    async function loadArms() {
+        const arms = await API.get('/api/stations/arms');
+        document.getElementById('filter-arm').innerHTML = '<option value="">All Arms</option>' +
+            (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
+    async function loadReport() {
+        const dateFrom = document.getElementById('filter-date-from').value;
+        const dateTo = document.getElementById('filter-date-to').value;
+        const armId = document.getElementById('filter-arm').value;
+        if (!dateFrom || !dateTo) { return; }
+        const params = ['date_from=' + dateFrom, 'date_to=' + dateTo, 'tz=' + getDisplayTZ()];
+        if (armId) params.push('arm_id=' + armId);
+        const url = '/api/monitor/reports/summary?' + params.join('&');
+        document.getElementById('range-info').textContent = `Loading…`;
+        const r = await API.get(url);
+        if (r.error) {
+            document.getElementById('range-info').textContent = 'Error: ' + r.error;
+            return;
+        }
+        document.getElementById('range-info').textContent =
+            `${dateFrom} → ${dateTo} (GMT+${getDisplayTZ()})`;
+        renderSummary(r.summary);
+        renderPerArm(r.per_arm);
+        renderPerBank(r.per_bank);
+        renderFailingSteps(r.top_failing_steps);
+        renderStallReasons(r.stall_reasons);
+        renderSlowestSteps(r.slowest_steps);
+    }
+
+    function renderSummary(s) {
+        if (!s) return;
+        const finished = s.finished || 0;
+        const pct = (n) => finished > 0 ? Math.round(n / finished * 100) : 0;
+        document.getElementById('summary-grid').innerHTML = `
+            <div class="summary-card">
+                <div class="label">Total Transactions</div>
+                <div class="num">${s.total || 0}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Success</div>
+                <div class="num stat-num-success">${s.success || 0} <span class="stat-rate">${pct(s.success || 0)}%</span></div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Failed</div>
+                <div class="num stat-num-failed">${s.failed || 0} <span class="stat-rate">${pct(s.failed || 0)}%</span></div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Stall</div>
+                <div class="num stat-num-stall">${s.stall || 0} <span class="stat-rate">${pct(s.stall || 0)}%</span></div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Success Rate</div>
+                <div class="num ${rateClass(s.success_rate || 0)}">${s.success_rate || 0}%</div>
+            </div>
+        `;
+    }
+
+    function renderPerArm(rows) {
+        const t = document.getElementById('table-per-arm');
+        if (!rows || rows.length === 0) {
+            t.innerHTML = '<div class="empty-tip">No data in selected range</div>';
+            destroyChart('perArm');
+            return;
+        }
+        t.innerHTML = `<table class="report-table"><thead><tr>
+            <th>Arm</th><th>Total</th><th>Success</th><th>Failed</th><th>Stall</th><th>Rate</th><th>Avg Dur</th>
+        </tr></thead><tbody>${rows.map(r => `
+            <tr>
+                <td>${r.arm_name}</td>
+                <td>${r.total}</td>
+                <td>${r.success}</td>
+                <td>${r.failed}</td>
+                <td>${r.stall}</td>
+                <td class="${rateClass(r.success_rate)}">${r.success_rate}%</td>
+                <td>${r.avg_duration_s ? r.avg_duration_s.toFixed(1) + 's' : '-'}</td>
+            </tr>`).join('')}</tbody></table>`;
+
+        destroyChart('perArm');
+        const ctx = document.getElementById('chart-per-arm').getContext('2d');
+        charts.perArm = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => r.arm_name),
+                datasets: [
+                    { label: 'Success', data: rows.map(r => r.success), backgroundColor: 'rgba(76, 175, 80, 0.85)' },
+                    { label: 'Failed',  data: rows.map(r => r.failed),  backgroundColor: 'rgba(244, 67, 54, 0.85)' },
+                    { label: 'Stall',   data: rows.map(r => r.stall),   backgroundColor: 'rgba(255, 152, 0, 0.85)' },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                plugins: { legend: { position: 'bottom' } },
+            },
+        });
+    }
+
+    function renderPerBank(rows) {
+        const t = document.getElementById('table-per-bank');
+        if (!rows || rows.length === 0) {
+            t.innerHTML = '<div class="empty-tip">No data in selected range</div>';
+            destroyChart('perBank');
+            return;
+        }
+        t.innerHTML = `<table class="report-table"><thead><tr>
+            <th>Bank</th><th>Total</th><th>Success</th><th>Failed</th><th>Stall</th><th>Rate</th>
+        </tr></thead><tbody>${rows.map(r => `
+            <tr>
+                <td>${r.bank_code}</td>
+                <td>${r.total}</td>
+                <td>${r.success}</td>
+                <td>${r.failed}</td>
+                <td>${r.stall}</td>
+                <td class="${rateClass(r.success_rate)}">${r.success_rate}%</td>
+            </tr>`).join('')}</tbody></table>`;
+
+        destroyChart('perBank');
+        const ctx = document.getElementById('chart-per-bank').getContext('2d');
+        charts.perBank = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => r.bank_code),
+                datasets: [
+                    { label: 'Success', data: rows.map(r => r.success), backgroundColor: 'rgba(76, 175, 80, 0.85)' },
+                    { label: 'Failed',  data: rows.map(r => r.failed),  backgroundColor: 'rgba(244, 67, 54, 0.85)' },
+                    { label: 'Stall',   data: rows.map(r => r.stall),   backgroundColor: 'rgba(255, 152, 0, 0.85)' },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                plugins: { legend: { position: 'bottom' } },
+            },
+        });
+    }
+
+    function renderFailingSteps(rows) {
+        const t = document.getElementById('table-failing');
+        if (!rows || rows.length === 0) {
+            t.innerHTML = '<div class="empty-tip">No failing steps in selected range — system is clean!</div>';
+            return;
+        }
+        t.innerHTML = `<table class="report-table"><thead><tr>
+            <th>Step Name</th><th>Action</th><th>Fail Count</th><th>Sample Message</th>
+        </tr></thead><tbody>${rows.map(r => `
+            <tr>
+                <td><strong>${r.step_name}</strong></td>
+                <td>${r.action_type}</td>
+                <td class="rate-bad">${r.fail_count}</td>
+                <td><div class="sample-msg" title="${(r.sample_message || '').replace(/"/g, '&quot;')}">${r.sample_message || '-'}</div></td>
+            </tr>`).join('')}</tbody></table>`;
+    }
+
+    function renderStallReasons(rows) {
+        const t = document.getElementById('table-stall');
+        if (!rows || rows.length === 0) {
+            t.innerHTML = '<div class="empty-tip">No stalls in selected range</div>';
+            destroyChart('stall');
+            return;
+        }
+        t.innerHTML = `<table class="report-table"><thead><tr>
+            <th>Reason</th><th>Count</th>
+        </tr></thead><tbody>${rows.map(r => `
+            <tr>
+                <td><div class="sample-msg" title="${(r.reason || '').replace(/"/g, '&quot;')}">${r.reason || '(empty)'}</div></td>
+                <td>${r.count}</td>
+            </tr>`).join('')}</tbody></table>`;
+
+        destroyChart('stall');
+        const palette = ['#f44336', '#ff9800', '#ffc107', '#9c6dff', '#2196f3', '#00bcd4', '#4caf50', '#e91e63', '#3f51b5', '#795548'];
+        const ctx = document.getElementById('chart-stall').getContext('2d');
+        charts.stall = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: rows.map(r => (r.reason || '(empty)').substring(0, 40)),
+                datasets: [{ data: rows.map(r => r.count), backgroundColor: palette }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+            },
+        });
+    }
+
+    function renderSlowestSteps(rows) {
+        const t = document.getElementById('table-slow');
+        if (!rows || rows.length === 0) {
+            t.innerHTML = '<div class="empty-tip">No timing data in selected range</div>';
+            destroyChart('slow');
+            return;
+        }
+        t.innerHTML = `<table class="report-table"><thead><tr>
+            <th>Step Name</th><th>Action</th><th>Avg</th><th>Max</th><th title="Number of times this step ran in the selected range">Runs</th>
+        </tr></thead><tbody>${rows.map(r => `
+            <tr>
+                <td><strong>${r.step_name}</strong></td>
+                <td>${r.action_type}</td>
+                <td>${fmtDuration(r.avg_ms)}</td>
+                <td>${fmtDuration(r.max_ms)}</td>
+                <td>${r.cnt}</td>
+            </tr>`).join('')}</tbody></table>`;
+
+        destroyChart('slow');
+        const ctx = document.getElementById('chart-slow').getContext('2d');
+        charts.slow = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => r.step_name.substring(0, 22)),
+                datasets: [{
+                    label: 'Avg ms',
+                    data: rows.map(r => r.avg_ms),
+                    backgroundColor: 'rgba(33, 150, 243, 0.7)',
+                }],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { x: { beginAtZero: true } },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    // Re-fetch + re-render whenever the user toggles GMT+7/+8 in the nav.
+    window.addEventListener('displaytz:changed', loadReport);
+
+    // Default: Last 7 days; mark its button as active.
+    const initBtn = document.querySelector('.range-btn[onclick*="setRange(7"]');
+    setRange(7, initBtn);
+    loadArms();
+    </script>
+</body>
+</html>

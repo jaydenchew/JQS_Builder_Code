@@ -42,14 +42,47 @@ function toast(msg, type = 'success') {
     setTimeout(() => el.remove(), 3000);
 }
 
+/* ============================================================
+   Display timezone (GMT+7 / GMT+8 toggle, browser-local only)
+   ============================================================ */
+
+// Source of truth: localStorage key 'display_tz_offset' (number 7 or 8).
+// Defaults to 7 to preserve historical behaviour.
+function getDisplayTZ() {
+    const v = parseInt(localStorage.getItem('display_tz_offset'));
+    return (v === 7 || v === 8) ? v : 7;
+}
+
+function setDisplayTZ(offset) {
+    if (offset !== 7 && offset !== 8) return;
+    localStorage.setItem('display_tz_offset', String(offset));
+    // Pages that show timestamps listen to this event and re-render.
+    window.dispatchEvent(new CustomEvent('displaytz:changed', { detail: { offset } }));
+    // Also update the toggle label without waiting for a full page reload.
+    const lbl = document.getElementById('nav-tz-label');
+    if (lbl) lbl.textContent = `GMT+${offset}`;
+}
+
+// Format a UTC timestamp string (datetime from DB) into "YYYY-MM-DD HH:MM:SS"
+// in the currently selected display timezone. Returns "-" for null / empty.
+function formatTZ(utcStr) {
+    if (!utcStr) return '-';
+    const offset = getDisplayTZ();
+    const d = new Date(utcStr + (utcStr.includes('Z') || utcStr.includes('+') ? '' : 'Z'));
+    const shifted = new Date(d.getTime() + offset * 60 * 60 * 1000);
+    return shifted.toISOString().replace('T', ' ').substring(0, 19);
+}
+
 function navHTML() {
     const path = window.location.pathname;
     const links = [
         ['/', 'Dashboard'],
         ['/recorder', 'Flow Builder'],
         ['/transactions', 'Transactions'],
+        ['/reports', 'Reports'],
         ['/settings', 'Settings'],
     ];
+    const tz = getDisplayTZ();
     return `
         <nav>
             <span class="logo">WA System</span>
@@ -57,6 +90,9 @@ function navHTML() {
                 `<a href="${href}" class="${path === href ? 'active' : ''}">${label}</a>`
             ).join('')}
             <span class="nav-spacer"></span>
+            <div class="nav-tz" id="nav-tz" title="Switch display timezone (browser-local only, not saved to DB)">
+                <span id="nav-tz-label">GMT+${tz}</span>
+            </div>
             <div class="nav-svc" id="nav-svc" title="Loading services…">
                 <span class="nav-svc-dot loading"></span>
                 <span class="nav-svc-text">Services</span>
@@ -64,6 +100,15 @@ function navHTML() {
             <div class="nav-svc-pop" id="nav-svc-pop"></div>
         </nav>
     `;
+}
+
+function _bindNavTzToggle() {
+    const wrap = document.getElementById('nav-tz');
+    if (!wrap) return;
+    wrap.addEventListener('click', () => {
+        const cur = getDisplayTZ();
+        setDisplayTZ(cur === 7 ? 8 : 7);
+    });
 }
 
 const SVC_LABELS = {
@@ -120,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nav) {
         nav.innerHTML = navHTML();
         _bindNavSvcToggle();
+        _bindNavTzToggle();
         loadNavServices();
         setInterval(loadNavServices, 30000);
     }
