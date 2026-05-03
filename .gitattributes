@@ -1,9 +1,14 @@
-# Auto-detect text files and normalise line endings to LF in the repo.
-# On Windows checkout, autocrlf=true turns them into CRLF for the working
-# tree; on commit they're stored back as LF. Without this file, git emits
-# "LF will be replaced by CRLF" warnings for files that drifted on a
-# previous machine, even when there's no real content change.
-* text=auto
+# Auto-detect text files; force LF line endings in BOTH the repo AND the
+# working tree (overrides core.autocrlf=true on Windows).
+#
+# Why LF everywhere instead of CRLF on Windows checkout:
+#   Cursor/VSCode default to LF on save. With core.autocrlf=true, git
+#   expects CRLF in the working tree on Windows, so every file Cursor
+#   touched showed up as "modified" (LF will be replaced by CRLF). Forcing
+#   LF in the working tree aligns git with what the editor actually writes,
+#   eliminating the noise. The Windows-specific entries below (.bat / .ps1
+#   / .cmd) explicitly request CRLF and remain unaffected.
+* text=auto eol=lf
 
 # Treat known-binary files explicitly so git never tries to normalise them.
 # Without these rules `* text=auto` relies on git's content heuristic; the
