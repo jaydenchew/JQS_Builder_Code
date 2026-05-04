@@ -1,5 +1,5 @@
 -- ============================================================
--- Flow seed for ABA (sourced from ARM-01)
+-- Flow seed for ABA (sourced from ARM-04)
 -- Exported by db/export_bank_seed.py
 --
 -- Contains: flow_templates + flow_steps for ABA,
@@ -39,20 +39,20 @@ SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
   (@tpl_1, 1, 'open_app', 'CLICK', 'open_app', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_1, 2, 'click_send', 'CLICK', 'click_send', NULL, NULL, NULL, 0, 1500, NULL),
+  (@tpl_1, 2, 'find_send_btn', 'FIND_AND_CLICK', 'find_send_btn', NULL, NULL, NULL, 0, 1500, '{"template":{"enabled":true,"name":"send_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":37,"bottom_percent":61,"left_percent":38,"right_percent":60},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
   (@tpl_1, 3, 'to_other_aba', 'CLICK', 'to_other_aba', NULL, NULL, NULL, 0, 1000, NULL),
-  (@tpl_1, 4, 'enter_password', 'TYPE', NULL, 'aba_s1_password', NULL, 'password', 0, 8000, NULL),
+  (@tpl_1, 4, 'enter_password', 'TYPE', NULL, 'aba_password', NULL, 'password', 0, 8000, NULL),
   (@tpl_1, 5, 'select_account', 'CLICK', 'select_account', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_1, 6, 'select_usd', 'CLICK', 'select_usd', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_1, 7, 'click_account_input', 'CLICK', 'click_account_input', NULL, NULL, NULL, 0, 2000, NULL),
-  (@tpl_1, 8, 'enter_account', 'TYPE', NULL, 'aba_s1_accountno', NULL, 'pay_to_account_no', 0, 500, NULL),
+  (@tpl_1, 8, 'enter_account', 'TYPE', NULL, 'aba_account_no', NULL, 'pay_to_account_no', 0, 500, NULL),
   (@tpl_1, 9, 'done_enter_account', 'CLICK', 'done_enter_account', NULL, NULL, NULL, 0, 5000, NULL),
-  (@tpl_1, 10, 'enter_amount', 'TYPE', NULL, 'aba_s1_amount', NULL, 'amount', 0, 500, NULL),
+  (@tpl_1, 10, 'enter_amount', 'TYPE', NULL, 'aba_amount', NULL, 'amount', 0, 500, NULL),
   (@tpl_1, 11, 'click_transfer', 'CLICK', 'click_transfer', NULL, NULL, NULL, 0, 5000, NULL),
-  (@tpl_1, 12, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 1000, 3000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":41,"bottom_percent":48,"left_percent":27,"right_percent":81},"amount":{"top_percent":28,"bottom_percent":36,"left_percent":32,"right_percent":74},"pay_to_account_name":{"top_percent":47,"bottom_percent":55,"left_percent":32,"right_percent":77}},"roi":{"top_percent":29,"bottom_percent":59,"left_percent":18,"right_percent":87}}'),
-  (@tpl_1, 13, 'slide_confirm', 'SWIPE', NULL, NULL, 'slide_confirm', NULL, 0, 500, NULL),
-  (@tpl_1, 14, 'check_slide_success', 'CHECK_SCREEN', 'check_slide_success', NULL, NULL, NULL, 0, 0, CONCAT('{"reference":"check_slide_success","handler_flow":"ABA_SLIDE_RETRY__', @handler_1_id, '","threshold":0.8,"max_retries":3,"roi":{"top_percent":36,"bottom_percent":86,"left_percent":17,"right_percent":83}}')),
-  (@tpl_1, 15, 'enter_password_2', 'TYPE', NULL, 'aba_s1_password', NULL, 'password', 0, 3000, NULL),
+  (@tpl_1, 12, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 1000, 3000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":40,"bottom_percent":57,"left_percent":14,"right_percent":81},"amount":{"top_percent":28,"bottom_percent":38,"left_percent":14,"right_percent":81},"pay_to_account_name":{"top_percent":47,"bottom_percent":55,"left_percent":32,"right_percent":77}},"roi":{"top_percent":28,"bottom_percent":56,"left_percent":13,"right_percent":81}}'),
+  (@tpl_1, 13, 'find_slide', 'FIND_AND_SWIPE', NULL, NULL, 'find_slide', NULL, 0, 500, '{"template":{"enabled":true,"name":"side_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":37,"bottom_percent":53,"left_percent":14,"right_percent":31},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]],"camera_anchor_mm":[105,60]}'),
+  (@tpl_1, 14, 'check_slide_success', 'CHECK_SCREEN', 'check_slide_success', NULL, NULL, NULL, 0, 0, CONCAT('{"reference":"2334","handler_flow":"ABA_SLIDE_RETRY__', @handler_1_id, '","threshold":0.8,"max_retries":3,"roi":{"top_percent":16,"bottom_percent":66,"left_percent":15,"right_percent":81}}')),
+  (@tpl_1, 15, 'enter_password_2', 'TYPE', NULL, 'aba_password', NULL, 'password', 0, 3000, NULL),
   (@tpl_1, 16, 'take_photo_receipt', 'PHOTO', 'take_photo_receipt', NULL, NULL, NULL, 5000, 500, NULL),
   (@tpl_1, 17, 'click_all_apps', 'CLICK', 'click_all_apps', NULL, NULL, NULL, 0, 200, NULL),
   (@tpl_1, 18, 'swipe_close_app', 'SWIPE', NULL, NULL, 'swipe_close_app', NULL, 0, 300, NULL),
