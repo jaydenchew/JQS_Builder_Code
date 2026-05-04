@@ -181,6 +181,47 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="resend-modal">
+        <div class="modal" style="max-width:520px;max-height:85vh;overflow-y:auto;overscroll-behavior:contain;">
+            <style>
+                /* Local override: defeat the global `input{width:100%}` rule
+                   from style.css so radio buttons / checkboxes render at their
+                   natural ~16x16 size and stay left-aligned next to the label. */
+                #resend-modal input[type="radio"],
+                #resend-modal input[type="checkbox"] {
+                    width: auto;
+                    margin: 0;
+                    flex-shrink: 0;
+                }
+                #resend-modal .resend-choice {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 0;
+                    cursor: pointer;
+                    font-size: 13px;
+                }
+                #resend-modal .resend-checkbox-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 4px 0;
+                    cursor: pointer;
+                    font-size: 13px;
+                }
+            </style>
+            <div class="detail-head">
+                <h3 style="margin-top:0;">Resend PAS Callback</h3>
+                <button class="btn btn-sm btn-secondary" onclick="closeResend()">Close</button>
+            </div>
+            <div id="resend-body"></div>
+            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="closeResend()">Cancel</button>
+                <button id="resend-submit" class="btn btn-primary" onclick="submitResend()">Resend Callback</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/api.js"></script>
     <script>
     async function loadFilters() {
@@ -255,6 +296,18 @@
             API.get(`/api/monitor/transactions/${id}/logs`)
         ]);
         document.getElementById('detail-title').textContent = `Transaction #${tx.id} — Process ${tx.process_id}`;
+
+        // Callback row: shown for every transaction. Button text + style
+        // depend on whether a callback was already sent. Disabled while the
+        // transaction is still queued/running (no callback to send yet).
+        const cbStatusHtml = tx.callback_sent_at
+            ? `<span style="color:var(--success);">Sent ${formatTZ(tx.callback_sent_at)}</span>`
+            : `<span style="color:var(--warning);">Not sent yet</span>`;
+        const isFinished = tx.status !== 'queued' && tx.status !== 'running';
+        const btnLabel = tx.callback_sent_at ? 'Resend Callback' : 'Send Callback';
+        const btnClass = tx.callback_sent_at ? 'btn-secondary' : 'btn-primary';
+        const btnAttrs = isFinished ? '' : 'disabled title="Transaction not finished"';
+
         document.getElementById('detail-info').innerHTML = `
             <div class="grid grid-4 detail-grid">
                 <div><label>From</label><div>${tx.pay_from_bank_code}</div></div>
@@ -266,6 +319,13 @@
                 <div><label>Started</label><div>${formatTZ(tx.started_at)}</div></div>
                 <div><label>Finished</label><div>${formatTZ(tx.finished_at)}</div></div>
                 <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
+                <div class="full"><label>Callback</label>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        ${cbStatusHtml}
+                        <button class="btn btn-sm ${btnClass}" ${btnAttrs}
+                                onclick="openResendDialog(${tx.id})">${btnLabel}</button>
+                    </div>
+                </div>
             </div>
             ${tx.error_message ? '<div class="detail-error">Error: ' + tx.error_message + '</div>' : ''}
         `;
@@ -302,6 +362,117 @@
         }
     }
 
+    // === PAS callback resend ============================================
+    // Manual recovery for transactions whose auto callback chain failed
+    // (3 retries with 5s/15s/30s backoff in pas_client.callback_result),
+    // OR for cases where the operator wants to flip a misclassified status
+    // based on inspecting the receipt photo.
+    let resendCtx = null;  // {tx_id, current_db_status} during dialog lifetime
+
+    async function openResendDialog(txId) {
+        // Re-fetch the tx so the dialog reflects the latest DB state (status
+        // may have changed in another tab since the detail modal opened).
+        const tx = await API.get(`/api/monitor/transactions/${txId}`);
+        if (!tx || tx.error) {
+            toast('Failed to load transaction: ' + (tx?.error || 'unknown'), 'error');
+            return;
+        }
+        resendCtx = { tx_id: txId, current_status: tx.status };
+
+        const dbToCode = { success: 1, failed: 2, review: 3, stall: 4 };
+        const currentCode = dbToCode[tx.status] || 4;
+        const hasReceipt = !!tx.receipt_base64;
+        const receiptHtml = hasReceipt
+            ? `<img src="data:image/jpeg;base64,${tx.receipt_base64}" style="max-width:100%;border-radius:8px;border:1px solid rgba(96,117,191,0.3);"/>`
+            : '<div class="empty-tip">No receipt photo on file for this transaction.</div>';
+
+        const statusOptions = [
+            [1, 'success', 'Bank confirmed transfer'],
+            [2, 'failed',  'Bank rejected'],
+            [3, 'review',  'Bank pending / in review'],
+            [4, 'stall',   'Automation broke before / during transfer'],
+        ];
+
+        document.getElementById('resend-body').innerHTML = `
+            <div style="font-size:13px;margin-bottom:10px;color:var(--text2);">
+                Transaction <strong style="color:var(--text);">#${tx.id}</strong> &middot;
+                Process <strong style="color:var(--text);">${tx.process_id}</strong> &middot;
+                Current DB status: <strong class="status-${tx.status}">${tx.status}</strong>
+                ${tx.callback_sent_at
+                    ? `<br><span style="font-size:11px;">Last callback sent at ${formatTZ(tx.callback_sent_at)}</span>`
+                    : `<br><span style="font-size:11px;color:var(--warning);">Callback never sent for this transaction.</span>`
+                }
+            </div>
+            <div style="margin-bottom:14px;">${receiptHtml}</div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:6px;">
+                    Re-send as which status?
+                </label>
+                ${statusOptions.map(([code, label, help]) => `
+                    <label class="resend-choice">
+                        <input type="radio" name="resend-status" value="${code}" ${code === currentCode ? 'checked' : ''}>
+                        <span>
+                            <strong>${label}</strong>
+                            <span style="color:var(--text2);">(status=${code})</span>
+                            <span style="font-size:11px;color:var(--text2);margin-left:6px;">— ${help}</span>
+                        </span>
+                    </label>
+                `).join('')}
+            </div>
+            <label class="resend-checkbox-row">
+                <input type="checkbox" id="resend-include-receipt" ${hasReceipt ? 'checked' : 'disabled'}>
+                <span>Include receipt photo with callback${hasReceipt ? '' : ' (no receipt available)'}</span>
+            </label>
+            <label class="resend-checkbox-row">
+                <input type="checkbox" id="resend-update-db" checked>
+                <span>Update DB status if different from current</span>
+            </label>
+        `;
+        document.getElementById('resend-modal').classList.add('active');
+    }
+
+    function closeResend() {
+        document.getElementById('resend-modal').classList.remove('active');
+        resendCtx = null;
+    }
+
+    async function submitResend() {
+        if (!resendCtx) return;
+        const radio = document.querySelector('input[name="resend-status"]:checked');
+        if (!radio) { toast('Please choose a status', 'error'); return; }
+        const status = parseInt(radio.value);
+        const include_receipt = document.getElementById('resend-include-receipt').checked;
+        const update_db_status = document.getElementById('resend-update-db').checked;
+
+        const btn = document.getElementById('resend-submit');
+        const originalLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        try {
+            const r = await API.post(
+                `/api/monitor/transactions/${resendCtx.tx_id}/resend-callback`,
+                { status, include_receipt, update_db_status });
+            if (r.ok) {
+                toast(r.db_status_changed
+                    ? `Callback sent. DB status updated to '${r.new_db_status}'.`
+                    : 'Callback sent successfully.', 'success');
+                const txId = resendCtx.tx_id;
+                closeResend();
+                // Refresh both detail (so new callback_sent_at + status show) and
+                // the list (so the row reflects the new state).
+                showDetail(txId);
+                loadTransactions();
+            } else {
+                toast('Resend failed: ' + (r.error || 'unknown error'), 'error');
+            }
+        } catch (e) {
+            toast('Network error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+        }
+    }
+
     // Click outside the modal content (on overlay) closes the modal.
     document.getElementById('detail-modal').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeDetail();
@@ -309,12 +480,17 @@
     document.getElementById('screenshot-modal').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeScreenshot();
     });
+    document.getElementById('resend-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeResend();
+    });
 
-    // ESC closes the topmost open modal (screenshot stacks above detail).
+    // ESC closes the topmost open modal. Stack order: screenshot > resend > detail.
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         if (document.getElementById('screenshot-modal').classList.contains('active')) {
             closeScreenshot();
+        } else if (document.getElementById('resend-modal').classList.contains('active')) {
+            closeResend();
         } else if (document.getElementById('detail-modal').classList.contains('active')) {
             closeDetail();
         }

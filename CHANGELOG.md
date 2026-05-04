@@ -1,5 +1,44 @@
 # Changelog
 
+## ux(transactions): manual PAS callback resend with status correction (2026-05-04)
+
+### Problem
+
+When the auto callback chain (`pas_client.callback_result` retries 3x with 5s/15s/30s backoff) fails — typically because the office internet drops at the moment WA tries to notify PAS — the transaction stays in DB with `callback_sent_at = NULL`. PAS never hears back, the operator has no way to re-trigger the notification short of running a one-off Python script.
+
+A second, related pain: occasionally a transaction's DB status disagrees with the receipt photo — e.g., the OCR receipt-check classified it as success but the photo clearly shows a "Failed" / "In Review" header. The operator had to UPDATE the DB by hand, then run the resend script.
+
+### What changed
+
+The transactions detail modal now shows a **Callback** row, always visible:
+
+- `Sent <time>` (green) when the callback succeeded; button label is "Resend Callback" (secondary style).
+- `Not sent yet` (orange) when the callback chain failed; button label is "Send Callback" (primary style).
+- For queued / running transactions the button is disabled with tooltip "Transaction not finished".
+
+Clicking the button opens a dialog that:
+
+1. Re-fetches the transaction so the dialog reflects the latest DB state.
+2. Shows the receipt photo (if any) inline — operator can visually verify what really happened.
+3. Lets the operator pick the PAS status to send (1=success, 2=failed, 3=review, 4=stall) via radio buttons. Defaults to the current DB status. Status code mapping is whitelisted in the backend; an invalid value is rejected before any DB / network work.
+4. Has an "Include receipt photo with callback" checkbox (auto-disabled if no receipt on file).
+5. Has an "Update DB status if different from current" checkbox, default checked. When checked and the chosen status differs from the current DB row, the row's `status` column is updated to match before the callback fires.
+
+On submit the button enters "Sending…" / disabled state to prevent double-fire while the request is in flight. On success: toast confirmation, dialog closes, both the detail modal and the transaction list re-render so the new state is visible immediately. On failure: toast with the error; if the DB status was updated but PAS rejected, the DB change is preserved (operator can retry without the row jumping back) but `callback_sent_at` stays NULL.
+
+### Files
+
+- `app/routers/monitor.py` — new `POST /api/monitor/transactions/{transaction_id}/resend-callback` endpoint (~85 lines, including helpers and a hard-coded status whitelist mirroring `arm_worker.py:221-223`'s mapping). Logs both success and failure paths so triage from `service_stderr.log` is easy.
+- `static/transactions.html` — Callback row added to detail-info; new `#resend-modal` HTML + `openResendDialog` / `closeResend` / `submitResend` functions; modal wired into existing ESC and click-outside handlers (modal stack order: screenshot > resend > detail).
+
+### Compatibility
+
+- No DB schema change.
+- No effect on worker / arm / transaction processing — the endpoint only fires when an operator explicitly clicks the button. It writes to two columns of one row (`status`, `callback_sent_at`) of an already-finished transaction; no contention with the worker possible because queued / running transactions block the button.
+- PAS callback ordering matches the existing worker behaviour at `arm_worker.py:286-291` (DB update → PAS call → callback_sent_at on success), so PAS sees the same payload shape it always has.
+
+---
+
 ## Reports page + GMT+7/+8 display toggle + per-arm today rate (2026-05-03)
 
 ### Problem

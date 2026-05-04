@@ -550,6 +550,93 @@ async def get_transaction_detail(transaction_id: int):
     return tx
 
 
+# DB status string ↔ PAS callback status code (per API_SPEC.md). Used by the
+# manual callback-resend endpoint below.
+_DB_TO_PAS_STATUS = {"success": 1, "failed": 2, "review": 3, "stall": 4}
+_PAS_TO_DB_STATUS = {v: k for k, v in _DB_TO_PAS_STATUS.items()}
+
+
+@router.post("/transactions/{transaction_id}/resend-callback")
+async def resend_callback(transaction_id: int, data: dict):
+    """Manually resend PAS callback for a finished transaction.
+
+    Used when the auto retry chain (3x with 5s/15s/30s backoff in
+    pas_client.callback_result) failed, or when an operator needs to correct
+    the status after manually inspecting the receipt photo (e.g. flip a
+    misclassified 'success' to 'stall').
+
+    Body:
+        status (int): PAS status code 1=success, 2=failed, 3=review, 4=stall.
+            Whitelisted; any other value is rejected.
+        include_receipt (bool, default true): attach receipt_base64 to the
+            callback. Disabled automatically when the transaction has no receipt.
+        update_db_status (bool, default true): also UPDATE transactions.status
+            to match the chosen status before sending.
+
+    Behaviour mirrors arm_worker's stall-callback ordering (DB update first,
+    then PAS call, then callback_sent_at on success). On PAS failure the DB
+    status change is preserved (the operator's claim about the truth doesn't
+    revert just because PAS happens to be down) and callback_sent_at stays
+    NULL so a retry remains possible.
+    """
+    from app import pas_client
+
+    body_status = data.get("status")
+    if body_status not in _PAS_TO_DB_STATUS:
+        return {"ok": False, "error": "status must be 1, 2, 3 or 4"}
+
+    include_receipt = bool(data.get("include_receipt", True))
+    update_db_status = bool(data.get("update_db_status", True))
+
+    tx = await database.fetchone(
+        "SELECT id, process_id, status, finished_at, receipt_base64 "
+        "FROM transactions WHERE id = %s", (transaction_id,))
+    if not tx:
+        return {"ok": False, "error": "Transaction not found"}
+    if tx["status"] in ("queued", "running"):
+        return {"ok": False, "error": "Transaction not finished yet"}
+    if tx["finished_at"] is None:
+        return {"ok": False, "error": "Transaction has no finished_at timestamp"}
+
+    new_db_status = _PAS_TO_DB_STATUS[body_status]
+    db_changed = False
+    if update_db_status and tx["status"] != new_db_status:
+        await database.execute(
+            "UPDATE transactions SET status = %s WHERE id = %s",
+            (new_db_status, transaction_id))
+        db_changed = True
+
+    transaction_datetime = tx["finished_at"].strftime("%Y-%m-%d %H:%M:%S")
+    receipt = tx["receipt_base64"] if (include_receipt and tx["receipt_base64"]) else None
+
+    cb_result = await pas_client.callback_result(
+        tx["process_id"], body_status, transaction_datetime, receipt)
+
+    if cb_result is None:
+        logger.error("Resend callback FAILED for tx %d (process_id=%d, status=%d). "
+                     "DB status change preserved=%s, callback_sent_at NOT updated.",
+                     transaction_id, tx["process_id"], body_status, db_changed)
+        return {
+            "ok": False,
+            "error": "PAS callback failed after retries",
+            "db_status_changed": db_changed,
+        }
+
+    await database.execute(
+        "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s",
+        (transaction_id,))
+    logger.info("Resend callback OK for tx %d (process_id=%d, status=%d, "
+                "db_changed=%s, receipt=%s)",
+                transaction_id, tx["process_id"], body_status,
+                db_changed, "yes" if receipt else "no")
+    return {
+        "ok": True,
+        "pas_response": cb_result,
+        "db_status_changed": db_changed,
+        "new_db_status": new_db_status if db_changed else tx["status"],
+    }
+
+
 @router.get("/transactions/{transaction_id}/logs")
 async def get_transaction_logs(transaction_id: int):
     """Get step-by-step logs for a transaction."""
