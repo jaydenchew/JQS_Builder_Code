@@ -6,107 +6,137 @@
     <title>Settings — WA System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        html, body { min-height: 100%; }
-        body {
-            background:
-                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
-                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
-                #0a1020;
-            color: #e8ecff;
-            overflow-x: hidden;
-        }
-        .app-shell {
-            width: 111.1112%;
-            transform: scale(0.9);
-            transform-origin: top left;
-        }
-        .container { max-width: 1520px; padding-top: 20px; }
-        .page-head { margin-bottom: 14px; }
-        .page-kicker {
-            margin: 0 0 6px;
-            font-size: 11px;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #93a7ff;
-        }
-        .page-title { margin: 0; font-size: 27px; color: #e6ecff; }
-        .page-subtitle { margin: 6px 0 0; color: #acb6de; font-size: 13px; }
+        /* ── Tab bar ── */
         .tab-bar {
             display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            border-bottom: 1px solid rgba(109, 127, 206, 0.3);
-            padding-bottom: 10px;
-            flex-wrap: wrap;
+            gap: 2px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
         }
+
         .tab-btn {
-            padding: 10px 18px;
-            background: rgba(27, 42, 85, 0.65);
-            border: 1px solid rgba(109, 127, 206, 0.32);
-            color: #a8b4df;
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-2);
             cursor: pointer;
             font-size: 13px;
-            border-radius: 999px;
-            margin-bottom: 0;
+            font-weight: 500;
+            font-family: inherit;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
         }
+        .tab-btn:hover { color: var(--text); }
         .tab-btn.active {
-            color: #f3f6ff;
-            border-color: rgba(151, 170, 255, 0.72);
+            color: var(--text);
+            border-bottom-color: var(--accent);
             font-weight: 600;
-            background: linear-gradient(160deg, rgba(58, 81, 156, 0.85), rgba(44, 63, 130, 0.85));
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
         }
+
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .inline-form {
+
+        /* ── Add form ── */
+        .add-form {
             display: flex;
             gap: 8px;
             align-items: flex-end;
             flex-wrap: wrap;
             margin-bottom: 16px;
-            padding: 16px;
-            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+            padding: 14px 16px;
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border);
         }
-        .inline-form .form-group { margin-bottom: 0; }
-        .inline-form input, .inline-form select { min-width: 100px; }
-        .inline-form .btn { border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
-        .tab-content .card {
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+
+        .add-form .form-group { margin-bottom: 0; }
+        .add-form .form-group label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-3);
+            margin-bottom: 4px;
+        }
+        .add-form input, .add-form select {
+            min-width: 90px;
+            width: auto;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        /* ── Data table card ── */
+        .data-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
             overflow: hidden;
         }
-        .tab-content .card table { margin: 0; }
-        .tab-content .card th { background: rgba(38, 53, 102, 0.6); color: #b8c5f1; }
-        .tab-content .card td { border-bottom-color: rgba(96, 117, 191, 0.2); }
-        table input, table select { min-width: 0; width: auto; }
+        .data-card table { margin: 0; }
+        .data-card th { background: var(--surface-2); }
+        .data-card td { vertical-align: middle; }
+
+        table input, table select {
+            min-width: 0;
+            width: auto;
+            padding: 4px 7px;
+            font-size: 12px;
+            background: var(--surface-3);
+        }
+
         td .badge { cursor: default; }
         .active-toggle { cursor: pointer; }
-        .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .modal-head h3 { margin: 0; }
+
+        .empty-tip { color: var(--text-2); padding: 24px; text-align: center; font-size: 13px; }
+
+        /* ── Camera scan modal ── */
+        .modal-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+
         .cam-scan-results {
             display: grid;
-            grid-template-columns: repeat(auto-fill,minmax(160px,1fr));
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 10px;
         }
-        .empty-tip { color: var(--text2); }
-        .cam-tip { text-align: center; color: var(--text2); grid-column: 1 / -1; padding: 40px; }
+
+        .cam-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 10px;
+            text-align: center;
+            font-size: 12px;
+        }
+        .cam-card-available  { border-color: var(--border-2); }
+        .cam-card-occupied   { border-color: oklch(0.78 0.16 68/0.4); background: var(--warning-dim); }
+        .cam-card-unavailable { opacity: 0.4; }
+
+        .cam-card .cam-idx { font-weight: 700; margin-bottom: 6px; font-family: var(--font-mono); }
+        .cam-card img { width: 100%; border-radius: var(--radius); max-height: 140px; object-fit: contain; background: #000; margin-bottom: 4px; }
+        .cam-assigned { color: var(--accent); font-size: 11px; margin-top: 3px; }
+        .cam-occ-label { color: var(--warning); padding: 24px 0; font-size: 11px; }
+
+        .cam-tip { text-align: center; color: var(--text-2); grid-column: 1/-1; padding: 40px; font-size: 13px; }
     </style>
 </head>
 <body>
-    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
+
         <div class="page-head">
             <p class="page-kicker">Operations Console</p>
-            <h2 class="page-title">Settings</h2>
+            <h1 class="page-title">Settings</h1>
             <p class="page-subtitle">Manage arms, stations, phones, and bank app mappings.</p>
         </div>
 
+        <!-- Tabs -->
         <div class="tab-bar">
             <button class="tab-btn active" onclick="switchTab('arms')">Arms</button>
             <button class="tab-btn" onclick="switchTab('stations')">Stations</button>
@@ -114,20 +144,20 @@
             <button class="tab-btn" onclick="switchTab('bank-apps')">Bank Apps</button>
         </div>
 
-        <!-- ARMS TAB -->
+        <!-- ARMS -->
         <div id="tab-arms" class="tab-content active">
-            <div class="inline-form">
+            <div class="add-form">
                 <div class="form-group"><label>Name</label><input id="arm-name" placeholder="ARM-02"></div>
                 <div class="form-group"><label>COM Port</label><input id="arm-com" placeholder="COM7"></div>
-                <div class="form-group"><label>Service URL</label><input id="arm-url" placeholder="http://127.0.0.1:8082/MyWcfService/getstring" style="min-width:280px;"></div>
-                <div class="form-group"><label>Z Down</label><input id="arm-z" type="number" value="10" style="width:60px;"></div>
-                <div class="form-group"><label>Camera ID</label><input id="arm-cam" type="number" value="0" style="width:60px;"></div>
-                <div class="form-group"><label>Max X (mm)</label><input id="arm-max-x" type="number" value="90" step="0.1" style="width:70px;" title="Hard X movement limit. Arm refuses to move beyond this value."></div>
-                <div class="form-group"><label>Max Y (mm)</label><input id="arm-max-y" type="number" value="120" step="0.1" style="width:70px;" title="Hard Y movement limit. Arm refuses to move beyond this value."></div>
+                <div class="form-group"><label>Service URL</label><input id="arm-url" placeholder="http://127.0.0.1:8082/…" style="min-width:240px;"></div>
+                <div class="form-group"><label>Z Down</label><input id="arm-z" type="number" value="10" style="width:64px;"></div>
+                <div class="form-group"><label>Camera ID</label><input id="arm-cam" type="number" value="0" style="width:64px;"></div>
+                <div class="form-group"><label>Max X (mm)</label><input id="arm-max-x" type="number" value="90" step="0.1" style="width:72px;" title="Hard X movement limit."></div>
+                <div class="form-group"><label>Max Y (mm)</label><input id="arm-max-y" type="number" value="120" step="0.1" style="width:72px;" title="Hard Y movement limit."></div>
                 <button class="btn btn-primary" onclick="addArm()">Add Arm</button>
                 <button class="btn btn-secondary" onclick="scanCameras()">Scan Cameras</button>
             </div>
-            <div class="card">
+            <div class="data-card">
                 <table>
                     <thead><tr><th>ID</th><th>Name</th><th>COM Port</th><th>Camera</th><th>Z Down</th><th>Max X</th><th>Max Y</th><th>Active</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="arms-table"></tbody>
@@ -135,15 +165,15 @@
             </div>
         </div>
 
-        <!-- STATIONS TAB -->
+        <!-- STATIONS -->
         <div id="tab-stations" class="tab-content">
-            <div class="inline-form">
+            <div class="add-form">
                 <div class="form-group"><label>Arm</label><select id="st-arm"></select></div>
                 <div class="form-group"><label>Name</label><input id="st-name" placeholder="Station_1"></div>
                 <div class="form-group"><label>X Offset</label><input id="st-offset" type="number" value="0" style="width:80px;"></div>
                 <button class="btn btn-primary" onclick="addStation()">Add Station</button>
             </div>
-            <div class="card">
+            <div class="data-card">
                 <table>
                     <thead><tr><th>ID</th><th>Arm</th><th>Name</th><th>X Offset</th><th>Stall Photo</th><th>Calibration</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="stations-table"></tbody>
@@ -151,15 +181,15 @@
             </div>
         </div>
 
-        <!-- PHONES TAB -->
+        <!-- PHONES -->
         <div id="tab-phones" class="tab-content">
-            <div class="inline-form">
+            <div class="add-form">
                 <div class="form-group"><label>Station</label><select id="ph-station"></select></div>
                 <div class="form-group"><label>Name</label><input id="ph-name" placeholder="Phone-S5"></div>
                 <div class="form-group"><label>Model</label><input id="ph-model" placeholder="Samsung A15"></div>
                 <button class="btn btn-primary" onclick="addPhone()">Add Phone</button>
             </div>
-            <div class="card">
+            <div class="data-card">
                 <table>
                     <thead><tr><th>ID</th><th>Arm</th><th>Station</th><th>Name</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="phones-table"></tbody>
@@ -167,37 +197,37 @@
             </div>
         </div>
 
-        <!-- BANK APPS TAB -->
+        <!-- BANK APPS -->
         <div id="tab-bank-apps" class="tab-content">
-            <div class="inline-form">
+            <div class="add-form">
                 <div class="form-group"><label>Station</label><select id="ba-station"></select></div>
                 <div class="form-group"><label>Phone</label><select id="ba-phone"></select></div>
                 <div class="form-group"><label>Bank Code</label><input id="ba-code" placeholder="ABA"></div>
                 <div class="form-group"><label>Bank Name</label><input id="ba-name" placeholder="ABA Bank"></div>
-                <div class="form-group"><label>Account No</label><input id="ba-account" placeholder=""></div>
-                <div class="form-group"><label>Password</label><input id="ba-pwd" placeholder=""></div>
-                <div class="form-group"><label>PIN</label><input id="ba-pin" placeholder="(optional)"></div>
+                <div class="form-group"><label>Account No</label><input id="ba-account"></div>
+                <div class="form-group"><label>Password</label><input id="ba-pwd"></div>
+                <div class="form-group"><label>PIN</label><input id="ba-pin" placeholder="optional"></div>
                 <button class="btn btn-primary" onclick="addBankApp()">Add Bank App</button>
             </div>
-            <div class="card">
+            <div class="data-card">
                 <table>
                     <thead><tr><th>ID</th><th>Arm</th><th>Station</th><th>Phone</th><th>Bank</th><th>Account</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="bank-apps-table"></tbody>
                 </table>
             </div>
         </div>
-    </div>
+
     </div>
 
     <!-- Camera Scan Modal -->
     <div class="modal-overlay" id="cam-scan-modal" onclick="if(event.target===this)this.classList.remove('active')">
-        <div class="modal" style="max-width:700px;max-height:85vh;overflow-y:auto;">
+        <div class="modal" style="max-width:740px;max-height:85vh;overflow-y:auto;width:92vw;">
             <div class="modal-head">
                 <h3>Camera Scan</h3>
-                <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cam-scan-modal').classList.remove('active')">Close</button>
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cam-scan-modal').classList.remove('active')">Close</button>
             </div>
             <div id="cam-scan-results" class="cam-scan-results">
-                <div class="cam-tip">Scanning cameras...</div>
+                <div class="cam-tip">Scanning cameras…</div>
             </div>
         </div>
     </div>
@@ -231,28 +261,26 @@
     function populateSelects() {
         const armOpts = armsData.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
         document.getElementById('st-arm').innerHTML = armOpts;
-
         const stOpts = stationsData.map(s => `<option value="${s.id}">${s.name} (${s.arm_name})</option>`).join('');
         document.getElementById('ph-station').innerHTML = stOpts;
         document.getElementById('ba-station').innerHTML = stOpts;
-
         const phOpts = phonesData.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
         document.getElementById('ba-phone').innerHTML = phOpts;
     }
 
-    // === ARMS ===
+    /* ── ARMS ── */
     function renderArms() {
         document.getElementById('arms-table').innerHTML = armsData.map(a => `<tr>
-            <td>${a.id}</td>
+            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${a.id}</td>
             <td><input value="${a.name||''}" id="a-name-${a.id}" style="width:110px;"></td>
             <td><input value="${a.com_port||''}" id="a-com-${a.id}" style="width:80px;"></td>
-            <td><input value="${a.camera_id}" id="a-cam-${a.id}" type="number" style="width:60px;"></td>
-            <td><input value="${a.z_down}" id="a-z-${a.id}" type="number" style="width:60px;"></td>
-            <td><input value="${a.max_x ?? 90}" id="a-max-x-${a.id}" type="number" step="0.1" style="width:65px;" title="Hard X limit (mm)"></td>
-            <td><input value="${a.max_y ?? 120}" id="a-max-y-${a.id}" type="number" step="0.1" style="width:65px;" title="Hard Y limit (mm)"></td>
+            <td><input value="${a.camera_id}" id="a-cam-${a.id}" type="number" style="width:58px;"></td>
+            <td><input value="${a.z_down}" id="a-z-${a.id}" type="number" style="width:58px;"></td>
+            <td><input value="${a.max_x ?? 90}" id="a-max-x-${a.id}" type="number" step="0.1" style="width:64px;"></td>
+            <td><input value="${a.max_y ?? 120}" id="a-max-y-${a.id}" type="number" step="0.1" style="width:64px;"></td>
             <td><span class="badge ${a.active ? 'badge-active' : 'badge-inactive'} active-toggle" onclick="toggleArmActive(${a.id}, ${a.active})">${a.active ? 'ON' : 'OFF'}</span></td>
             <td><span class="badge badge-${a.status === 'idle' ? 'idle' : a.status === 'busy' ? 'busy' : 'inactive'}">${a.status}</span></td>
-            <td>
+            <td style="white-space:nowrap;">
                 <button class="btn btn-sm btn-primary" onclick="saveArm(${a.id})">Save</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteArm(${a.id})">Del</button>
             </td>
@@ -308,70 +336,73 @@
 
     async function scanCameras() {
         document.getElementById('cam-scan-modal').classList.add('active');
-        document.getElementById('cam-scan-results').innerHTML =
-            '<div class="cam-tip">Scanning cameras (this takes ~10 seconds)...</div>';
+        document.getElementById('cam-scan-results').innerHTML = '<div class="cam-tip">Scanning cameras (this takes ~10 seconds)…</div>';
         const r = await API.post('/api/stations/scan-cameras', { max_index: 9 });
-        if (!r.cameras) { document.getElementById('cam-scan-results').innerHTML = '<div style="color:var(--danger)">Scan failed</div>'; return; }
-
+        if (!r.cameras) {
+            document.getElementById('cam-scan-results').innerHTML = '<div class="cam-tip" style="color:var(--danger)">Scan failed</div>';
+            return;
+        }
         const armByCam = {};
         armsData.forEach(a => { armByCam[a.camera_id] = a.name; });
-
         const visible = r.cameras.filter(c => c.status !== 'unavailable');
         if (!visible.length) {
-            document.getElementById('cam-scan-results').innerHTML = '<div class="cam-tip">No cameras detected. Make sure USB cameras are connected.</div>';
+            document.getElementById('cam-scan-results').innerHTML = '<div class="cam-tip">No cameras detected.</div>';
             return;
         }
         document.getElementById('cam-scan-results').innerHTML = visible.map(c => {
-            const assigned = armByCam[c.index] ? '<div style="color:var(--accent);font-size:11px;margin-top:4px;">Assigned: ' + armByCam[c.index] + '</div>' : '';
+            const assigned = armByCam[c.index] ? `<div class="cam-assigned">→ ${armByCam[c.index]}</div>` : '';
             if (c.status === 'available') {
-                return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">' +
-                    '<div style="font-weight:600;margin-bottom:4px;">Camera ' + c.index + '</div>' +
-                    '<img src="data:image/jpeg;base64,' + c.preview + '" style="width:100%;border-radius:4px;max-height:180px;object-fit:contain;">' +
-                    assigned + '</div>';
+                return `<div class="cam-card cam-card-available">
+                    <div class="cam-idx">Camera ${c.index}</div>
+                    <img src="data:image/jpeg;base64,${c.preview}" alt="Camera ${c.index}">
+                    ${assigned}
+                </div>`;
             } else if (c.status === 'occupied') {
                 const occArm = c.arm_name || armByCam[c.index] || '';
-                return '<div style="border:1px solid var(--warning);border-radius:8px;padding:8px;text-align:center;background:rgba(255,152,0,0.08);">' +
-                    '<div style="font-weight:600;margin-bottom:4px;">Camera ' + c.index + '</div>' +
-                    '<div style="color:var(--warning);padding:30px 0;font-size:12px;">Occupied' + (occArm ? ' (' + occArm + ')' : '') + '</div>' +
-                    '</div>';
+                return `<div class="cam-card cam-card-occupied">
+                    <div class="cam-idx">Camera ${c.index}</div>
+                    <div class="cam-occ-label">Occupied${occArm ? ' (' + occArm + ')' : ''}</div>
+                    ${assigned}
+                </div>`;
             } else {
-                return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;opacity:0.4;">' +
-                    '<div style="font-weight:600;margin-bottom:4px;">Camera ' + c.index + '</div>' +
-                    '<div style="color:var(--text2);padding:30px 0;font-size:12px;">Not detected</div>' +
-                    '</div>';
+                return `<div class="cam-card cam-card-unavailable">
+                    <div class="cam-idx">Camera ${c.index}</div>
+                    <div style="color:var(--text-3);padding:24px 0;font-size:11px;">Not detected</div>
+                </div>`;
             }
         }).join('');
     }
 
-    // === STATIONS ===
+    /* ── STATIONS ── */
     function renderStations() {
         document.getElementById('stations-table').innerHTML = stationsData.map(s => {
             const cal = calData[s.id];
             const calOk = cal && cal.calibrated;
             return `<tr>
-            <td>${s.id}</td>
-            <td>${s.arm_name}</td>
-            <td><input value="${s.name||''}" id="s-name-${s.id}" style="width:90px;"></td>
-            <td><input value="${s.x_offset}" id="s-off-${s.id}" type="number" step="0.1" style="width:70px;"></td>
-            <td>
-                <input value="${s.stall_photo_x!=null?s.stall_photo_x:''}" id="s-spx-${s.id}" type="number" step="0.1" style="width:65px;" placeholder="X">
-                <input value="${s.stall_photo_y!=null?s.stall_photo_y:''}" id="s-spy-${s.id}" type="number" step="0.1" style="width:65px;" placeholder="Y">
-            </td>
-            <td>
-                <span class="badge ${calOk ? 'badge-active' : 'badge-inactive'}">${calOk ? 'OK (scale=' + cal.scale + ')' : 'Not calibrated'}</span>
-                <button class="btn btn-sm btn-secondary" onclick="viewCalibration(${s.id})" style="margin-left:4px;">View</button>
-            </td>
-            <td>
-                <select id="s-st-${s.id}" style="width:80px;">
-                    <option value="active" ${s.status==='active'?'selected':''}>active</option>
-                    <option value="inactive" ${s.status==='inactive'?'selected':''}>inactive</option>
-                </select>
-            </td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="saveStation(${s.id})">Save</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteStation(${s.id})">Del</button>
-            </td>
-        </tr>`}).join('') || '<tr><td colspan="8" class="empty-tip">No stations</td></tr>';
+                <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${s.id}</td>
+                <td>${s.arm_name}</td>
+                <td><input value="${s.name||''}" id="s-name-${s.id}" style="width:90px;"></td>
+                <td><input value="${s.x_offset}" id="s-off-${s.id}" type="number" step="0.1" style="width:70px;"></td>
+                <td>
+                    <input value="${s.stall_photo_x!=null?s.stall_photo_x:''}" id="s-spx-${s.id}" type="number" step="0.1" style="width:60px;" placeholder="X">
+                    <input value="${s.stall_photo_y!=null?s.stall_photo_y:''}" id="s-spy-${s.id}" type="number" step="0.1" style="width:60px;" placeholder="Y">
+                </td>
+                <td>
+                    <span class="badge ${calOk ? 'badge-active' : 'badge-inactive'}">${calOk ? 'OK ×' + cal.scale : 'Not calibrated'}</span>
+                    <button class="btn btn-sm btn-secondary" onclick="viewCalibration(${s.id})" style="margin-left:4px;">View</button>
+                </td>
+                <td>
+                    <select id="s-st-${s.id}" style="width:80px;">
+                        <option value="active"   ${s.status==='active'?'selected':''}>active</option>
+                        <option value="inactive" ${s.status==='inactive'?'selected':''}>inactive</option>
+                    </select>
+                </td>
+                <td style="white-space:nowrap;">
+                    <button class="btn btn-sm btn-primary" onclick="saveStation(${s.id})">Save</button>
+                    <button class="btn btn-sm btn-danger"  onclick="deleteStation(${s.id})">Del</button>
+                </td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="8" class="empty-tip">No stations</td></tr>';
     }
 
     async function addStation() {
@@ -405,25 +436,25 @@
         else toast(r.error || 'Failed', 'error');
     }
 
-    // === PHONES ===
+    /* ── PHONES ── */
     function renderPhones() {
         document.getElementById('phones-table').innerHTML = phonesData.map(p => `<tr>
-            <td>${p.id}</td>
-            <td>${p.arm_name || '-'}</td>
+            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${p.id}</td>
+            <td>${p.arm_name || '—'}</td>
             <td>${p.station_name}</td>
             <td><input value="${p.name||''}" id="p-name-${p.id}" style="width:100px;"></td>
             <td><input value="${p.model||''}" id="p-model-${p.id}" style="width:120px;"></td>
             <td>
                 <select id="p-st-${p.id}" style="width:80px;">
-                    <option value="active" ${p.status==='active'?'selected':''}>active</option>
+                    <option value="active"   ${p.status==='active'?'selected':''}>active</option>
                     <option value="inactive" ${p.status==='inactive'?'selected':''}>inactive</option>
                 </select>
             </td>
-            <td>
+            <td style="white-space:nowrap;">
                 <button class="btn btn-sm btn-primary" onclick="savePhone(${p.id})">Save</button>
-                <button class="btn btn-sm btn-danger" onclick="deletePhone(${p.id})">Del</button>
+                <button class="btn btn-sm btn-danger"  onclick="deletePhone(${p.id})">Del</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="6" class="empty-tip">No phones</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="7" class="empty-tip">No phones</td></tr>';
     }
 
     async function addPhone() {
@@ -453,25 +484,28 @@
         else toast(r.error || 'Failed', 'error');
     }
 
-    // === BANK APPS ===
+    /* ── BANK APPS ── */
     function renderBankApps() {
         document.getElementById('bank-apps-table').innerHTML = bankAppsData.map(b => `<tr>
-            <td>${b.id}</td>
-            <td>${b.arm_name || '-'}</td>
+            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${b.id}</td>
+            <td>${b.arm_name || '—'}</td>
             <td>${b.station_name}</td>
-            <td>${b.phone_name || '-'}</td>
-            <td><input value="${b.bank_code||''}" id="b-code-${b.id}" style="width:80px;"> <input value="${b.bank_name||''}" id="b-bname-${b.id}" style="width:120px;"></td>
-            <td><input value="${b.account_no||''}" id="b-acct-${b.id}" style="width:150px;"></td>
-            <td><input value="${b.pin||''}" id="b-pin-${b.id}" style="width:80px;" placeholder="PIN"></td>
+            <td>${b.phone_name || '—'}</td>
+            <td>
+                <input value="${b.bank_code||''}" id="b-code-${b.id}" style="width:75px;">
+                <input value="${b.bank_name||''}" id="b-bname-${b.id}" style="width:110px;">
+            </td>
+            <td><input value="${b.account_no||''}" id="b-acct-${b.id}" style="width:140px;"></td>
+            <td><input value="${b.pin||''}" id="b-pin-${b.id}" style="width:70px;" placeholder="PIN"></td>
             <td>
                 <select id="b-st-${b.id}" style="width:90px;">
-                    <option value="active" ${b.status==='active'?'selected':''}>active</option>
+                    <option value="active"    ${b.status==='active'?'selected':''}>active</option>
                     <option value="suspended" ${b.status==='suspended'?'selected':''}>suspended</option>
                 </select>
             </td>
-            <td>
+            <td style="white-space:nowrap;">
                 <button class="btn btn-sm btn-primary" onclick="saveBankApp(${b.id})">Save</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteBankApp(${b.id})">Del</button>
+                <button class="btn btn-sm btn-danger"  onclick="deleteBankApp(${b.id})">Del</button>
             </td>
         </tr>`).join('') || '<tr><td colspan="9" class="empty-tip">No bank apps</td></tr>';
     }
@@ -512,7 +546,7 @@
     async function viewCalibration(stationId) {
         const data = await API.get(`/api/calibration/${stationId}`);
         if (data.error) {
-            alert('Station ' + stationId + ': Not calibrated.\n\nTo calibrate, use the Flow Builder page with the correct arm selected, then run the calibration procedure.');
+            alert('Station ' + stationId + ': Not calibrated.\n\nUse the Flow Builder to run the calibration procedure.');
             return;
         }
         const m = data.transform_matrix;

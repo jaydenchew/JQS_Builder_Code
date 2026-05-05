@@ -3,215 +3,264 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WA Unified System</title>
+    <title>Dashboard — WA System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        html, body { min-height: 100%; }
-        body {
-            background:
-                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
-                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
-                #0a1020;
-            color: #e8ecff;
-            overflow-x: hidden;
-        }
-        .app-shell {
-            width: 111.1112%;
-            transform: scale(0.9);
-            transform-origin: top left;
-        }
-        .container { max-width: 1520px; padding-top: 20px; }
+        /* ── Page-specific overrides ── */
         .dash-hero {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 12px;
-            padding: 0;
-            border: 0;
-            background: transparent;
-            box-shadow: none;
+            gap: 16px;
+            margin-bottom: 24px;
         }
-        .dash-kicker {
-            margin: 0 0 6px;
-            font-size: 11px;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #93a7ff;
+
+        /* ── Stats grid ── */
+        .stats-grid { margin-bottom: 24px; }
+        .stats-grid .card-stat .num {
+            font-size: 32px;
         }
-        .dash-subtitle {
-            margin: 6px 0 0;
-            color: #acb6de;
-            font-size: 13px;
-        }
-        .page-title { margin-bottom: 20px; }
-        .dash-hero .page-title { margin-bottom: 0; font-size: 27px; letter-spacing: 0.01em; }
-        .section-title { margin-top: 24px; margin-bottom: 12px; color: #d4dcff; font-size: 18px; }
-        .full-span-center-muted { grid-column: 1 / -1; text-align: center; color: var(--text2); }
-        .panel-card { margin-top: 24px; }
-        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .panel-header h3 { margin: 0; }
-        .panel-actions { display: flex; gap: 8px; align-items: center; }
-        .select-compact { width: auto; min-width: 120px; }
-        .stats-grid .card-stat {
-            border-radius: 14px;
-            border-color: rgba(110, 128, 212, 0.32);
-            background: linear-gradient(160deg, rgba(22, 34, 72, 0.9), rgba(16, 24, 52, 0.92));
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 20px rgba(0, 0, 0, 0.2);
-        }
-        .stats-grid .card-stat .num { font-size: 34px; letter-spacing: 0.02em; }
-        .stats-grid .card-stat .label { color: #98a8dd; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-        .stat-total { border-left: 3px solid #a06bff; }
-        .stat-success { border-left: 3px solid #4caf50; }
-        .stat-failed { border-left: 3px solid #f44336; }
-        .stat-stall { border-left: 3px solid #ff9800; }
-        .stat-queue { border-left: 3px solid #ffbf47; }
-        .log-terminal {
-            background: #0b1327;
-            border: 1px solid #2f3d66;
-            border-radius: 12px;
-            padding: 12px;
-            height: 300px;
-            overflow-y: auto;
-            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        .stat-rate {
             font-size: 12px;
-            line-height: 1.6;
-        }
-        .log-line {
-            padding: 4px 8px;
-            border-radius: 8px;
-            border: 1px solid transparent;
-        }
-        .log-line:hover { background: rgba(130, 149, 220, 0.08); border-color: rgba(130, 149, 220, 0.16); }
-        .log-prefix { color: #8b949e; }
-        .log-ts { color: #484f58; }
-        .log-lvl { font-weight: 600; }
-        .card-stat .num.stat-num-success { color: var(--success); }
-        .card-stat .num.stat-num-failed { color: var(--danger); }
-        .card-stat .num.stat-num-stall { color: #ff9800; }
-        .card-stat .num.stat-num-queue { color: var(--warning); }
-        .arm-extra { font-size: 11px; color: var(--text2); margin-top: 4px; }
-        .arm-extra .arm-rate { color: #93a7ff; font-weight: 500; }
-        .card-stat .num .stat-rate {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text2);
+            font-weight: 400;
+            color: var(--text-2);
             margin-left: 4px;
+            font-family: var(--font-mono);
         }
-        .arm-error { font-size: 11px; color: var(--danger); margin-top: 4px; }
-        .cam-loading { text-align: center; color: var(--text2); padding: 24px 4px; }
-        .arm-grid .card.arm-card {
+
+        /* ── Section header ── */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-3);
+        }
+
+        /* ── Machine cards ── */
+        .arm-grid { margin-bottom: 24px; }
+
+        .arm-card {
             padding: 16px;
-            min-height: 154px;
             position: relative;
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.28);
-            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
-            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            transition: border-color 0.2s;
         }
-        .arm-card-idle { border-left: 3px solid rgba(76, 175, 80, 0.9); }
-        .arm-card-busy { border-left: 3px solid rgba(255, 152, 0, 0.95); }
-        .arm-card-paused { border-left: 3px solid rgba(244, 67, 54, 0.9); }
-        .arm-card-offline, .arm-card-no_worker { border-left: 3px solid rgba(244, 67, 54, 0.75); opacity: 0.92; }
-        .arm-card .arm-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; color: #e6ecff; }
-        .arm-card .arm-meta { font-size: 11px; color: var(--text2); margin-bottom: 8px; }
-        .arm-card .arm-status { font-size: 14px; margin-bottom: 6px; color: #dbe3ff; }
-        .arm-card .arm-task { font-size: 12px; color: #9fb0e7; min-height: 32px; line-height: 1.5; }
-        .arm-card .arm-controls { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-        .status-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 6px;
-            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08), 0 0 12px currentColor;
+        .arm-card:hover { border-color: var(--border-2); }
+
+        .arm-card-idle    { border-left: 2px solid var(--success); }
+        .arm-card-busy    { border-left: 2px solid var(--warning); }
+        .arm-card-paused  { border-left: 2px solid var(--danger); }
+        .arm-card-offline,
+        .arm-card-no_worker { border-left: 2px solid var(--text-3); opacity: 0.7; }
+
+        .arm-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .arm-name { font-size: 14px; font-weight: 700; color: var(--text); }
+        .arm-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: var(--text-2);
+            background: var(--surface-2);
         }
-        .dot-idle { background: var(--success); }
-        .dot-busy { background: var(--warning); animation: pulse 1.5s infinite; }
-        .dot-offline, .dot-paused, .dot-no_worker { background: var(--danger); }
-        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-        .arm-controls .btn {
-            border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
+        .arm-card-idle    .arm-status-badge { color: var(--success); background: var(--success-dim); }
+        .arm-card-busy    .arm-status-badge { color: var(--warning); background: var(--warning-dim); }
+        .arm-card-paused  .arm-status-badge { color: var(--danger);  background: var(--danger-dim); }
+        .arm-card-offline .arm-status-badge,
+        .arm-card-no_worker .arm-status-badge { color: var(--text-3); background: var(--surface-3); }
+
+        .arm-meta {
+            font-size: 11px;
+            color: var(--text-3);
+            font-family: var(--font-mono);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .btn-warning { background: var(--warning); color: #111; }
-        .btn-warning:hover { background: #e68a00; }
-        .cam-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #9fb0e7; margin-bottom: 8px; }
-        .cam-row .cam-btn { padding: 1px 8px; font-size: 11px; line-height: 1.4; cursor: pointer; background: rgba(255,255,255,0.02); border: 1px solid rgba(135, 150, 212, 0.45); color: #c5d2ff; border-radius: 999px; }
-        .cam-row .cam-btn:hover { color: var(--accent); border-color: var(--accent); }
-        .cam-row .cam-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .cam-panel { background: #0d162f; border: 1px solid #31416d; border-radius: 10px; padding: 8px; margin-bottom: 10px; font-size: 11px; }
-        .cam-panel img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 4px; background: #000; }
-        .cam-panel .cam-hint { color: #a6b7ea; margin: 6px 0; line-height: 1.4; }
-        .cam-panel .cam-swap-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-        .cam-panel select { font-size: 11px; padding: 2px 4px; flex: 1; min-width: 0; }
-        .cam-panel .cam-err { color: var(--danger); padding: 12px 4px; text-align: center; }
-        .panel-card {
-            border-radius: 14px;
-            border-color: rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+        .arm-meta .sep { opacity: 0.4; }
+
+        .arm-task {
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.5;
+            min-height: 36px;
         }
-        .panel-header { margin-bottom: 12px; }
-        .panel-header h3 { color: #dee6ff; }
+        .arm-task strong { color: var(--text); }
+
+        .arm-today {
+            font-size: 11px;
+            color: var(--text-3);
+            font-family: var(--font-mono);
+        }
+        .arm-today .rate { color: var(--accent); }
+
+        .arm-error {
+            font-size: 11px;
+            color: var(--danger);
+            background: var(--danger-dim);
+            padding: 4px 8px;
+            border-radius: 4px;
+            line-height: 1.4;
+        }
+
+        .arm-controls {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 2px;
+        }
+
+        /* ── Camera verify panel ── */
+        .cam-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-3);
+        }
+        .cam-btn {
+            padding: 2px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            border-radius: var(--radius);
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .cam-btn:hover { color: var(--text); border-color: var(--border-2); }
+        .cam-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .cam-panel {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 10px;
+            font-size: 11px;
+        }
+        .cam-panel img {
+            width: 100%;
+            max-height: 150px;
+            object-fit: contain;
+            border-radius: var(--radius);
+            background: #000;
+        }
+        .cam-hint { color: var(--text-2); margin: 6px 0 4px; line-height: 1.4; }
+        .cam-swap-row { display: flex; gap: 5px; align-items: center; margin-top: 6px; }
+        .cam-swap-row select { font-size: 11px; padding: 3px 6px; flex: 1; min-width: 0; }
+        .cam-err { color: var(--danger); padding: 16px 4px; text-align: center; }
+        .cam-loading { text-align: center; color: var(--text-2); padding: 20px 4px; font-size: 11px; }
+
+        /* ── Log terminal ── */
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .panel-header h3 { margin-bottom: 0; }
+
+        .log-terminal {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 10px;
+            height: 280px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            line-height: 1.7;
+        }
+
+        .log-line {
+            padding: 1px 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+        .log-line:hover { background: rgba(255,255,255,0.03); }
+        .log-ts  { color: var(--text-3); flex-shrink: 0; }
+        .log-lvl { font-weight: 600; flex-shrink: 0; min-width: 52px; }
+        .log-prefix { color: var(--text-3); }
+        .log-msg { color: var(--text-2); word-break: break-all; }
+
+        .select-compact { width: auto; min-width: 110px; padding: 4px 8px; font-size: 12px; }
+
         .full-span-center-muted {
-            color: #9fb0e7;
+            grid-column: 1 / -1;
+            text-align: center;
+            color: var(--text-2);
+            padding: 32px;
             border-style: dashed;
-            border-color: rgba(140, 156, 224, 0.34);
-            background: rgba(14, 24, 49, 0.55);
-            border-radius: 14px;
+            font-size: 13px;
         }
+
         @media (max-width: 980px) {
             .dash-hero { flex-direction: column; }
         }
     </style>
 </head>
 <body>
-    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
+
         <header class="dash-hero">
-            <div>
-                <p class="dash-kicker">Operations Console</p>
-                <h2 class="page-title">Dashboard</h2>
-                <p class="dash-subtitle">Real-time machine health, task flow, and diagnostics in one place.</p>
+            <div class="page-head" style="margin-bottom:0">
+                <p class="page-kicker">Operations Console</p>
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle">Real-time machine health, task flow, and diagnostics.</p>
             </div>
         </header>
 
+        <!-- Stats -->
         <div class="grid grid-5 stats-grid" id="stats"></div>
 
-        <h3 class="section-title">Machine Status</h3>
+        <!-- Machines -->
+        <div class="section-header">
+            <span class="section-label">Machines</span>
+        </div>
         <div class="grid grid-4 arm-grid" id="arm-cards">
-            <div class="card full-span-center-muted">Connecting...</div>
+            <div class="card full-span-center-muted">Connecting…</div>
         </div>
 
-        <!-- Live Log Terminal -->
-        <div class="card panel-card">
+        <!-- Live Log -->
+        <div class="card">
             <div class="panel-header">
                 <h3>Live Logs</h3>
-                <div class="panel-actions">
+                <div style="display:flex;gap:8px;align-items:center;">
                     <select id="log-arm-select" onchange="switchLogArm()" class="select-compact">
                         <option value="">All Arms</option>
                     </select>
-                    <button class="btn btn-sm btn-secondary" onclick="clearLogs()">Clear</button>
+                    <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
                 </div>
             </div>
             <div id="log-terminal" class="log-terminal"></div>
         </div>
 
-
-
-
     </div>
-    </div>
+
     <script src="/static/js/api.js"></script>
     <script>
     let ws = null;
-
-    // Per-arm finished-task count for today, in selected TZ. Backed by the
-    // /stats/today endpoint's `per_arm` field (added in the TZ toggle change).
-    // null = backend hasn't been restarted yet → fall back to the worker
-    // counter (a.task_count) so we don't misleadingly show "Today: 0".
     let lastPerArm = null;
 
     async function loadStats() {
@@ -219,21 +268,31 @@
         try { s = await API.get('/api/monitor/stats/today?tz=' + getDisplayTZ()); }
         catch (e) { return; }
         if (!s || s.error) return;
-        // Rates are computed against today's finished total (success+failed+stall)
-        // so the three rates always sum to 100%. Queued/running are excluded.
         const finished = (s.success || 0) + (s.failed || 0) + (s.stall || 0);
         const pct = (n) => finished > 0 ? Math.round((n || 0) / finished * 100) : 0;
         document.getElementById('stats').innerHTML = `
-            <div class="card card-stat stat-total"><div class="num">${s.total || 0}</div><div class="label">Today Total</div></div>
-            <div class="card card-stat stat-success"><div class="num stat-num-success">${s.success || 0} <span class="stat-rate">${pct(s.success)}%</span></div><div class="label">Success</div></div>
-            <div class="card card-stat stat-failed"><div class="num stat-num-failed">${s.failed || 0} <span class="stat-rate">${pct(s.failed)}%</span></div><div class="label">Failed</div></div>
-            <div class="card card-stat stat-stall"><div class="num stat-num-stall">${s.stall || 0} <span class="stat-rate">${pct(s.stall)}%</span></div><div class="label">Stall</div></div>
-            <div class="card card-stat stat-queue"><div class="num stat-num-queue">${s.queued || 0}</div><div class="label">In Queue</div></div>
+            <div class="card card-stat stat-total">
+                <div class="num">${s.total || 0}</div>
+                <div class="label">Today Total</div>
+            </div>
+            <div class="card card-stat stat-success">
+                <div class="num stat-num-success">${s.success || 0}<span class="stat-rate">${pct(s.success)}%</span></div>
+                <div class="label">Success</div>
+            </div>
+            <div class="card card-stat stat-failed">
+                <div class="num stat-num-failed">${s.failed || 0}<span class="stat-rate">${pct(s.failed)}%</span></div>
+                <div class="label">Failed</div>
+            </div>
+            <div class="card card-stat stat-stall">
+                <div class="num stat-num-stall">${s.stall || 0}<span class="stat-rate">${pct(s.stall)}%</span></div>
+                <div class="label">Stall</div>
+            </div>
+            <div class="card card-stat stat-queue">
+                <div class="num stat-num-queue">${s.queued || 0}</div>
+                <div class="label">In Queue</div>
+            </div>
         `;
         lastPerArm = s.per_arm || null;
-        // Snappier feedback after TZ toggle: re-render cards immediately with
-        // the freshly fetched per-arm counts (rather than waiting up to 2s
-        // for the next WS push to trigger a render).
         if (lastArms.length > 0) renderArmCards(lastArms, null);
     }
 
@@ -241,8 +300,6 @@
         await loadStats();
         setInterval(loadStats, 5000);
         connectWS();
-        // When user toggles GMT+7/+8 in nav, refresh today's stats so the
-        // count reflects the new calendar day boundary.
         window.addEventListener('displaytz:changed', loadStats);
     }
 
@@ -266,10 +323,6 @@
     let lastArms = [];
 
     function renderArmCards(arms, queued) {
-        // Dashboard only shows arms with active=true. Inactive arms are hidden
-        // here (still visible in Settings for admin); flip via Settings to
-        // re-enable. This keeps the operations view focused on machines that
-        // are actually in service.
         arms = (arms || []).filter(a => a.active);
         if (arms.length > 0) updateLogArmSelect(arms);
         lastArms = arms;
@@ -278,10 +331,14 @@
             cards.innerHTML = '<div class="card full-span-center-muted">No active machines. <a href="/settings">Activate one in Settings</a>.</div>';
             return;
         }
+
         cards.innerHTML = arms.map(a => {
             const st = getEffectiveStatus(a);
-            const stLabel = {idle:'IDLE', busy:'BUSY', paused:'PAUSED', offline:'OFFLINE', no_worker:'NO WORKER'}[st] || st.toUpperCase();
+            const stLabel = {idle:'Idle', busy:'Busy', paused:'Paused', offline:'Offline', no_worker:'No Worker'}[st] || st;
+
             const camSafe = (st !== 'busy');
+            const camBtnDisabled = camSafe ? '' : 'disabled';
+
             let btns = '';
             if (st === 'idle' || st === 'busy') {
                 btns += `<button class="btn btn-sm btn-secondary" onclick="armAction('pause',${a.arm_id})">Pause</button>`;
@@ -296,32 +353,34 @@
             }
             btns += `<button class="btn btn-sm btn-danger" onclick="armAction('reset',${a.arm_id})">Reset</button>`;
 
-            const camBtnTitle = camSafe ? 'Verify physical camera matches this arm' : 'Arm is busy — wait for current task to finish';
-            const camBtnDisabled = camSafe ? '' : 'disabled';
-            const camRow = `<div class="cam-row">
-                <span>${a.com_port} | Camera ${a.camera_id}</span>
-                <button class="cam-btn" ${camBtnDisabled} title="${camBtnTitle}" onclick="toggleCamPanel(${a.arm_id})">&#x21bb; Verify</button>
-            </div>`;
+            const todayStr = (() => {
+                if (lastPerArm === null) return `Completed: ${a.task_count}`;
+                const b = lastPerArm[a.arm_id] || {success: 0, total: 0};
+                const rate = b.total > 0 ? Math.round(b.success / b.total * 100) : 0;
+                return `Today: ${b.success}/${b.total} <span class="rate">(${rate}%)</span>`;
+            })();
 
             return `<div class="card arm-card arm-card-${st}" id="arm-card-${a.arm_id}">
-                <div class="arm-name">${a.name}</div>
-                ${camRow}
+                <div class="arm-header">
+                    <span class="arm-name">${a.name}</span>
+                    <span class="arm-status-badge">
+                        <span class="status-dot dot-${st}"></span>
+                        ${stLabel}
+                    </span>
+                </div>
+                <div class="arm-meta">
+                    <span>${a.com_port}</span>
+                    <span class="sep">·</span>
+                    <span>Cam ${a.camera_id}</span>
+                    <button class="cam-btn" ${camBtnDisabled} title="${camSafe ? 'Verify camera' : 'Arm busy'}" onclick="toggleCamPanel(${a.arm_id})" style="margin-left:4px;">⟳ Verify</button>
+                </div>
                 <div id="cam-panel-${a.arm_id}"></div>
-                <div class="arm-status">
-                    <span class="status-dot dot-${st}"></span>
-                    <strong>${stLabel}</strong>
-                </div>
                 <div class="arm-task">
-                    ${a.current_task ? 'Task: ' + a.current_task : 'No active task'}
-                    ${a.current_step ? '<br>Step: ' + a.current_step : ''}
+                    ${a.current_task ? `<strong>${a.current_task}</strong>` : '<span style="color:var(--text-3)">No active task</span>'}
+                    ${a.current_step ? `<br><span style="color:var(--text-3)">Step: ${a.current_step}</span>` : ''}
                 </div>
-                <div class="arm-extra">${(() => {
-                    if (lastPerArm === null) return `Completed: ${a.task_count}`;
-                    const b = lastPerArm[a.arm_id] || {success: 0, total: 0};
-                    const rate = b.total > 0 ? Math.round(b.success / b.total * 100) : 0;
-                    return `Today: ${b.success}/${b.total} <span class="arm-rate">(${rate}%)</span>`;
-                })()}</div>
-                ${a.last_error ? '<div class="arm-error">' + a.last_error.substring(0,80) + '</div>' : ''}
+                ${a.last_error ? `<div class="arm-error">${a.last_error.substring(0,80)}</div>` : ''}
+                <div class="arm-today">${todayStr}</div>
                 <div class="arm-controls">${btns}</div>
             </div>`;
         }).join('');
@@ -343,15 +402,7 @@
         }
     }
 
-    /* ============ CAMERA VERIFY / SWAP ============
-       Preview is captured ONCE per Verify click and cached, so the 2s WS
-       re-render of arm-cards just repaints from the cache instead of
-       hammering /camera-preview (which would open+close the camera every
-       2s — that was a bug). Force a fresh capture only on:
-       - first click of Verify
-       - manual refresh button (↻)
-       - after a successful swap
-    */
+    /* ── Camera verify / swap ── */
     const camPanelOpen = new Set();
     const camPreviewCache = new Map();
 
@@ -392,12 +443,12 @@
 
         el.innerHTML = `<div class="cam-panel">
             ${body}
-            <div class="cam-hint">Does this view match <b>${arm.name}</b>'s physical position?</div>
+            <div class="cam-hint">Does this view match <strong>${arm.name}</strong>'s physical position?</div>
             <div class="cam-swap-row">
                 <select id="cam-swap-sel-${armId}" ${others.length ? '' : 'disabled'}>${swapOptions}</select>
                 <button class="cam-btn" ${others.length ? '' : 'disabled'} onclick="doSwap(${armId})">Swap</button>
-                <button class="cam-btn" onclick="renderCamPanel(${armId}, true)" title="Recapture">&#x21bb;</button>
-                <button class="cam-btn" onclick="toggleCamPanel(${armId})">&times;</button>
+                <button class="cam-btn" onclick="renderCamPanel(${armId}, true)" title="Recapture">⟳</button>
+                <button class="cam-btn" onclick="toggleCamPanel(${armId})">✕</button>
             </div>
         </div>`;
     }
@@ -417,19 +468,6 @@
         _paintCamPanel(armId, r);
     }
 
-    /* Wait until both arms' workers are back up after restart_worker.
-       Polls lastArms (refreshed by 2s WS push) at 500ms intervals.
-
-       Ready states are whitelisted instead of blacklisted so the check
-       aligns with ArmWorker.get_status()'s enum-like return values:
-         idle   — _running=True, no task, no pause
-         busy   — _running=True, has current task
-         paused — _running=True, explicitly paused
-       These three imply camera_enable() has completed in run(). States
-       outside this set ('offline' when _running=False, 'no_worker' when
-       the arm is missing from manager.workers) are NOT ready.
-
-       Caps wait at maxMs to avoid hanging the UI if something breaks. */
     const WORKER_READY_STATES = new Set(['idle', 'busy', 'paused']);
     async function _waitForWorkerReady(armIds, maxMs = 8000) {
         const t0 = Date.now();
@@ -456,10 +494,7 @@
             : '';
         if (!confirm(`Swap camera between ${a.name} (cam ${a.camera_id}) and ${b.name} (cam ${b.camera_id})?${restartNote}`)) return;
         const r = await API.post('/api/monitor/arms/swap-camera', { arm_id_a: armId, arm_id_b: targetId });
-        if (!r.success) {
-            toast(r.error || 'Swap failed', 'error');
-            return;
-        }
+        if (!r.success) { toast(r.error || 'Swap failed', 'error'); return; }
         toast('Cameras swapped — workers restarting…');
         camPreviewCache.delete(armId);
         camPreviewCache.delete(targetId);
@@ -476,10 +511,15 @@
         else toast(r.error || 'Failed', 'error');
     }
 
-    // === Live Log Terminal ===
+    /* ── Live Log Terminal ── */
     let logWs = null;
     let currentLogArm = '';
-    const logColors = { INFO: '#58a6ff', WARNING: '#d29922', ERROR: '#f85149', DEBUG: '#8b949e' };
+    const logColors = {
+        INFO:    '#6ea8fe',
+        WARNING: '#ffc107',
+        ERROR:   '#f87171',
+        DEBUG:   '#6e7681'
+    };
 
     function connectLogWS() {
         if (logWs) { try { logWs.close(); } catch(e) {} }
@@ -490,11 +530,13 @@
             const logs = JSON.parse(e.data);
             const term = document.getElementById('log-terminal');
             logs.forEach(l => {
-                const color = logColors[l.level] || '#c9d1d9';
+                const color = logColors[l.level] || '#8e8e9e';
                 const prefix = l.arm_name ? `<span class="log-prefix">[${l.arm_name}]</span> ` : '';
-                const ts = `<span class="log-ts">${l.ts}</span>`;
-                const lvl = `<span class="log-lvl" style="color:${color}">${l.level.padEnd(7)}</span>`;
-                term.innerHTML += `<div class="log-line">${ts} ${lvl} ${prefix}${escHtml(l.msg)}</div>`;
+                term.innerHTML += `<div class="log-line">
+                    <span class="log-ts">${l.ts}</span>
+                    <span class="log-lvl" style="color:${color}">${l.level}</span>
+                    <span class="log-msg">${prefix}${escHtml(l.msg)}</span>
+                </div>`;
             });
             if (logs.length > 0) term.scrollTop = term.scrollHeight;
         };

@@ -6,149 +6,272 @@
     <title>Transactions — WA System</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        html, body { min-height: 100%; }
-        body {
-            background:
-                radial-gradient(1200px 700px at 10% -10%, rgba(120, 88, 255, 0.22), transparent 50%),
-                radial-gradient(900px 600px at 90% 0%, rgba(50, 186, 255, 0.18), transparent 50%),
-                #0a1020;
-            color: #e8ecff;
-            overflow-x: hidden;
-        }
-        .app-shell {
-            width: 111.1112%;
-            transform: scale(0.9);
-            transform-origin: top left;
-        }
-        .container { max-width: 1520px; padding-top: 20px; }
-        .page-head { margin-bottom: 14px; }
-        .page-kicker {
-            margin: 0 0 6px;
-            font-size: 11px;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #93a7ff;
-        }
-        .page-title { margin: 0; font-size: 27px; color: #e6ecff; }
-        .page-subtitle { margin: 6px 0 0; color: #acb6de; font-size: 13px; }
+        /* ── Filters bar ── */
         .filters {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             margin-bottom: 16px;
-            align-items: center;
+            align-items: flex-end;
             flex-wrap: wrap;
-            padding: 14px;
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(20, 31, 64, 0.9), rgba(12, 19, 40, 0.95));
-            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+            padding: 14px 16px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border);
+            background: var(--surface);
         }
-        .filters select, .filters input { width: auto; min-width: 120px; }
-        .filters .btn { border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
-        .filters .btn-clear { font-size: 12px; }
-        .tx-count { color: #9fb0e7; font-size: 13px; margin-left: auto; }
-        #tx-list {
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(18, 28, 59, 0.92), rgba(12, 18, 40, 0.95));
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-group label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-3);
+            margin-bottom: 0;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            width: auto;
+            min-width: 110px;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .filters .divider {
+            width: 1px;
+            height: 32px;
+            background: var(--border);
+            align-self: flex-end;
+            margin: 0 4px;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+            margin-left: auto;
+        }
+
+        .tx-count {
+            font-size: 12px;
+            color: var(--text-3);
+            font-family: var(--font-mono);
+            align-self: flex-end;
+            padding-bottom: 7px;
+        }
+
+        /* ── Transaction table ── */
+        .tx-table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
             overflow: hidden;
         }
-        #tx-list table { margin: 0; }
-        #tx-list th { background: rgba(38, 53, 102, 0.6); color: #b8c5f1; }
-        #tx-list td { border-bottom-color: rgba(96, 117, 191, 0.2); }
+
         .tx-row { cursor: pointer; }
-        .tx-row:hover td { background: rgba(233,69,96,0.08) !important; }
-        .status-success { color: var(--success); }
-        .status-failed { color: var(--danger); }
-        .status-review { color: #9c6dff; font-weight: bold; }
-        .status-stall { color: #ff9800; font-weight: bold; }
-        .status-running { color: var(--warning); }
-        .status-queued { color: var(--text2); }
-        .log-item { padding: 8px 12px; border-bottom: 1px solid rgba(96, 117, 191, 0.2); font-size: 13px; }
-        .log-item.fail { background: rgba(244,67,54,0.08); }
-        .log-item .step-info { display: flex; justify-content: space-between; }
-        .screenshot-btn { cursor: pointer; color: var(--accent); text-decoration: underline; font-size: 12px; }
-        .modal-img { max-width: 100%; border-radius: 8px; }
+        .tx-row:hover td { background: rgba(255,255,255,0.025) !important; }
+
+        .tx-id {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-3);
+        }
+
+        .tx-amount {
+            font-family: var(--font-mono);
+            font-weight: 600;
+        }
+
+        .tx-dur {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-2);
+        }
+
+        /* ── Detail modal ── */
         #detail-modal .modal {
-            max-width: 700px;
+            max-width: 720px;
             max-height: 85vh;
             overflow-y: auto;
             overscroll-behavior: contain;
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(18, 28, 59, 0.95), rgba(12, 18, 40, 0.98));
+            width: 92vw;
         }
-        #detail-modal .modal h3 { margin-top: 0; }
+
+        .detail-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .detail-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .detail-field label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-3);
+            margin-bottom: 3px;
+        }
+
+        .detail-field .val {
+            font-size: 13px;
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .detail-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-3);
+            margin: 16px 0 8px;
+        }
+
+        .detail-error {
+            margin-bottom: 12px;
+            color: var(--danger);
+            font-size: 12px;
+            background: var(--danger-dim);
+            padding: 8px 10px;
+            border-radius: var(--radius);
+        }
+
+        /* ── Step logs ── */
         #detail-logs-container {
-            max-height: 45vh;
+            max-height: 40vh;
             overflow-y: auto;
             overscroll-behavior: contain;
-            border: 1px solid rgba(96, 117, 191, 0.3);
-            border-radius: 10px;
-            margin-top: 8px;
-            background: rgba(7, 14, 33, 0.65);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--bg);
         }
-        .detail-head { display: flex; justify-content: space-between; align-items: center; }
-        .detail-info { margin: 12px 0; font-size: 13px; }
-        .detail-subtitle { margin: 12px 0 4px; }
-        .detail-grid { gap: 8px; }
-        .detail-error { margin-top: 8px; color: var(--danger); }
-        .detail-ocr { font-size: 12px; color: var(--text2); margin-top: 4px; }
-        .detail-msg { font-size: 12px; color: var(--danger); margin-top: 4px; }
-        .empty-tip { color: var(--text2); padding: 12px; }
+
+        .log-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        .log-item:last-child { border-bottom: none; }
+        .log-item.fail { background: oklch(0.65 0.2 24 / 0.05); }
+
+        .step-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .step-info .step-name { font-weight: 500; color: var(--text); }
+        .step-info .step-result { font-family: var(--font-mono); font-size: 11px; }
+        .step-info .step-result.ok  { color: var(--success); }
+        .step-info .step-result.fail { color: var(--danger); }
+
+        .detail-ocr { font-size: 11px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); }
+        .detail-msg { font-size: 11px; color: var(--danger); margin-top: 3px; }
+        .screenshot-btn { cursor: pointer; color: var(--accent); font-size: 11px; margin-top: 4px; display: inline-block; }
+        .screenshot-btn:hover { text-decoration: underline; }
+
+        .empty-tip { color: var(--text-2); padding: 24px; text-align: center; font-size: 13px; }
+
+        /* ── Screenshot modal ── */
         .screen-modal {
-            max-width: 500px;
+            max-width: 520px;
             text-align: center;
-            border-radius: 14px;
-            border: 1px solid rgba(109, 127, 206, 0.3);
-            background: linear-gradient(160deg, rgba(18, 28, 59, 0.95), rgba(12, 18, 40, 0.98));
         }
-        .screen-modal-footer { margin-top: 12px; }
+        .modal-img { max-width: 100%; border-radius: var(--radius-lg); }
+        .screen-modal-footer { margin-top: 14px; }
     </style>
 </head>
 <body>
-    <div class="app-shell">
     <div id="nav"></div>
     <div class="container">
+
         <div class="page-head">
             <p class="page-kicker">Operations Console</p>
-            <h2 class="page-title">Transactions</h2>
+            <h1 class="page-title">Transactions</h1>
             <p class="page-subtitle">Review transaction lifecycle, status, and execution logs.</p>
         </div>
 
+        <!-- Filters -->
         <div class="filters">
-            <select id="filter-status">
-                <option value="">All Status</option>
-                <option value="queued">Queued</option>
-                <option value="running">Running</option>
-                <option value="success">Success</option>
-                <option value="failed">Failed</option>
-                <option value="stall">Stall</option>
-            </select>
-            <select id="filter-bank"><option value="">From Bank</option></select>
-            <select id="filter-to-bank"><option value="">To Bank</option></select>
-            <select id="filter-arm"><option value="">All Arms</option></select>
-            <input type="date" id="filter-date-from" title="From date">
-            <input type="date" id="filter-date-to" title="To date">
-            <select id="filter-pagesize" title="Rows per page">
-                <option value="50">50</option>
-                <option value="100" selected>100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-                <option value="">All</option>
-            </select>
-            <button class="btn btn-primary" onclick="loadTransactions()">Filter</button>
-            <button class="btn btn-secondary btn-clear" onclick="clearFilters()">Clear</button>
-            <span id="tx-count" class="tx-count"></span>
+            <div class="filter-group">
+                <label>Status</label>
+                <select id="filter-status">
+                    <option value="">All</option>
+                    <option value="queued">Queued</option>
+                    <option value="running">Running</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                    <option value="stall">Stall</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>From Bank</label>
+                <select id="filter-bank"><option value="">All</option></select>
+            </div>
+            <div class="filter-group">
+                <label>To Bank</label>
+                <select id="filter-to-bank"><option value="">All</option></select>
+            </div>
+            <div class="filter-group">
+                <label>Arm</label>
+                <select id="filter-arm"><option value="">All Arms</option></select>
+            </div>
+            <div class="divider"></div>
+            <div class="filter-group">
+                <label>From Date</label>
+                <input type="date" id="filter-date-from">
+            </div>
+            <div class="filter-group">
+                <label>To Date</label>
+                <input type="date" id="filter-date-to">
+            </div>
+            <div class="filter-group">
+                <label>Rows</label>
+                <select id="filter-pagesize" style="min-width:70px;">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" onclick="loadTransactions()">Filter</button>
+                <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+                <span id="tx-count" class="tx-count"></span>
+            </div>
         </div>
 
-        <div id="tx-list">
+        <!-- Table -->
+        <div class="tx-table-wrap">
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th><th>Process ID</th><th>Arm</th><th>From</th><th>To</th><th>Amount</th>
-                        <th>Status</th><th>Created</th><th>Duration</th>
+                        <th>ID</th>
+                        <th>Process ID</th>
+                        <th>Arm</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Duration</th>
                     </tr>
                 </thead>
                 <tbody id="tx-body"></tbody>
@@ -156,25 +279,26 @@
         </div>
 
     </div>
-    </div>
 
+    <!-- Detail Modal -->
     <div class="modal-overlay" id="detail-modal">
         <div class="modal">
             <div class="detail-head">
                 <h3 id="detail-title">Transaction Detail</h3>
-                <button class="btn btn-sm btn-secondary" onclick="closeDetail()">Close</button>
+                <button class="btn btn-secondary btn-sm" onclick="closeDetail()">Close</button>
             </div>
-            <div id="detail-info" class="detail-info"></div>
-            <h4 class="detail-subtitle">Step Logs</h4>
+            <div id="detail-info"></div>
+            <p class="detail-section-title">Step Logs</p>
             <div id="detail-logs-container">
                 <div id="detail-logs"></div>
             </div>
         </div>
     </div>
 
+    <!-- Screenshot Modal -->
     <div class="modal-overlay" id="screenshot-modal">
         <div class="modal screen-modal">
-            <img id="screenshot-img" class="modal-img" />
+            <img id="screenshot-img" class="modal-img" alt="Screenshot" />
             <div class="screen-modal-footer">
                 <button class="btn btn-secondary" onclick="closeScreenshot()">Close</button>
             </div>
@@ -184,31 +308,22 @@
     <div class="modal-overlay" id="resend-modal">
         <div class="modal" style="max-width:520px;max-height:85vh;overflow-y:auto;overscroll-behavior:contain;">
             <style>
-                /* Local override: defeat the global `input{width:100%}` rule
-                   from style.css so radio buttons / checkboxes render at their
-                   natural ~16x16 size and stay left-aligned next to the label. */
                 #resend-modal input[type="radio"],
                 #resend-modal input[type="checkbox"] {
                     width: auto;
                     margin: 0;
                     flex-shrink: 0;
                 }
-                #resend-modal .resend-choice {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 6px 0;
-                    cursor: pointer;
-                    font-size: 13px;
-                }
+                #resend-modal .resend-choice,
                 #resend-modal .resend-checkbox-row {
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    padding: 4px 0;
                     cursor: pointer;
                     font-size: 13px;
                 }
+                #resend-modal .resend-choice { padding: 6px 0; }
+                #resend-modal .resend-checkbox-row { padding: 4px 0; }
             </style>
             <div class="detail-head">
                 <h3 style="margin-top:0;">Resend PAS Callback</h3>
@@ -230,21 +345,20 @@
             API.get('/api/stations/arms'),
         ]);
         const banks = [...new Set((Array.isArray(apps) ? apps : []).map(a => a.bank_code))].sort();
-        document.getElementById('filter-bank').innerHTML = '<option value="">From Bank</option>' +
+        document.getElementById('filter-bank').innerHTML = '<option value="">All</option>' +
             banks.map(b => `<option value="${b}">${b}</option>`).join('');
         const mappings = await API.get('/api/banks/mappings');
         const toBanks = [...new Set((Array.isArray(mappings) ? mappings : []).map(m => m.to_bank_code))].sort();
-        document.getElementById('filter-to-bank').innerHTML = '<option value="">To Bank</option>' +
+        document.getElementById('filter-to-bank').innerHTML = '<option value="">All</option>' +
             toBanks.map(b => `<option value="${b}">${b}</option>`).join('');
         document.getElementById('filter-arm').innerHTML = '<option value="">All Arms</option>' +
             (Array.isArray(arms) ? arms : []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
     function clearFilters() {
-        document.getElementById('filter-status').value = '';
-        document.getElementById('filter-bank').value = '';
-        document.getElementById('filter-to-bank').value = '';
-        document.getElementById('filter-arm').value = '';
+        ['filter-status','filter-bank','filter-to-bank','filter-arm'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
         document.getElementById('filter-date-from').value = '';
         document.getElementById('filter-date-to').value = '';
         document.getElementById('filter-pagesize').value = '100';
@@ -252,42 +366,43 @@
     }
 
     async function loadTransactions() {
-        const status = document.getElementById('filter-status').value;
-        const bank = document.getElementById('filter-bank').value;
-        const toBank = document.getElementById('filter-to-bank').value;
-        const arm = document.getElementById('filter-arm').value;
+        const status   = document.getElementById('filter-status').value;
+        const bank     = document.getElementById('filter-bank').value;
+        const toBank   = document.getElementById('filter-to-bank').value;
+        const arm      = document.getElementById('filter-arm').value;
         const dateFrom = document.getElementById('filter-date-from').value;
-        const dateTo = document.getElementById('filter-date-to').value;
+        const dateTo   = document.getElementById('filter-date-to').value;
         const pageSize = document.getElementById('filter-pagesize').value;
-        const params = pageSize ? ['limit=' + pageSize] : ['limit=0'];
+        const params   = pageSize ? ['limit=' + pageSize] : ['limit=0'];
         params.push('tz=' + getDisplayTZ());
-        if (status) params.push('status=' + status);
-        if (bank) params.push('bank=' + bank);
-        if (toBank) params.push('to_bank=' + toBank);
-        if (arm) params.push('arm_id=' + arm);
+        if (status)   params.push('status='    + status);
+        if (bank)     params.push('bank='      + bank);
+        if (toBank)   params.push('to_bank='   + toBank);
+        if (arm)      params.push('arm_id='    + arm);
         if (dateFrom) params.push('date_from=' + dateFrom);
-        if (dateTo) params.push('date_to=' + dateTo);
-        const url = '/api/monitor/transactions?' + params.join('&');
-        const rows = await API.get(url);
+        if (dateTo)   params.push('date_to='   + dateTo);
+
+        const rows = await API.get('/api/monitor/transactions?' + params.join('&'));
         const tbody = document.getElementById('tx-body');
-        document.getElementById('tx-count').textContent = (Array.isArray(rows) ? rows.length : 0) + ' transactions';
+        document.getElementById('tx-count').textContent =
+            (Array.isArray(rows) ? rows.length : 0) + ' rows';
 
         tbody.innerHTML = (Array.isArray(rows) ? rows : []).map(tx => {
             const dur = tx.started_at && tx.finished_at
                 ? Math.round((new Date(tx.finished_at) - new Date(tx.started_at)) / 1000) + 's'
-                : '-';
+                : '—';
             return `<tr class="tx-row" onclick="showDetail(${tx.id})">
-                <td>${tx.id}</td>
-                <td>${tx.process_id}</td>
-                <td>${tx.arm_name || '-'}</td>
+                <td class="tx-id">#${tx.id}</td>
+                <td class="tx-id">${tx.process_id}</td>
+                <td>${tx.arm_name || '—'}</td>
                 <td><strong>${tx.pay_from_bank_code}</strong></td>
-                <td>${tx.pay_to_bank_code || '-'}</td>
-                <td>$${tx.amount}</td>
+                <td>${tx.pay_to_bank_code || '—'}</td>
+                <td class="tx-amount">$${tx.amount}</td>
                 <td><span class="status-${tx.status}">${tx.status}</span></td>
-                <td>${formatTZ(tx.created_at)}</td>
-                <td>${dur}</td>
+                <td style="font-family:var(--font-mono);font-size:12px;">${formatTZ(tx.created_at)}</td>
+                <td class="tx-dur">${dur}</td>
             </tr>`;
-        }).join('') || '<tr><td colspan="8" class="empty-tip">No transactions</td></tr>';
+        }).join('') || '<tr><td colspan="9" class="empty-tip">No transactions found</td></tr>';
     }
 
     async function showDetail(id) {
@@ -297,9 +412,6 @@
         ]);
         document.getElementById('detail-title').textContent = `Transaction #${tx.id} — Process ${tx.process_id}`;
 
-        // Callback row: shown for every transaction. Button text + style
-        // depend on whether a callback was already sent. Disabled while the
-        // transaction is still queued/running (no callback to send yet).
         const cbStatusHtml = tx.callback_sent_at
             ? `<span style="color:var(--success);">Sent ${formatTZ(tx.callback_sent_at)}</span>`
             : `<span style="color:var(--warning);">Not sent yet</span>`;
@@ -309,48 +421,43 @@
         const btnAttrs = isFinished ? '' : 'disabled title="Transaction not finished"';
 
         document.getElementById('detail-info').innerHTML = `
-            <div class="grid grid-4 detail-grid">
-                <div><label>From</label><div>${tx.pay_from_bank_code}</div></div>
-                <div><label>To</label><div>${tx.pay_to_bank_code || '-'}</div></div>
-                <div><label>Amount</label><div>$${tx.amount}</div></div>
-                <div><label>Status</label><div class="status-${tx.status}">${tx.status}</div></div>
-                <div><label>To Account</label><div>${tx.pay_to_account_no}</div></div>
-                <div><label>Created</label><div>${formatTZ(tx.created_at)}</div></div>
-                <div><label>Started</label><div>${formatTZ(tx.started_at)}</div></div>
-                <div><label>Finished</label><div>${formatTZ(tx.finished_at)}</div></div>
-                <div><label>To Name</label><div>${tx.pay_to_account_name || '-'}</div></div>
-                <div class="full"><label>Callback</label>
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div class="detail-grid">
+                <div class="detail-field"><label>From</label><div class="val">${tx.pay_from_bank_code}</div></div>
+                <div class="detail-field"><label>To</label><div class="val">${tx.pay_to_bank_code || '—'}</div></div>
+                <div class="detail-field"><label>Amount</label><div class="val tx-amount">$${tx.amount}</div></div>
+                <div class="detail-field"><label>Status</label><div class="val status-${tx.status}">${tx.status}</div></div>
+                <div class="detail-field"><label>To Account</label><div class="val" style="font-family:var(--font-mono);font-size:12px;">${tx.pay_to_account_no}</div></div>
+                <div class="detail-field"><label>Created</label><div class="val" style="font-family:var(--font-mono);font-size:12px;">${formatTZ(tx.created_at)}</div></div>
+                <div class="detail-field"><label>Started</label><div class="val" style="font-family:var(--font-mono);font-size:12px;">${formatTZ(tx.started_at)}</div></div>
+                <div class="detail-field"><label>Finished</label><div class="val" style="font-family:var(--font-mono);font-size:12px;">${formatTZ(tx.finished_at)}</div></div>
+                ${tx.pay_to_account_name ? `<div class="detail-field" style="grid-column:1/-1"><label>To Name</label><div class="val">${tx.pay_to_account_name}</div></div>` : ''}
+                <div class="detail-field" style="grid-column:1/-1"><label>Callback</label>
+                    <div class="val" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                         ${cbStatusHtml}
                         <button class="btn btn-sm ${btnClass}" ${btnAttrs}
                                 onclick="openResendDialog(${tx.id})">${btnLabel}</button>
                     </div>
                 </div>
             </div>
-            ${tx.error_message ? '<div class="detail-error">Error: ' + tx.error_message + '</div>' : ''}
+            ${tx.error_message ? `<div class="detail-error">Error: ${tx.error_message}</div>` : ''}
         `;
         document.getElementById('detail-logs').innerHTML = logs.map(l => `
             <div class="log-item ${l.result === 'fail' ? 'fail' : ''}">
                 <div class="step-info">
-                    <span><strong>${l.step_number}.</strong> ${l.step_name} (${l.action_type})</span>
-                    <span>${l.result === 'ok' ? '✓' : '✗'} ${l.duration_ms ? l.duration_ms + 'ms' : ''}</span>
+                    <span class="step-name">${l.step_number}. ${l.step_name} <span style="color:var(--text-3);font-size:11px;">(${l.action_type})</span></span>
+                    <span class="step-result ${l.result === 'ok' ? 'ok' : 'fail'}">${l.result === 'ok' ? '✓' : '✗'}${l.duration_ms ? ' ' + l.duration_ms + 'ms' : ''}</span>
                 </div>
-                ${l.ocr_text ? '<div class="detail-ocr">OCR: ' + l.ocr_text.substring(0,100) + '</div>' : ''}
-                ${l.message ? '<div class="detail-msg">' + l.message.substring(0,200) + '</div>' : ''}
-                ${l.has_screenshot ? '<span class="screenshot-btn" onclick="showScreenshot(' + tx.id + ',' + l.id + ')">Screenshot</span>' : ''}
+                ${l.ocr_text ? `<div class="detail-ocr">OCR: ${l.ocr_text.substring(0,100)}</div>` : ''}
+                ${l.message   ? `<div class="detail-msg">${l.message.substring(0,200)}</div>` : ''}
+                ${l.has_screenshot ? `<span class="screenshot-btn" onclick="showScreenshot(${tx.id},${l.id})">View Screenshot</span>` : ''}
             </div>
         `).join('') || '<div class="empty-tip">No logs</div>';
 
         document.getElementById('detail-modal').classList.add('active');
     }
 
-    function closeDetail() {
-        document.getElementById('detail-modal').classList.remove('active');
-    }
-
-    function closeScreenshot() {
-        document.getElementById('screenshot-modal').classList.remove('active');
-    }
+    function closeDetail()     { document.getElementById('detail-modal').classList.remove('active'); }
+    function closeScreenshot() { document.getElementById('screenshot-modal').classList.remove('active'); }
 
     async function showScreenshot(txId, logId) {
         const data = await API.get(`/api/monitor/transactions/${txId}/logs/${logId}/screenshot`);
@@ -362,16 +469,9 @@
         }
     }
 
-    // === PAS callback resend ============================================
-    // Manual recovery for transactions whose auto callback chain failed
-    // (3 retries with 5s/15s/30s backoff in pas_client.callback_result),
-    // OR for cases where the operator wants to flip a misclassified status
-    // based on inspecting the receipt photo.
-    let resendCtx = null;  // {tx_id, current_db_status} during dialog lifetime
+    let resendCtx = null;
 
     async function openResendDialog(txId) {
-        // Re-fetch the tx so the dialog reflects the latest DB state (status
-        // may have changed in another tab since the detail modal opened).
         const tx = await API.get(`/api/monitor/transactions/${txId}`);
         if (!tx || tx.error) {
             toast('Failed to load transaction: ' + (tx?.error || 'unknown'), 'error');
@@ -383,9 +483,8 @@
         const currentCode = dbToCode[tx.status] || 4;
         const hasReceipt = !!tx.receipt_base64;
         const receiptHtml = hasReceipt
-            ? `<img src="data:image/jpeg;base64,${tx.receipt_base64}" style="max-width:100%;border-radius:8px;border:1px solid rgba(96,117,191,0.3);"/>`
+            ? `<img src="data:image/jpeg;base64,${tx.receipt_base64}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);"/>`
             : '<div class="empty-tip">No receipt photo on file for this transaction.</div>';
-
         const statusOptions = [
             [1, 'success', 'Bank confirmed transfer'],
             [2, 'failed',  'Bank rejected'],
@@ -394,7 +493,7 @@
         ];
 
         document.getElementById('resend-body').innerHTML = `
-            <div style="font-size:13px;margin-bottom:10px;color:var(--text2);">
+            <div style="font-size:13px;margin-bottom:10px;color:var(--text-2);">
                 Transaction <strong style="color:var(--text);">#${tx.id}</strong> &middot;
                 Process <strong style="color:var(--text);">${tx.process_id}</strong> &middot;
                 Current DB status: <strong class="status-${tx.status}">${tx.status}</strong>
@@ -405,7 +504,7 @@
             </div>
             <div style="margin-bottom:14px;">${receiptHtml}</div>
             <div style="margin-bottom:12px;">
-                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:6px;">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:6px;">
                     Re-send as which status?
                 </label>
                 ${statusOptions.map(([code, label, help]) => `
@@ -413,8 +512,8 @@
                         <input type="radio" name="resend-status" value="${code}" ${code === currentCode ? 'checked' : ''}>
                         <span>
                             <strong>${label}</strong>
-                            <span style="color:var(--text2);">(status=${code})</span>
-                            <span style="font-size:11px;color:var(--text2);margin-left:6px;">— ${help}</span>
+                            <span style="color:var(--text-2);">(status=${code})</span>
+                            <span style="font-size:11px;color:var(--text-2);margin-left:6px;">— ${help}</span>
                         </span>
                     </label>
                 `).join('')}
@@ -458,8 +557,6 @@
                     : 'Callback sent successfully.', 'success');
                 const txId = resendCtx.tx_id;
                 closeResend();
-                // Refresh both detail (so new callback_sent_at + status show) and
-                // the list (so the row reflects the new state).
                 showDetail(txId);
                 loadTransactions();
             } else {
@@ -473,35 +570,23 @@
         }
     }
 
-    // Click outside the modal content (on overlay) closes the modal.
-    document.getElementById('detail-modal').addEventListener('click', (e) => {
+    document.getElementById('detail-modal').addEventListener('click', e => {
         if (e.target === e.currentTarget) closeDetail();
     });
-    document.getElementById('screenshot-modal').addEventListener('click', (e) => {
+    document.getElementById('screenshot-modal').addEventListener('click', e => {
         if (e.target === e.currentTarget) closeScreenshot();
     });
-    document.getElementById('resend-modal').addEventListener('click', (e) => {
+    document.getElementById('resend-modal').addEventListener('click', e => {
         if (e.target === e.currentTarget) closeResend();
     });
-
-    // ESC closes the topmost open modal. Stack order: screenshot > resend > detail.
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
-        if (document.getElementById('screenshot-modal').classList.contains('active')) {
-            closeScreenshot();
-        } else if (document.getElementById('resend-modal').classList.contains('active')) {
-            closeResend();
-        } else if (document.getElementById('detail-modal').classList.contains('active')) {
-            closeDetail();
-        }
+        if (document.getElementById('screenshot-modal').classList.contains('active')) closeScreenshot();
+        else if (document.getElementById('resend-modal').classList.contains('active')) closeResend();
+        else if (document.getElementById('detail-modal').classList.contains('active')) closeDetail();
     });
 
-    // When user toggles GMT+7/+8 in nav, re-fetch + re-render so the visible
-    // timestamps switch immediately. Cheaper than a full page reload because
-    // it preserves filter state and scroll position.
-    window.addEventListener('displaytz:changed', () => {
-        loadTransactions();
-    });
+    window.addEventListener('displaytz:changed', loadTransactions);
 
     loadFilters();
     loadTransactions();

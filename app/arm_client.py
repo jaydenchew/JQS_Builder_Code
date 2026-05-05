@@ -55,9 +55,12 @@ class ArmClient:
 
     def close_port(self):
         if self._resource is not None:
+            resource = self._resource
             self.call_arm(0, self._resource, "x0y0z0")
             time.sleep(1)
-            self.call_arm(0, self._resource, 0)
+            result = self.call_arm(0, resource, 0)
+            if result is None:
+                raise RuntimeError("Port close failed; COM may still be in use")
             logger.info("Port closed: %s", self.com_port)
             self._resource = None
 
