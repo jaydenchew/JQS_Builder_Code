@@ -199,7 +199,7 @@ Uses the same headers as withdrawal endpoints:
   "date": "2026-05-04",
   "tz": 7,
   "start_utc": "2026-05-03 17:00:00",
-  "end_utc": "2026-05-04 16:59:59",
+  "end_utc": "2026-05-04 17:00:00",
   "total": {
     "total": 500,
     "success": 400,
