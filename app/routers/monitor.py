@@ -310,8 +310,8 @@ async def export_daily_summary(date: str = None, tz: int = 7):
         .strftime("%Y-%m-%d %H:%M:%S")
     )
     end_utc = (
-        datetime.strptime(report_date, "%Y-%m-%d")
-        .replace(hour=23, minute=59, second=59, tzinfo=display_tz)
+        (datetime.strptime(report_date, "%Y-%m-%d") + timedelta(days=1))
+        .replace(tzinfo=display_tz)
         .astimezone(timezone.utc)
         .strftime("%Y-%m-%d %H:%M:%S")
     )
@@ -322,7 +322,7 @@ async def export_daily_summary(date: str = None, tz: int = 7):
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
         "JOIN arms a ON s.arm_id = a.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s "
+        "WHERE t.created_at >= %s AND t.created_at < %s "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY a.id, a.name, t.pay_from_bank_code, t.status "
         "ORDER BY a.name, t.pay_from_bank_code, t.status",
