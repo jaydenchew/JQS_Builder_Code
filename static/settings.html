@@ -90,6 +90,182 @@
 
         .empty-tip { color: var(--text-2); padding: 24px; text-align: center; font-size: 13px; }
 
+        /* ── Arm / station overview ── */
+        .overview-grid {
+            display: grid;
+            gap: 14px;
+        }
+        .overview-arm {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        .overview-arm-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+        .overview-arm.collapsed .overview-stations,
+        .overview-arm.collapsed > .overview-add,
+        .overview-station.collapsed > .overview-phone,
+        .overview-station.collapsed > .overview-empty,
+        .overview-station.collapsed > .overview-add,
+        .overview-phone.collapsed .overview-apps,
+        .overview-phone.collapsed > .overview-add {
+            display: none;
+        }
+        .collapse-btn {
+            width: 22px;
+            height: 22px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface-3);
+            color: var(--text-2);
+            cursor: pointer;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+        .collapse-btn:hover { color: var(--text); border-color: var(--border-2); }
+        .overview-arm-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .overview-meta {
+            color: var(--text-3);
+            font-size: 11px;
+            font-family: var(--font-mono);
+        }
+        .overview-stations {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 12px;
+            padding: 12px;
+        }
+        .overview-station {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg);
+            overflow: hidden;
+            border-left: 3px solid var(--accent-border);
+        }
+        .overview-station-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .overview-station-title {
+            font-weight: 600;
+            color: var(--text);
+        }
+        .overview-phone {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            margin-left: 12px;
+            border-left: 2px solid var(--border);
+        }
+        .overview-phone:last-child { border-bottom: none; }
+        .overview-phone.inactive { opacity: 0.55; }
+        .overview-phone-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .overview-phone-name {
+            font-weight: 600;
+            color: var(--text);
+        }
+        .overview-apps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding-left: 16px;
+        }
+        .overview-app {
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 11px;
+            background: var(--surface-2);
+            color: var(--text-2);
+        }
+        .overview-app.active { color: var(--success); background: var(--success-dim); border-color: oklch(0.72 0.16 145 / 0.28); }
+        .overview-app.suspended { color: var(--warning); background: var(--warning-dim); border-color: oklch(0.78 0.16 68 / 0.28); }
+        .overview-empty {
+            padding: 12px;
+            color: var(--text-3);
+            font-size: 12px;
+        }
+        .overview-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .overview-fields {
+            display: flex;
+            gap: 7px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .overview-field {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .overview-field label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-3);
+        }
+        .overview-field input,
+        .overview-field select {
+            width: auto;
+            min-width: 60px;
+            padding: 4px 7px;
+            font-size: 12px;
+            background: var(--surface-3);
+        }
+        .overview-field .w-xs { width: 58px; }
+        .overview-field .w-sm { width: 82px; }
+        .overview-field .w-md { width: 118px; }
+        .overview-field .w-lg { width: 160px; }
+        .overview-field .w-name { width: 190px; }
+        .overview-field .w-bank { width: 150px; }
+        .overview-field .w-account { width: 210px; }
+        .overview-add {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            border-top: 1px solid var(--border);
+            background: var(--surface-2);
+        }
+        .overview-section-label {
+            width: 100%;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-3);
+        }
+
         /* ── Camera scan modal ── */
         .modal-head {
             display: flex;
@@ -138,14 +314,27 @@
 
         <!-- Tabs -->
         <div class="tab-bar">
-            <button class="tab-btn active" onclick="switchTab('arms')">Arms</button>
-            <button class="tab-btn" onclick="switchTab('stations')">Stations</button>
-            <button class="tab-btn" onclick="switchTab('phones')">Phones</button>
-            <button class="tab-btn" onclick="switchTab('bank-apps')">Bank Apps</button>
+            <button class="tab-btn active" onclick="switchTab('overview')">Physical Layout</button>
+        </div>
+
+        <!-- OVERVIEW -->
+        <div id="tab-overview" class="tab-content active">
+            <div class="add-form">
+                <div class="form-group"><label>Name</label><input id="arm-name" placeholder="MY-03"></div>
+                <div class="form-group"><label>COM Port</label><input id="arm-com" placeholder="COM7"></div>
+                <div class="form-group"><label>Service URL</label><input id="arm-url" placeholder="http://127.0.0.1:8082/…" style="min-width:240px;"></div>
+                <div class="form-group"><label>Z Down</label><input id="arm-z" type="number" value="10" style="width:64px;"></div>
+                <div class="form-group"><label>Camera ID</label><input id="arm-cam" type="number" value="0" style="width:64px;"></div>
+                <div class="form-group"><label>Max X (mm)</label><input id="arm-max-x" type="number" value="90" step="0.1" style="width:72px;" title="Hard X movement limit."></div>
+                <div class="form-group"><label>Max Y (mm)</label><input id="arm-max-y" type="number" value="120" step="0.1" style="width:72px;" title="Hard Y movement limit."></div>
+                <button class="btn btn-primary" onclick="addArm()">Add Arm</button>
+                <button class="btn btn-secondary" onclick="scanCameras()">Scan Cameras</button>
+            </div>
+            <div id="overview-tree" class="overview-grid"></div>
         </div>
 
         <!-- ARMS -->
-        <div id="tab-arms" class="tab-content active">
+        <div id="tab-arms" class="tab-content">
             <div class="add-form">
                 <div class="form-group"><label>Name</label><input id="arm-name" placeholder="ARM-02"></div>
                 <div class="form-group"><label>COM Port</label><input id="arm-com" placeholder="COM7"></div>
@@ -255,6 +444,7 @@
         renderStations();
         renderPhones();
         renderBankApps();
+        renderOverview();
         populateSelects();
     }
 
@@ -266,6 +456,168 @@
         document.getElementById('ba-station').innerHTML = stOpts;
         const phOpts = phonesData.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
         document.getElementById('ba-phone').innerHTML = phOpts;
+    }
+
+    function isCollapsed(key) {
+        return localStorage.getItem('settings_collapsed_' + key) === '1';
+    }
+
+    function collapseIcon(key) {
+        return isCollapsed(key) ? '+' : '−';
+    }
+
+    function toggleCollapse(key) {
+        localStorage.setItem('settings_collapsed_' + key, isCollapsed(key) ? '0' : '1');
+        renderOverview();
+    }
+
+    /* ── OVERVIEW ── */
+    function renderOverview() {
+        const byStation = {};
+        stationsData.forEach(s => { byStation[s.id] = { ...s, phones: [] }; });
+        phonesData.forEach(p => {
+            if (byStation[p.station_id]) byStation[p.station_id].phones.push({ ...p, apps: [] });
+        });
+        bankAppsData.forEach(app => {
+            const st = byStation[app.station_id];
+            if (!st) return;
+            const phone = st.phones.find(p => p.id === app.phone_id);
+            if (phone) phone.apps.push(app);
+        });
+
+        const html = armsData.map(arm => {
+            const armKey = `arm_${arm.id}`;
+            const stations = stationsData.filter(s => s.arm_id === arm.id);
+            const stationHtml = stations.map(stRow => {
+                const st = byStation[stRow.id] || { ...stRow, phones: [] };
+                const stationKey = `station_${st.id}`;
+                const activePhones = st.phones.filter(p => p.status === 'active');
+                const issue = activePhones.length > 1
+                    ? `<span class="badge badge-inactive">Multiple active phones</span>`
+                    : (activePhones.length === 0 ? `<span class="badge badge-inactive">No active phone</span>` : '');
+                const phonesHtml = st.phones.map(phone => {
+                    const phoneKey = `phone_${phone.id}`;
+                    const appsHtml = phone.apps.map(app =>
+                        `<div class="overview-app-row ${app.status === 'active' ? '' : 'inactive'}" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:8px;background:var(--surface-2);">
+                            <div class="overview-fields">
+                                <div class="overview-field"><label>Code</label><input id="b-code-${app.id}" class="w-sm" value="${app.bank_code || ''}"></div>
+                                <div class="overview-field"><label>Name</label><input id="b-bname-${app.id}" class="w-bank" value="${app.bank_name || ''}"></div>
+                                <div class="overview-field"><label>Account</label><input id="b-acct-${app.id}" class="w-account" value="${app.account_no || ''}"></div>
+                                <div class="overview-field"><label>PIN</label><input id="b-pin-${app.id}" class="w-xs" value="${app.pin || ''}" placeholder="PIN"></div>
+                                <div class="overview-field"><label>Status</label><select id="b-st-${app.id}">
+                                    <option value="active" ${app.status === 'active' ? 'selected' : ''}>active</option>
+                                    <option value="suspended" ${app.status === 'suspended' ? 'selected' : ''}>suspended</option>
+                                </select></div>
+                                <button class="btn btn-sm btn-primary" onclick="saveBankApp(${app.id})">Save App</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteBankApp(${app.id})">Delete</button>
+                            </div>
+                        </div>`
+                    ).join('') || '<span class="overview-meta">No bank apps</span>';
+                    return `<div class="overview-phone ${phone.status === 'active' ? '' : 'inactive'} ${isCollapsed(phoneKey) ? 'collapsed' : ''}">
+                        <div class="overview-phone-head">
+                            <button class="collapse-btn" onclick="toggleCollapse('${phoneKey}')" title="Collapse / expand phone">${collapseIcon(phoneKey)}</button>
+                            <div style="flex:1;min-width:0;">
+                                <div class="overview-phone-name">${phone.name} <span class="overview-meta">#${phone.id}</span></div>
+                                <div class="overview-meta">${phone.model || 'No model'} · phone #${phone.id}</div>
+                                <div class="overview-fields" style="margin-top:8px;">
+                                    <div class="overview-field"><label>Name</label><input id="p-name-${phone.id}" class="w-name" value="${phone.name || ''}"></div>
+                                    <div class="overview-field"><label>Model</label><input id="p-model-${phone.id}" class="w-md" value="${phone.model || ''}"></div>
+                                    <div class="overview-field"><label>Status</label><select id="p-st-${phone.id}">
+                                        <option value="active" ${phone.status === 'active' ? 'selected' : ''}>active</option>
+                                        <option value="inactive" ${phone.status === 'inactive' ? 'selected' : ''}>inactive</option>
+                                    </select></div>
+                                </div>
+                            </div>
+                            <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
+                                ${phone.status === 'active'
+                                    ? `<button class="btn btn-sm btn-secondary" onclick="setPhoneInactive(${phone.id})">Disable</button>`
+                                    : `<button class="btn btn-sm btn-success" onclick="activatePhone(${phone.id}, ${st.id})">Set Active</button>`}
+                                <button class="btn btn-sm btn-primary" onclick="savePhone(${phone.id})">Save Phone</button>
+                                <button class="btn btn-sm btn-danger" onclick="deletePhone(${phone.id})">Delete</button>
+                            </div>
+                        </div>
+                        <div class="overview-apps">${appsHtml}</div>
+                        <div class="overview-add">
+                            <div class="overview-section-label">Add Bank App</div>
+                            <div class="overview-field"><label>Code</label><input id="new-ba-code-${phone.id}" class="w-xs" placeholder="ABA"></div>
+                            <div class="overview-field"><label>Name</label><input id="new-ba-name-${phone.id}" class="w-bank" placeholder="ABA Bank"></div>
+                            <div class="overview-field"><label>Account</label><input id="new-ba-account-${phone.id}" class="w-account" placeholder="Account"></div>
+                            <div class="overview-field"><label>Password</label><input id="new-ba-pwd-${phone.id}" class="w-md" placeholder="Password"></div>
+                            <div class="overview-field"><label>PIN</label><input id="new-ba-pin-${phone.id}" class="w-xs" placeholder="optional"></div>
+                            <button class="btn btn-sm btn-primary" onclick="addBankAppForPhone(${st.id}, ${phone.id})">Add Bank App</button>
+                        </div>
+                    </div>`;
+                }).join('') || '<div class="overview-empty">No phones on this station.</div>';
+                return `<div class="overview-station ${isCollapsed(stationKey) ? 'collapsed' : ''}">
+                    <div class="overview-station-head">
+                        <button class="collapse-btn" onclick="toggleCollapse('${stationKey}')" title="Collapse / expand station">${collapseIcon(stationKey)}</button>
+                        <div style="flex:1;min-width:0;">
+                            <div class="overview-station-title">
+                                ${st.name} <span class="overview-meta">#${st.id}</span>
+                                <span class="badge ${calData[st.id] && calData[st.id].calibrated ? 'badge-active' : 'badge-inactive'}" style="margin-left:6px;">
+                                    ${calData[st.id] && calData[st.id].calibrated ? 'Calibrated' : 'Not calibrated'}
+                                </span>
+                            </div>
+                            <div class="overview-meta">station #${st.id} · ${st.status}${calData[st.id] && calData[st.id].calibrated ? ' · scale x' + calData[st.id].scale : ''}</div>
+                            <div class="overview-fields" style="margin-top:8px;">
+                                <div class="overview-field"><label>Name</label><input id="s-name-${st.id}" class="w-name" value="${st.name || ''}"></div>
+                                <div class="overview-field"><label>X Offset</label><input id="s-off-${st.id}" type="number" step="0.1" class="w-xs" value="${st.x_offset}"></div>
+                                <div class="overview-field"><label>Stall X</label><input id="s-spx-${st.id}" type="number" step="0.1" class="w-xs" value="${st.stall_photo_x != null ? st.stall_photo_x : ''}" placeholder="X"></div>
+                                <div class="overview-field"><label>Stall Y</label><input id="s-spy-${st.id}" type="number" step="0.1" class="w-xs" value="${st.stall_photo_y != null ? st.stall_photo_y : ''}" placeholder="Y"></div>
+                                <div class="overview-field"><label>Status</label><select id="s-st-${st.id}">
+                                    <option value="active" ${st.status === 'active' ? 'selected' : ''}>active</option>
+                                    <option value="inactive" ${st.status === 'inactive' ? 'selected' : ''}>inactive</option>
+                                </select></div>
+                            </div>
+                        </div>
+                        <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
+                            ${issue}
+                            <button class="btn btn-sm btn-primary" onclick="saveStation(${st.id})">Save Station</button>
+                            <button class="btn btn-sm btn-secondary" onclick="viewCalibration(${st.id})">Calibration</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteStation(${st.id})">Delete</button>
+                        </div>
+                    </div>
+                    ${phonesHtml}
+                    <div class="overview-add">
+                        <div class="overview-section-label">Add Phone</div>
+                        <div class="overview-field"><label>Name</label><input id="new-ph-name-${st.id}" class="w-name" placeholder="Phone name"></div>
+                        <div class="overview-field"><label>Model</label><input id="new-ph-model-${st.id}" class="w-md" placeholder="Model"></div>
+                        <button class="btn btn-sm btn-primary" onclick="addPhoneForStation(${st.id})">Add Phone</button>
+                    </div>
+                </div>`;
+            }).join('') || '<div class="overview-empty">No stations configured for this arm.</div>';
+            return `<div class="overview-arm ${isCollapsed(armKey) ? 'collapsed' : ''}">
+                <div class="overview-arm-head">
+                    <button class="collapse-btn" onclick="toggleCollapse('${armKey}')" title="Collapse / expand arm">${collapseIcon(armKey)}</button>
+                    <div style="flex:1;min-width:0;">
+                        <div class="overview-arm-name">${arm.name} <span class="overview-meta">#${arm.id}</span></div>
+                        <div class="overview-fields" style="margin-top:8px;">
+                            <div class="overview-field"><label>Name</label><input id="a-name-${arm.id}" class="w-name" value="${arm.name || ''}"></div>
+                            <div class="overview-field"><label>COM</label><input id="a-com-${arm.id}" class="w-xs" value="${arm.com_port || ''}"></div>
+                            <div class="overview-field"><label>Camera</label><input id="a-cam-${arm.id}" type="number" class="w-xs" value="${arm.camera_id}"></div>
+                            <div class="overview-field"><label>Z Down</label><input id="a-z-${arm.id}" type="number" class="w-xs" value="${arm.z_down}"></div>
+                            <div class="overview-field"><label>Max X</label><input id="a-max-x-${arm.id}" type="number" step="0.1" class="w-xs" value="${arm.max_x ?? 90}"></div>
+                            <div class="overview-field"><label>Max Y</label><input id="a-max-y-${arm.id}" type="number" step="0.1" class="w-xs" value="${arm.max_y ?? 120}"></div>
+                        </div>
+                    </div>
+                    <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
+                        <span class="badge ${arm.active ? 'badge-active' : 'badge-inactive'} active-toggle" onclick="toggleArmActive(${arm.id}, ${arm.active})">${arm.active ? 'ON' : 'OFF'}</span>
+                        <span class="badge badge-${arm.status === 'idle' ? 'idle' : arm.status === 'busy' ? 'busy' : 'inactive'}">${arm.status}</span>
+                        <button class="btn btn-sm btn-primary" onclick="saveArm(${arm.id})">Save Arm</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteArm(${arm.id})">Delete</button>
+                    </div>
+                </div>
+                <div class="overview-stations">${stationHtml}</div>
+                <div class="overview-add">
+                    <div class="overview-section-label">Add Station</div>
+                    <div class="overview-field"><label>Name</label><input id="new-st-name-${arm.id}" class="w-md" placeholder="Station_1"></div>
+                    <div class="overview-field"><label>X Offset</label><input id="new-st-offset-${arm.id}" type="number" class="w-xs" value="0"></div>
+                    <button class="btn btn-sm btn-primary" onclick="addStationForArm(${arm.id})">Add Station</button>
+                </div>
+            </div>`;
+        }).join('') || '<div class="data-card"><div class="empty-tip">No arms configured.</div></div>';
+
+        document.getElementById('overview-tree').innerHTML = html;
     }
 
     /* ── ARMS ── */
@@ -415,6 +767,16 @@
         else toast(r.error || 'Failed', 'error');
     }
 
+    async function addStationForArm(armId) {
+        const r = await API.post('/api/stations/', {
+            arm_id: armId,
+            name: document.getElementById('new-st-name-' + armId).value,
+            x_offset: parseFloat(document.getElementById('new-st-offset-' + armId).value) || 0,
+        });
+        if (r.success) { toast('Station created (ID: ' + r.id + ')'); loadAll(); }
+        else toast(r.error || 'Failed', 'error');
+    }
+
     async function saveStation(id) {
         const spx = document.getElementById('s-spx-' + id).value;
         const spy = document.getElementById('s-spy-' + id).value;
@@ -467,6 +829,16 @@
         else toast(r.error || 'Failed', 'error');
     }
 
+    async function addPhoneForStation(stationId) {
+        const r = await API.post('/api/stations/phones', {
+            station_id: stationId,
+            name: document.getElementById('new-ph-name-' + stationId).value,
+            model: document.getElementById('new-ph-model-' + stationId).value,
+        });
+        if (r.success) { toast('Phone created'); loadAll(); }
+        else toast(r.error || 'Failed', 'error');
+    }
+
     async function savePhone(id) {
         await API.put(`/api/stations/phones/${id}`, {
             name: document.getElementById('p-name-' + id).value,
@@ -474,6 +846,22 @@
             status: document.getElementById('p-st-' + id).value,
         });
         toast('Phone saved');
+        loadAll();
+    }
+
+    async function setPhoneInactive(id) {
+        document.getElementById('p-st-' + id).value = 'inactive';
+        await savePhone(id);
+    }
+
+    async function activatePhone(id, stationId) {
+        const phones = phonesData.filter(p => p.station_id === stationId);
+        await Promise.all(phones.map(p => API.put(`/api/stations/phones/${p.id}`, {
+            name: p.name,
+            model: p.model || '',
+            status: p.id === id ? 'active' : 'inactive',
+        })));
+        toast('Active phone updated');
         loadAll();
     }
 
@@ -519,6 +907,20 @@
             account_no: document.getElementById('ba-account').value,
             password: document.getElementById('ba-pwd').value,
             pin: document.getElementById('ba-pin').value || null,
+        });
+        if (r.success) { toast('Bank app created'); loadAll(); }
+        else toast(r.error || 'Failed', 'error');
+    }
+
+    async function addBankAppForPhone(stationId, phoneId) {
+        const r = await API.post('/api/banks/apps', {
+            station_id: stationId,
+            phone_id: phoneId,
+            bank_code: document.getElementById('new-ba-code-' + phoneId).value,
+            bank_name: document.getElementById('new-ba-name-' + phoneId).value,
+            account_no: document.getElementById('new-ba-account-' + phoneId).value,
+            password: document.getElementById('new-ba-pwd-' + phoneId).value,
+            pin: document.getElementById('new-ba-pin-' + phoneId).value || null,
         });
         if (r.success) { toast('Bank app created'); loadAll(); }
         else toast(r.error || 'Failed', 'error');
