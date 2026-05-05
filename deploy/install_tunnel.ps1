@@ -85,6 +85,9 @@ ingress:
   - hostname: $HOSTNAME
     path: /health
     service: http://localhost:9000
+  - hostname: $HOSTNAME
+    path: /api/monitor/export/daily-summary
+    service: http://localhost:9000
   - service: http_status:404
 "@
 
