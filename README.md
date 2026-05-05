@@ -120,10 +120,13 @@ ingress:
   - hostname: wa.yourdomain.com
     path: /health
     service: http://localhost:9000
+  - hostname: wa.yourdomain.com
+    path: /api/monitor/export/daily-summary
+    service: http://localhost:9000
   - service: http_status:404
 ```
 
-Only 3 paths are exposed to the internet. All other endpoints (Dashboard, Builder, Settings, etc.) are only accessible from localhost.
+Only withdrawal/status/health plus the authenticated daily report export are exposed to the internet. All other endpoints (Dashboard, Builder, Settings, etc.) are only accessible from localhost.
 
 **Important Cloudflare settings** (without these, PAS gets 403):
 - Security → Settings → **Browser Integrity Check** → OFF

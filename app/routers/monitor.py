@@ -8,8 +8,9 @@ import time
 from datetime import datetime, timezone, timedelta
 import cv2
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from app import database
+from app.auth import verify_api_key
 from app.camera import Camera
 from app.worker_manager import manager
 from app.config import ARM_SERVICE_URL
@@ -279,6 +280,98 @@ async def reports_summary(date_from: str, date_to: str,
             "tz": tz,
             "arm_id": arm_id,
         },
+    }
+
+
+@router.get("/export/daily-summary", dependencies=[Depends(verify_api_key)])
+async def export_daily_summary(date: str = None, tz: int = 7):
+    """Authenticated daily summary for external report aggregation.
+
+    If date is omitted, summarize yesterday in the requested display timezone.
+    Only final statuses requested by operations are included: success/failed/stall.
+    """
+    if tz not in (7, 8):
+        return {"error": "tz must be 7 or 8"}
+
+    display_tz = _resolve_display_tz(tz)
+    if date is None:
+        report_date = (datetime.now(display_tz) - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            return {"error": "date must be YYYY-MM-DD"}
+        report_date = date
+
+    start_utc = (
+        datetime.strptime(report_date, "%Y-%m-%d")
+        .replace(hour=0, minute=0, second=0, tzinfo=display_tz)
+        .astimezone(timezone.utc)
+        .strftime("%Y-%m-%d %H:%M:%S")
+    )
+    end_utc = (
+        datetime.strptime(report_date, "%Y-%m-%d")
+        .replace(hour=23, minute=59, second=59, tzinfo=display_tz)
+        .astimezone(timezone.utc)
+        .strftime("%Y-%m-%d %H:%M:%S")
+    )
+
+    rows = await database.fetchall(
+        "SELECT a.id AS arm_id, a.name AS arm_name, "
+        "t.pay_from_bank_code AS bank_code, t.status, COUNT(*) AS cnt "
+        "FROM transactions t "
+        "JOIN stations s ON t.station_id = s.id "
+        "JOIN arms a ON s.arm_id = a.id "
+        "WHERE t.created_at >= %s AND t.created_at <= %s "
+        "AND t.status IN ('success', 'failed', 'stall') "
+        "GROUP BY a.id, a.name, t.pay_from_bank_code, t.status "
+        "ORDER BY a.name, t.pay_from_bank_code, t.status",
+        (start_utc, end_utc),
+    )
+
+    total = {"total": 0, "success": 0, "failed": 0, "stall": 0}
+    arms = {}
+    for r in rows:
+        arm = arms.setdefault(r["arm_id"], {
+            "arm_id": r["arm_id"],
+            "arm_name": r["arm_name"],
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "stall": 0,
+            "_banks": {},
+        })
+        bank = arm["_banks"].setdefault(r["bank_code"], {
+            "bank_code": r["bank_code"],
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "stall": 0,
+        })
+
+        status = r["status"]
+        count = int(r["cnt"])
+        arm[status] += count
+        arm["total"] += count
+        bank[status] += count
+        bank["total"] += count
+        total[status] += count
+        total["total"] += count
+
+    arm_list = []
+    for arm in arms.values():
+        banks = sorted(arm.pop("_banks").values(), key=lambda b: (-b["total"], b["bank_code"]))
+        arm["banks"] = banks
+        arm_list.append(arm)
+    arm_list.sort(key=lambda a: (-a["total"], a["arm_name"]))
+
+    return {
+        "date": report_date,
+        "tz": tz,
+        "start_utc": start_utc,
+        "end_utc": end_utc,
+        "total": total,
+        "arms": arm_list,
     }
 
 

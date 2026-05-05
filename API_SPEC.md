@@ -1,4 +1,4 @@
-﻿# WA API Specification
+# WA API Specification
 
 > Version: 1.0
 > Base URL: `https://wa.evolution-x.io`
@@ -160,7 +160,88 @@ GET /status/{process_id}
 
 ---
 
-## 4. Health Check
+## 4. Daily Report Summary Export (Report System -> WA)
+
+Returns a small authenticated aggregate for one WA machine so an external report
+system can poll multiple machines and merge the results.
+
+```
+GET /api/monitor/export/daily-summary?date=2026-05-04&tz=7
+```
+
+### Authentication
+
+Uses the same headers as withdrawal endpoints:
+
+| Header | Value |
+|--------|-------|
+| `X-Tenant-ID` | `apexnova` |
+| `X-Api-Key` | Existing WA API key |
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | String `YYYY-MM-DD` | No | Calendar day to summarize in the selected timezone. If omitted, defaults to yesterday. |
+| `tz` | Integer | No | Display timezone offset. Allowed values: `7` or `8`. Default: `7`. |
+
+### Counting Rules
+
+- Date boundaries are interpreted in the requested `tz`, then converted to UTC for querying.
+- Only final operational statuses are included in totals: `success`, `failed`, `stall`.
+- `queued`, `running`, and `review` are excluded from this export.
+- Results are grouped by arm, then by source bank (`pay_from_bank_code`).
+
+### Response
+
+```json
+{
+  "date": "2026-05-04",
+  "tz": 7,
+  "start_utc": "2026-05-03 17:00:00",
+  "end_utc": "2026-05-04 16:59:59",
+  "total": {
+    "total": 500,
+    "success": 400,
+    "failed": 0,
+    "stall": 100
+  },
+  "arms": [
+    {
+      "arm_id": 1,
+      "arm_name": "MY-01",
+      "total": 500,
+      "success": 400,
+      "failed": 0,
+      "stall": 100,
+      "banks": [
+        {
+          "bank_code": "ABA",
+          "total": 150,
+          "success": 120,
+          "failed": 0,
+          "stall": 30
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:9000/api/monitor/export/daily-summary?date=2026-05-04&tz=7" `
+  -Headers @{
+    "X-Tenant-ID"="apexnova"
+    "X-Api-Key"="<WA_API_KEY>"
+  }
+```
+
+---
+
+## 5. Health Check
 
 Check if WA system is operational. No authentication required.
 

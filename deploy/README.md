@@ -68,10 +68,13 @@ ingress:
   - hostname: wa.yourdomain.com
     path: /health
     service: http://localhost:9000
+  - hostname: wa.yourdomain.com
+    path: /api/monitor/export/daily-summary
+    service: http://localhost:9000
   - service: http_status:404
 ```
 
-**Security**: Only 3 paths are exposed. Dashboard, Builder, Settings, and all configuration APIs are NOT accessible from the internet — only from localhost.
+**Security**: Only the withdrawal/status/health endpoints plus the authenticated daily report export are exposed. Dashboard, Builder, Settings, and all configuration APIs are NOT accessible from the internet — only from localhost.
 
 ### Cloudflare Security Settings (Required)
 
