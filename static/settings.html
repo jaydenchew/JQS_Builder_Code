@@ -333,79 +333,6 @@
             <div id="overview-tree" class="overview-grid"></div>
         </div>
 
-        <!-- ARMS -->
-        <div id="tab-arms" class="tab-content">
-            <div class="add-form">
-                <div class="form-group"><label>Name</label><input id="arm-name" placeholder="ARM-02"></div>
-                <div class="form-group"><label>COM Port</label><input id="arm-com" placeholder="COM7"></div>
-                <div class="form-group"><label>Service URL</label><input id="arm-url" placeholder="http://127.0.0.1:8082/…" style="min-width:240px;"></div>
-                <div class="form-group"><label>Z Down</label><input id="arm-z" type="number" value="10" style="width:64px;"></div>
-                <div class="form-group"><label>Camera ID</label><input id="arm-cam" type="number" value="0" style="width:64px;"></div>
-                <div class="form-group"><label>Max X (mm)</label><input id="arm-max-x" type="number" value="90" step="0.1" style="width:72px;" title="Hard X movement limit."></div>
-                <div class="form-group"><label>Max Y (mm)</label><input id="arm-max-y" type="number" value="120" step="0.1" style="width:72px;" title="Hard Y movement limit."></div>
-                <button class="btn btn-primary" onclick="addArm()">Add Arm</button>
-                <button class="btn btn-secondary" onclick="scanCameras()">Scan Cameras</button>
-            </div>
-            <div class="data-card">
-                <table>
-                    <thead><tr><th>ID</th><th>Name</th><th>COM Port</th><th>Camera</th><th>Z Down</th><th>Max X</th><th>Max Y</th><th>Active</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody id="arms-table"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- STATIONS -->
-        <div id="tab-stations" class="tab-content">
-            <div class="add-form">
-                <div class="form-group"><label>Arm</label><select id="st-arm"></select></div>
-                <div class="form-group"><label>Name</label><input id="st-name" placeholder="Station_1"></div>
-                <div class="form-group"><label>X Offset</label><input id="st-offset" type="number" value="0" style="width:80px;"></div>
-                <button class="btn btn-primary" onclick="addStation()">Add Station</button>
-            </div>
-            <div class="data-card">
-                <table>
-                    <thead><tr><th>ID</th><th>Arm</th><th>Name</th><th>X Offset</th><th>Stall Photo</th><th>Calibration</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody id="stations-table"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- PHONES -->
-        <div id="tab-phones" class="tab-content">
-            <div class="add-form">
-                <div class="form-group"><label>Station</label><select id="ph-station"></select></div>
-                <div class="form-group"><label>Name</label><input id="ph-name" placeholder="Phone-S5"></div>
-                <div class="form-group"><label>Model</label><input id="ph-model" placeholder="Samsung A15"></div>
-                <button class="btn btn-primary" onclick="addPhone()">Add Phone</button>
-            </div>
-            <div class="data-card">
-                <table>
-                    <thead><tr><th>ID</th><th>Arm</th><th>Station</th><th>Name</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody id="phones-table"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- BANK APPS -->
-        <div id="tab-bank-apps" class="tab-content">
-            <div class="add-form">
-                <div class="form-group"><label>Station</label><select id="ba-station"></select></div>
-                <div class="form-group"><label>Phone</label><select id="ba-phone"></select></div>
-                <div class="form-group"><label>Bank Code</label><input id="ba-code" placeholder="ABA"></div>
-                <div class="form-group"><label>Bank Name</label><input id="ba-name" placeholder="ABA Bank"></div>
-                <div class="form-group"><label>Account No</label><input id="ba-account"></div>
-                <div class="form-group"><label>Password</label><input id="ba-pwd"></div>
-                <div class="form-group"><label>PIN</label><input id="ba-pin" placeholder="optional"></div>
-                <button class="btn btn-primary" onclick="addBankApp()">Add Bank App</button>
-            </div>
-            <div class="data-card">
-                <table>
-                    <thead><tr><th>ID</th><th>Arm</th><th>Station</th><th>Phone</th><th>Bank</th><th>Account</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody id="bank-apps-table"></tbody>
-                </table>
-            </div>
-        </div>
-
     </div>
 
     <!-- Camera Scan Modal -->
@@ -440,22 +367,7 @@
             API.get('/api/banks/apps'),
             API.get('/api/calibration/status'),
         ]);
-        renderArms();
-        renderStations();
-        renderPhones();
-        renderBankApps();
         renderOverview();
-        populateSelects();
-    }
-
-    function populateSelects() {
-        const armOpts = armsData.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-        document.getElementById('st-arm').innerHTML = armOpts;
-        const stOpts = stationsData.map(s => `<option value="${s.id}">${s.name} (${s.arm_name})</option>`).join('');
-        document.getElementById('ph-station').innerHTML = stOpts;
-        document.getElementById('ba-station').innerHTML = stOpts;
-        const phOpts = phonesData.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-        document.getElementById('ba-phone').innerHTML = phOpts;
     }
 
     function isCollapsed(key) {
@@ -621,24 +533,6 @@
     }
 
     /* ── ARMS ── */
-    function renderArms() {
-        document.getElementById('arms-table').innerHTML = armsData.map(a => `<tr>
-            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${a.id}</td>
-            <td><input value="${a.name||''}" id="a-name-${a.id}" style="width:110px;"></td>
-            <td><input value="${a.com_port||''}" id="a-com-${a.id}" style="width:80px;"></td>
-            <td><input value="${a.camera_id}" id="a-cam-${a.id}" type="number" style="width:58px;"></td>
-            <td><input value="${a.z_down}" id="a-z-${a.id}" type="number" style="width:58px;"></td>
-            <td><input value="${a.max_x ?? 90}" id="a-max-x-${a.id}" type="number" step="0.1" style="width:64px;"></td>
-            <td><input value="${a.max_y ?? 120}" id="a-max-y-${a.id}" type="number" step="0.1" style="width:64px;"></td>
-            <td><span class="badge ${a.active ? 'badge-active' : 'badge-inactive'} active-toggle" onclick="toggleArmActive(${a.id}, ${a.active})">${a.active ? 'ON' : 'OFF'}</span></td>
-            <td><span class="badge badge-${a.status === 'idle' ? 'idle' : a.status === 'busy' ? 'busy' : 'inactive'}">${a.status}</span></td>
-            <td style="white-space:nowrap;">
-                <button class="btn btn-sm btn-primary" onclick="saveArm(${a.id})">Save</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteArm(${a.id})">Del</button>
-            </td>
-        </tr>`).join('') || '<tr><td colspan="10" class="empty-tip">No arms</td></tr>';
-    }
-
     async function addArm() {
         const maxX = parseFloat(document.getElementById('arm-max-x').value);
         const maxY = parseFloat(document.getElementById('arm-max-y').value);
@@ -726,47 +620,6 @@
     }
 
     /* ── STATIONS ── */
-    function renderStations() {
-        document.getElementById('stations-table').innerHTML = stationsData.map(s => {
-            const cal = calData[s.id];
-            const calOk = cal && cal.calibrated;
-            return `<tr>
-                <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${s.id}</td>
-                <td>${s.arm_name}</td>
-                <td><input value="${s.name||''}" id="s-name-${s.id}" style="width:90px;"></td>
-                <td><input value="${s.x_offset}" id="s-off-${s.id}" type="number" step="0.1" style="width:70px;"></td>
-                <td>
-                    <input value="${s.stall_photo_x!=null?s.stall_photo_x:''}" id="s-spx-${s.id}" type="number" step="0.1" style="width:60px;" placeholder="X">
-                    <input value="${s.stall_photo_y!=null?s.stall_photo_y:''}" id="s-spy-${s.id}" type="number" step="0.1" style="width:60px;" placeholder="Y">
-                </td>
-                <td>
-                    <span class="badge ${calOk ? 'badge-active' : 'badge-inactive'}">${calOk ? 'OK ×' + cal.scale : 'Not calibrated'}</span>
-                    <button class="btn btn-sm btn-secondary" onclick="viewCalibration(${s.id})" style="margin-left:4px;">View</button>
-                </td>
-                <td>
-                    <select id="s-st-${s.id}" style="width:80px;">
-                        <option value="active"   ${s.status==='active'?'selected':''}>active</option>
-                        <option value="inactive" ${s.status==='inactive'?'selected':''}>inactive</option>
-                    </select>
-                </td>
-                <td style="white-space:nowrap;">
-                    <button class="btn btn-sm btn-primary" onclick="saveStation(${s.id})">Save</button>
-                    <button class="btn btn-sm btn-danger"  onclick="deleteStation(${s.id})">Del</button>
-                </td>
-            </tr>`;
-        }).join('') || '<tr><td colspan="8" class="empty-tip">No stations</td></tr>';
-    }
-
-    async function addStation() {
-        const r = await API.post('/api/stations/', {
-            arm_id: parseInt(document.getElementById('st-arm').value),
-            name: document.getElementById('st-name').value,
-            x_offset: parseFloat(document.getElementById('st-offset').value) || 0,
-        });
-        if (r.success) { toast('Station created (ID: ' + r.id + ')'); loadAll(); }
-        else toast(r.error || 'Failed', 'error');
-    }
-
     async function addStationForArm(armId) {
         const r = await API.post('/api/stations/', {
             arm_id: armId,
@@ -799,36 +652,6 @@
     }
 
     /* ── PHONES ── */
-    function renderPhones() {
-        document.getElementById('phones-table').innerHTML = phonesData.map(p => `<tr>
-            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${p.id}</td>
-            <td>${p.arm_name || '—'}</td>
-            <td>${p.station_name}</td>
-            <td><input value="${p.name||''}" id="p-name-${p.id}" style="width:100px;"></td>
-            <td><input value="${p.model||''}" id="p-model-${p.id}" style="width:120px;"></td>
-            <td>
-                <select id="p-st-${p.id}" style="width:80px;">
-                    <option value="active"   ${p.status==='active'?'selected':''}>active</option>
-                    <option value="inactive" ${p.status==='inactive'?'selected':''}>inactive</option>
-                </select>
-            </td>
-            <td style="white-space:nowrap;">
-                <button class="btn btn-sm btn-primary" onclick="savePhone(${p.id})">Save</button>
-                <button class="btn btn-sm btn-danger"  onclick="deletePhone(${p.id})">Del</button>
-            </td>
-        </tr>`).join('') || '<tr><td colspan="7" class="empty-tip">No phones</td></tr>';
-    }
-
-    async function addPhone() {
-        const r = await API.post('/api/stations/phones', {
-            station_id: parseInt(document.getElementById('ph-station').value),
-            name: document.getElementById('ph-name').value,
-            model: document.getElementById('ph-model').value,
-        });
-        if (r.success) { toast('Phone created'); loadAll(); }
-        else toast(r.error || 'Failed', 'error');
-    }
-
     async function addPhoneForStation(stationId) {
         const r = await API.post('/api/stations/phones', {
             station_id: stationId,
@@ -873,45 +696,6 @@
     }
 
     /* ── BANK APPS ── */
-    function renderBankApps() {
-        document.getElementById('bank-apps-table').innerHTML = bankAppsData.map(b => `<tr>
-            <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">${b.id}</td>
-            <td>${b.arm_name || '—'}</td>
-            <td>${b.station_name}</td>
-            <td>${b.phone_name || '—'}</td>
-            <td>
-                <input value="${b.bank_code||''}" id="b-code-${b.id}" style="width:75px;">
-                <input value="${b.bank_name||''}" id="b-bname-${b.id}" style="width:110px;">
-            </td>
-            <td><input value="${b.account_no||''}" id="b-acct-${b.id}" style="width:140px;"></td>
-            <td><input value="${b.pin||''}" id="b-pin-${b.id}" style="width:70px;" placeholder="PIN"></td>
-            <td>
-                <select id="b-st-${b.id}" style="width:90px;">
-                    <option value="active"    ${b.status==='active'?'selected':''}>active</option>
-                    <option value="suspended" ${b.status==='suspended'?'selected':''}>suspended</option>
-                </select>
-            </td>
-            <td style="white-space:nowrap;">
-                <button class="btn btn-sm btn-primary" onclick="saveBankApp(${b.id})">Save</button>
-                <button class="btn btn-sm btn-danger"  onclick="deleteBankApp(${b.id})">Del</button>
-            </td>
-        </tr>`).join('') || '<tr><td colspan="9" class="empty-tip">No bank apps</td></tr>';
-    }
-
-    async function addBankApp() {
-        const r = await API.post('/api/banks/apps', {
-            station_id: parseInt(document.getElementById('ba-station').value),
-            phone_id: parseInt(document.getElementById('ba-phone').value),
-            bank_code: document.getElementById('ba-code').value,
-            bank_name: document.getElementById('ba-name').value,
-            account_no: document.getElementById('ba-account').value,
-            password: document.getElementById('ba-pwd').value,
-            pin: document.getElementById('ba-pin').value || null,
-        });
-        if (r.success) { toast('Bank app created'); loadAll(); }
-        else toast(r.error || 'Failed', 'error');
-    }
-
     async function addBankAppForPhone(stationId, phoneId) {
         const r = await API.post('/api/banks/apps', {
             station_id: stationId,
