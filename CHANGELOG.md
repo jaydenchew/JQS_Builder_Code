@@ -1,5 +1,35 @@
 # Changelog
 
+## fix(deploy): docker-compose only auto-runs schema.sql, not the entire db/ folder (2026-05-05)
+
+### Problem
+
+`docker-compose.yml` previously mounted the whole `./db` directory at `/docker-entrypoint-initdb.d`. MySQL on first volume init runs every `.sql` file there alphabetically, with two consequences operators didn't expect:
+
+1. **Bank flow seeds (`seed_bank_*.sql`) were silently no-ops, but ran anyway.** Each bank seed begins with `SET @arm_id = (SELECT id FROM arms WHERE name='{ARM_NAME}')` — a placeholder that `import_bank_seed.py` substitutes at runtime. Without that substitution `@arm_id` is `NULL`, every subsequent `INSERT … WHERE arm_id = @arm_id` matches zero rows, and MySQL raises no error. The container takes a few seconds longer to come up and operators have a vague sense the seed was applied even though it wasn't.
+
+2. **Bank-name-mapping seeds (`seed_bank_name_mappings_*.sql`) were silently APPLIED.** Those files don't depend on `arm_id` — they just `DELETE FROM bank_name_mappings WHERE from_bank_code=…; INSERT …`. So a fresh `docker compose up` (or `down -v` followed by `up`) auto-loaded ~200 rows of RHB / MBB / CIMB / ACLEDA mappings every time. If an operator customised those mappings via Builder, **a volume reset would silently roll them back to the seed snapshot** — silent data loss.
+
+### What changed
+
+`docker-compose.yml` now mounts only `db/schema.sql`, renamed inside the container to `00_schema.sql:ro`:
+
+- `00_` prefix locks DDL to run first if any future init scripts are ever added.
+- `:ro` (read-only) prevents the container from writing to the schema file.
+- Comment in the compose file documents intent for future contributors.
+
+### Files
+
+- `docker-compose.yml` — single volume-mount line replaced.
+
+### Compatibility
+
+- **Existing running containers**: zero impact. `/docker-entrypoint-initdb.d` only runs on first volume init; it's a no-op for any volume that already has data.
+- **Fresh installs**: aligned with the documented workflow (`py db/import_bank_seed.py db/seed_bank_<BANK>.sql <ARM_NAME>`) — that was the intended path all along; the old auto-load was an accidental side-effect.
+- **`docker compose down -v && docker compose up`**: now safe; previously silently overwrote `bank_name_mappings`. Operators who relied on the auto-load need to run the import scripts explicitly.
+
+---
+
 ## ux(transactions): manual PAS callback resend with status correction (2026-05-04)
 
 ### Problem
