@@ -194,6 +194,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 8px;
             margin-bottom: 8px;
         }
         .step-list-header h3 {
@@ -203,6 +204,23 @@
             color: var(--text-2);
             text-transform: uppercase;
             letter-spacing: 0.06em;
+        }
+        .step-list-actions {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            min-width: 0;
+            max-width: 100%;
+        }
+        .step-list-actions .btn-sm {
+            padding-left: 7px;
+            padding-right: 7px;
+            white-space: nowrap;
+        }
+        .step-list-actions .copy-station-btn {
+            min-width: 118px;
+            justify-content: center;
         }
 
         .step-item {
@@ -504,12 +522,12 @@
         <div class="step-list-area">
             <div class="step-list-header">
                 <h3>Steps <span id="step-count" style="color:var(--text2);font-weight:400;font-size:12px;"></span></h3>
-                <div style="display:flex;gap:3px;flex-wrap:wrap;">
+                <div class="step-list-actions">
                     <button class="btn btn-primary btn-sm" onclick="showAddStep()">+ Add Step</button>
                     <button class="btn btn-secondary btn-sm" onclick="addQuick('PHOTO')">+Photo</button>
                     <button class="btn btn-secondary btn-sm" onclick="addQuick('OCR_VERIFY')">+OCR</button>
                     <button class="btn btn-secondary btn-sm" onclick="addQuick('done')">+Done</button>
-                    <button class="btn btn-success btn-sm" onclick="showCopyCoords()" title="Copy coords from another station with offset">Copy from S...</button>
+                    <button class="btn btn-success btn-sm copy-station-btn" onclick="showCopyCoords()" title="Copy coords from another station with offset">Copy from Station</button>
                 </div>
             </div>
             <div id="step-list"></div>
@@ -751,6 +769,7 @@ let S = {
     refs: [],
     camOn: false,
     armBusy: false,
+    armWorkerStatus: null,
     armId: null,
     allStations: [],
     maxX: null,
@@ -766,34 +785,15 @@ function getArmId() { return S.armId; }
 async function init() {
     const arms = await API.get('/api/stations/arms');
     const armSel = document.getElementById('arm-select');
-    armSel.innerHTML = arms.map(a => `<option value="${a.id}">${a.name} (${a.com_port})</option>`).join('');
-    if (arms.length > 0) {
-        S.armId = arms[0].id;
-        S.maxX = arms[0].max_x ?? null;
-        S.maxY = arms[0].max_y ?? null;
-    }
+    armSel.innerHTML = '<option value="">-- select arm --</option>' +
+        arms.map(a => `<option value="${a.id}">${a.name} (${a.com_port})</option>`).join('');
+    armSel.value = '';
 
     S.allStations = await API.get('/api/stations/');
     loadStationsForArm();
 
     await reloadTemplates();
-
-    const arm = await API.get('/api/recorder/arm/status' + (S.armId ? '?arm_id=' + S.armId : ''));
-    if (arm.connected) {
-        S.armOn = true;
-        S.curX = arm.x || 0;
-        S.curY = arm.y || 0;
-    }
-    updateArmUI();
-
-    const cam = await API.get('/api/camera/status' + (S.armId ? '?arm_id=' + S.armId : ''));
-    if (cam.open) {
-        S.camOn = true;
-        document.getElementById('camera-feed').src = '/api/stream?arm_id=' + S.armId + '&t=' + Date.now();
-        document.getElementById('cam-dot').className = 'status-dot on';
-        document.getElementById('cam-btn').textContent = 'Close Camera';
-        document.getElementById('cam-btn').className = 'btn btn-sm btn-danger';
-    }
+    await refreshSelectedArmStatus();
 
     await checkCal();
     renderSteps();
@@ -829,8 +829,44 @@ function loadStationsForArm() {
     }
 }
 
+async function refreshSelectedArmStatus() {
+    if (!S.armId) {
+        S.armOn = false;
+        S.armWorkerStatus = null;
+        S.curX = 0; S.curY = 0;
+        S.camOn = false;
+        document.getElementById('camera-feed').src = '';
+        document.getElementById('cam-dot').className = 'status-dot off';
+        document.getElementById('cam-btn').textContent = 'Open Camera';
+        document.getElementById('cam-btn').className = 'btn btn-sm btn-secondary';
+        updateArmUI();
+        showPos();
+        return;
+    }
+
+    const arm = await API.get('/api/recorder/arm/status?arm_id=' + S.armId);
+    S.armWorkerStatus = arm.worker_status || null;
+    // `connected` can be true while a worker is busy. Recorder should only
+    // treat it as its own controllable connection when the worker is not active.
+    S.armOn = !!(arm.connected && !['idle', 'busy'].includes(S.armWorkerStatus));
+    S.curX = S.armOn ? (arm.x || 0) : 0;
+    S.curY = S.armOn ? (arm.y || 0) : 0;
+    updateArmUI();
+    showPos();
+
+    const cam = await API.get('/api/camera/status?arm_id=' + S.armId);
+    S.camOn = !!cam.open;
+    document.getElementById('cam-dot').className = 'status-dot ' + (S.camOn ? 'on' : 'off');
+    document.getElementById('cam-btn').textContent = S.camOn ? 'Close Camera' : 'Open Camera';
+    document.getElementById('cam-btn').className = S.camOn ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-secondary';
+    if (S.camOn) {
+        document.getElementById('camera-feed').src = '/api/stream?arm_id=' + S.armId + '&t=' + Date.now();
+    }
+}
+
 async function onArmChange() {
-    const newArmId = parseInt(document.getElementById('arm-select').value);
+    const rawArmId = document.getElementById('arm-select').value;
+    const newArmId = rawArmId ? parseInt(rawArmId) : null;
     if (S.armOn) {
         document.getElementById('arm-select').value = S.armId;
         toast('Disconnect arm first before switching', 'error');
@@ -838,7 +874,7 @@ async function onArmChange() {
     }
     if (S.camOn) { await toggleCam(); }
     S.armId = newArmId;
-    const selectedArm = (await API.get('/api/stations/arms')).find(a => a.id === newArmId);
+    const selectedArm = newArmId ? (await API.get('/api/stations/arms')).find(a => a.id === newArmId) : null;
     S.maxX = selectedArm?.max_x ?? null;
     S.maxY = selectedArm?.max_y ?? null;
     loadStationsForArm();
@@ -850,11 +886,12 @@ async function onArmChange() {
     showPos();
     renderSteps();
     await checkCal();
-    toast('Switched to ARM ' + S.armId);
+    await refreshSelectedArmStatus();
+    if (S.armId) toast('Switched to ARM ' + S.armId);
 }
 
 async function reloadTemplates() {
-    S.templates = await API.get('/api/banks/templates?arm_id=' + S.armId);
+    S.templates = S.armId ? await API.get('/api/banks/templates?arm_id=' + S.armId) : [];
     fillBankSelect();
 }
 
@@ -1253,6 +1290,7 @@ async function checkCal() {
    CAMERA TOGGLE
    ============================================================ */
 async function toggleCam() {
+    if (!S.armId) { toast('Select arm first', 'error'); return; }
     const img = document.getElementById('camera-feed');
     const dot = document.getElementById('cam-dot');
     const btn = document.getElementById('cam-btn');
@@ -1281,6 +1319,11 @@ async function toggleCam() {
    ============================================================ */
 async function toggleArm() {
     if (S.armBusy) return;
+    if (!S.armId) { toast('Select arm first', 'error'); return; }
+    if (!S.armOn && ['idle', 'busy'].includes(S.armWorkerStatus)) {
+        toast('Pause or set arm offline from Dashboard first', 'error');
+        return;
+    }
     const aq = S.armId ? '?arm_id=' + S.armId : '';
     const btn = document.getElementById('arm-btn');
     const wasOn = S.armOn;
@@ -1319,9 +1362,12 @@ function updateArmUI() {
     const dot = document.getElementById('arm-dot');
     const btn = document.getElementById('arm-btn');
     dot.className = 'status-dot ' + (S.armOn ? 'on' : 'off');
-    btn.disabled = S.armBusy;
-    btn.style.pointerEvents = S.armBusy ? 'none' : '';
-    btn.textContent = S.armBusy ? (S.armOn ? 'Disconnecting...' : 'Connecting...') : (S.armOn ? 'Disconnect' : 'Connect Arm');
+    const workerActive = !S.armOn && ['idle', 'busy'].includes(S.armWorkerStatus);
+    btn.disabled = S.armBusy || !S.armId || workerActive;
+    btn.style.pointerEvents = (S.armBusy || !S.armId || workerActive) ? 'none' : '';
+    btn.textContent = S.armBusy
+        ? (S.armOn ? 'Disconnecting...' : 'Connecting...')
+        : (!S.armId ? 'Select Arm' : (workerActive ? 'Pause arm first' : (S.armOn ? 'Disconnect' : 'Connect Arm')));
     btn.className = S.armOn ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-success';
     showPos();
 }
@@ -2023,7 +2069,7 @@ function renderForm(step, isNew) {
                     <input id="sf-fac-roi-left" type="number" min="0" max="100" value="${cfg.roi?.left_percent ?? 0}" style="width:55px;">
                     <span style="font-size:11px;">Right:</span>
                     <input id="sf-fac-roi-right" type="number" min="0" max="100" value="${cfg.roi?.right_percent ?? 100}" style="width:55px;">
-                    <button class="btn btn-sm btn-primary" onclick="selectFieldRoi('_findclick')" type="button">Select on Photo</button>
+                    <button class="btn btn-sm btn-primary" onclick="selectFieldRoi('_findswipe')" type="button">Select on Photo</button>
                 </div>
             </div>
             <div class="form-group full">
@@ -3584,6 +3630,39 @@ let _roiSnapshot = null;
 
 async function selectOcrRoi() { await selectFieldRoi('_legacy'); }
 
+function _readRoiInputs(prefix) {
+    const top = parseInt(document.getElementById(prefix + '-top')?.value);
+    const bottom = parseInt(document.getElementById(prefix + '-bottom')?.value);
+    const left = parseInt(document.getElementById(prefix + '-left')?.value);
+    const right = parseInt(document.getElementById(prefix + '-right')?.value);
+    if ([top, bottom, left, right].some(v => isNaN(v))) return null;
+    if (top === 0 && bottom === 100 && left === 0 && right === 100) return null;
+    return { top_percent: top, bottom_percent: bottom, left_percent: left, right_percent: right };
+}
+
+function getCurrentRoiForField(fieldName) {
+    if (fieldName === '_legacy') return _readRoiInputs('sf-ocr-roi');
+    if (fieldName === '_checkscreen') return _readRoiInputs('sf-roi');
+    if (fieldName === '_findclick' || fieldName === '_findswipe') return _readRoiInputs('sf-fac-roi');
+    return _readRoiInputs('sf-froi-' + fieldName);
+}
+
+function drawRoiBox(ctx, canvas, img, roi) {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    if (!roi) return;
+    const x1 = Math.max(0, Math.min(canvas.width, roi.left_percent / 100 * canvas.width));
+    const y1 = Math.max(0, Math.min(canvas.height, roi.top_percent / 100 * canvas.height));
+    const x2 = Math.max(0, Math.min(canvas.width, roi.right_percent / 100 * canvas.width));
+    const y2 = Math.max(0, Math.min(canvas.height, roi.bottom_percent / 100 * canvas.height));
+    ctx.fillStyle = 'rgba(233,69,96,0.2)';
+    ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.setLineDash([]);
+}
+
 async function selectFieldRoi(fieldName) {
     if (!S.armOn) { toast('Connect arm first', 'error'); return; }
 
@@ -3598,10 +3677,13 @@ async function selectFieldRoi(fieldName) {
             const scale = maxW / img.width;
             canvas.width = img.width * scale;
             canvas.height = img.height * scale;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
             const label = fieldName === '_legacy' ? 'OCR Region' : fieldName.replace(/_/g, ' ');
-            document.getElementById('roi-info').textContent = 'Draw rectangle for: ' + label;
+            const existingRoi = getCurrentRoiForField(fieldName);
+            drawRoiBox(ctx, canvas, img, existingRoi);
+            document.getElementById('roi-info').textContent = existingRoi
+                ? 'Existing ' + label + ': ' + existingRoi.top_percent + '-' + existingRoi.bottom_percent + '% / ' + existingRoi.left_percent + '-' + existingRoi.right_percent + '%'
+                : 'Draw rectangle for: ' + label;
             modal.classList.add('active');
             let startX, startY, dragging = false;
 
@@ -3616,7 +3698,7 @@ async function selectFieldRoi(fieldName) {
                 const rect = canvas.getBoundingClientRect();
                 const curX = e.clientX - rect.left;
                 const curY = e.clientY - rect.top;
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                drawRoiBox(ctx, canvas, img, null);
                 ctx.strokeStyle = '#e94560';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([5, 3]);
@@ -3664,12 +3746,10 @@ async function selectFieldRoi(fieldName) {
                     if (disp) disp.textContent = topPct + '-' + bottomPct + '% / ' + leftPct + '-' + rightPct + '%';
                 }
 
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = 'rgba(233,69,96,0.2)';
-                ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
-                ctx.strokeStyle = '#e94560';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                drawRoiBox(ctx, canvas, img, {
+                    top_percent: topPct, bottom_percent: bottomPct,
+                    left_percent: leftPct, right_percent: rightPct,
+                });
 
                 document.getElementById('roi-info').textContent =
                     label + ': ' + topPct + '-' + bottomPct + '% / ' + leftPct + '-' + rightPct + '%';

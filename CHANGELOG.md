@@ -1,5 +1,32 @@
 # Changelog
 
+## ux(recorder): show saved ROI when reopening ROI selector (2026-05-06)
+
+### Problem
+
+Recorder already persisted ROI percentages in `flow_steps.description` for OCR, CHECK_SCREEN, FIND_AND_CLICK, and FIND_AND_SWIPE steps. However, reopening the ROI selector only showed a fresh screenshot; the previously saved red rectangle was not drawn back onto the image. Operators had to infer the old ROI from percentage text, which made adjustment error-prone.
+
+### What changed
+
+- `static/recorder.html`: ROI modal now reads the current form's saved ROI values and redraws the existing red rectangle when opened.
+- Supported ROI sources:
+  - OCR_VERIFY overall OCR ROI (`description.roi`)
+  - OCR_VERIFY field ROIs (`description.field_rois.*`)
+  - receipt status ROI (`description.field_rois.receipt_status`)
+  - CHECK_SCREEN compare ROI
+  - FIND_AND_CLICK search ROI
+  - FIND_AND_SWIPE search ROI
+- Re-dragging the rectangle still overwrites the current ROI and updates the same hidden/input fields as before.
+- FIND_AND_SWIPE's selector now uses its own `_findswipe` semantic key while keeping the same stored `description.roi` schema.
+
+### Compatibility
+
+- No DB schema change.
+- No API change.
+- No migration required; existing saved ROI values are displayed automatically the next time the selector is opened.
+
+---
+
 ## fix(deploy): docker-compose only auto-runs schema.sql, not the entire db/ folder (2026-05-05)
 
 ### Problem

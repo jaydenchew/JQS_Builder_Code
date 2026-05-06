@@ -1,5 +1,5 @@
 -- ============================================================
--- Flow seed for ACLEDA (sourced from ARM-04)
+-- Flow seed for ACLEDA (sourced from MY-01)
 -- Exported by db/export_bank_seed.py
 --
 -- Contains: flow_templates + flow_steps for ACLEDA,
@@ -34,12 +34,12 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
 
 -- Template: ACLEDA Transfer Flow (ACLEDA)
 INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
-  ('ACLEDA', @arm_id, 'ACLEDA Transfer Flow', 'SAME', 'always_decimal', 17);
+  ('ACLEDA', @arm_id, 'ACLEDA Transfer Flow', 'SAME', 'always_decimal', 19);
 SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
   (@tpl_1, 1, 'open_app', 'CLICK', 'open_app', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_1, 2, 'find_button', 'FIND_AND_CLICK', 'find_button', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"transfer_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":34,"bottom_percent":64,"left_percent":58,"right_percent":93},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
+  (@tpl_1, 2, 'find_button', 'FIND_AND_CLICK', 'find_button', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"transfer_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":43,"bottom_percent":70,"left_percent":59,"right_percent":85},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
   (@tpl_1, 3, 'enter_password', 'TYPE', NULL, 'acleda_password', NULL, 'password', 0, 5000, NULL),
   (@tpl_1, 4, 'to_acleda', 'CLICK', 'to_acleda', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_1, 5, 'select_account', 'CLICK', 'select_account', NULL, NULL, NULL, 0, 1000, NULL),
@@ -48,13 +48,15 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_1, 8, 'enter_account', 'TYPE', NULL, 'acleda_account', NULL, 'pay_to_account_no', 0, 1000, NULL),
   (@tpl_1, 9, 'click_amount_input', 'CLICK', 'click_amount_input', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_1, 10, 'enter_amount', 'TYPE', NULL, 'acleda_amount', NULL, 'amount', 0, 2000, NULL),
-  (@tpl_1, 11, 'click_ok', 'CLICK', 'click_ok', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_1, 12, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 0, 2000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":27,"bottom_percent":33,"left_percent":34,"right_percent":76},"amount":{"top_percent":34,"bottom_percent":41,"left_percent":32,"right_percent":75},"pay_to_account_name":{"top_percent":19,"bottom_percent":25,"left_percent":41,"right_percent":74}},"roi":{"top_percent":21,"bottom_percent":43,"left_percent":34,"right_percent":75}}'),
-  (@tpl_1, 13, 'confirm_transfer', 'CLICK', 'confirm_transfer', NULL, NULL, NULL, 0, 5000, NULL),
-  (@tpl_1, 14, 'take_photo_receipt', 'PHOTO', 'take_photo_receipt', NULL, NULL, NULL, 5000, 2000, NULL),
-  (@tpl_1, 15, 'click_all_apps', 'CLICK', 'click_all_apps', NULL, NULL, NULL, 0, 1000, NULL),
-  (@tpl_1, 16, 'swipe_close_app', 'SWIPE', NULL, NULL, 'swipe_close_app', NULL, 0, 2000, NULL),
-  (@tpl_1, 17, 'done', 'ARM_MOVE', 'done', NULL, NULL, NULL, 0, 0, NULL);
+  (@tpl_1, 11, 'purpose', 'CLICK', 'purpose', NULL, NULL, NULL, 0, 1000, NULL),
+  (@tpl_1, 12, 'good_or_services', 'CLICK', 'good_or_services', NULL, NULL, NULL, 0, 1000, NULL),
+  (@tpl_1, 13, 'click_ok', 'CLICK', 'click_ok', NULL, NULL, NULL, 0, 10000, NULL),
+  (@tpl_1, 14, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 0, 2000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":24,"bottom_percent":30,"left_percent":36,"right_percent":77},"amount":{"top_percent":31,"bottom_percent":37,"left_percent":34,"right_percent":77},"pay_to_account_name":{"top_percent":19,"bottom_percent":25,"left_percent":41,"right_percent":74}},"roi":{"top_percent":17,"bottom_percent":39,"left_percent":35,"right_percent":77}}'),
+  (@tpl_1, 15, 'confirm_transfer', 'CLICK', 'confirm_transfer', NULL, NULL, NULL, 0, 5000, NULL),
+  (@tpl_1, 16, 'take_photo_receipt', 'PHOTO', 'take_photo_receipt', NULL, NULL, NULL, 5000, 2000, NULL),
+  (@tpl_1, 17, 'click_all_apps', 'CLICK', 'click_all_apps', NULL, NULL, NULL, 0, 1000, NULL),
+  (@tpl_1, 18, 'swipe_close_app', 'SWIPE', NULL, NULL, 'swipe_close_app', NULL, 0, 2000, NULL),
+  (@tpl_1, 19, 'done', 'ARM_MOVE', 'done', NULL, NULL, NULL, 0, 0, NULL);
 
 -- Template: ACLEDA Interbank Transfer Flow (ACLEDA)
 INSERT INTO flow_templates (bank_code, arm_id, name, transfer_type, amount_format, total_steps) VALUES
@@ -63,12 +65,12 @@ SET @tpl_2 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
   (@tpl_2, 1, 'open_app_inter', 'CLICK', 'open_app_inter', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_2, 2, 'transfer_btn_inter', 'FIND_AND_CLICK', 'transfer_btn_inter', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"transfer_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":34,"bottom_percent":64,"left_percent":58,"right_percent":93},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
+  (@tpl_2, 2, 'transfer_btn_inter', 'FIND_AND_CLICK', 'transfer_btn_inter', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"transfer_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":43,"bottom_percent":70,"left_percent":59,"right_percent":85},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
   (@tpl_2, 3, 'enter_password_inter', 'TYPE', NULL, 'acleda_password', NULL, 'password', 0, 5000, NULL),
   (@tpl_2, 4, 'local_transfer_inter', 'CLICK', 'local_transfer_inter', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_2, 5, 'to_bank_accounts_inter', 'CLICK', 'to_bank_accounts_inter', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_2, 6, 'click_search_inter', 'CLICK', 'click_search_inter', NULL, NULL, NULL, 0, 1000, NULL),
-  (@tpl_2, 7, 'type_bank_name_inter', 'TYPE', NULL, 'acleda_search', NULL, 'pay_to_bank_name', 0, 2000, NULL),
+  (@tpl_2, 7, 'type_bank_name_inter', 'TYPE', NULL, 'acleda_search_bank', NULL, 'pay_to_bank_name', 0, 2000, NULL),
   (@tpl_2, 8, 'click_on_search_result_inter', 'CLICK', 'click_on_search_result_inter', NULL, NULL, NULL, 0, 2000, NULL),
   (@tpl_2, 9, 'select_account_inter', 'CLICK', 'select_account_inter', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_2, 10, 'select_savings_usd_inter', 'CLICK', 'select_savings_usd_inter', NULL, NULL, NULL, 0, 2000, NULL),
@@ -79,8 +81,8 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_2, 15, 'click_purpose_inter', 'CLICK', 'click_purpose_inter', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_2, 16, 'good_or_services_inter', 'CLICK', 'good_or_services_inter', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_2, 17, 'click_ok_inter', 'CLICK', 'click_ok_inter', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_2, 18, 'check_homepage_inter', 'CHECK_SCREEN', 'check_homepage_inter', NULL, NULL, NULL, 0, 5000, CONCAT('{"reference":"receiver_verify","handler_flow":"AC_RECE_VERI__', @handler_1_id, '","threshold":0.8,"max_retries":3,"trigger":"on_match","roi":{"top_percent":27,"bottom_percent":59,"left_percent":22,"right_percent":83}}')),
-  (@tpl_2, 19, 'ocr_verify_before_transfer_inter', 'OCR_VERIFY', 'ocr_verify_before_transfer_inter', NULL, NULL, NULL, 0, 2000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":27,"bottom_percent":35,"left_percent":34,"right_percent":75},"amount":{"top_percent":34,"bottom_percent":42,"left_percent":32,"right_percent":75},"pay_to_account_name":{"top_percent":19,"bottom_percent":25,"left_percent":41,"right_percent":80}},"roi":{"top_percent":21,"bottom_percent":43,"left_percent":34,"right_percent":75}}'),
+  (@tpl_2, 18, 'check_homepage_inter', 'CHECK_SCREEN', 'check_homepage_inter', NULL, NULL, NULL, 0, 5000, CONCAT('{"reference":"receiver_not_verified","handler_flow":"AC_RECE_VERI__', @handler_1_id, '","threshold":0.8,"max_retries":3,"trigger":"on_match","roi":{"top_percent":31,"bottom_percent":65,"left_percent":18,"right_percent":80}}')),
+  (@tpl_2, 19, 'ocr_verify_before_transfer_inter', 'OCR_VERIFY', 'ocr_verify_before_transfer_inter', NULL, NULL, NULL, 0, 2000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":24,"bottom_percent":31,"left_percent":36,"right_percent":77},"amount":{"top_percent":31,"bottom_percent":38,"left_percent":33,"right_percent":77},"pay_to_account_name":{"top_percent":19,"bottom_percent":25,"left_percent":41,"right_percent":80}},"roi":{"top_percent":17,"bottom_percent":39,"left_percent":35,"right_percent":77}}'),
   (@tpl_2, 20, 'confirm_transfer_inter', 'CLICK', 'confirm_transfer_inter', NULL, NULL, NULL, 0, 5000, NULL),
   (@tpl_2, 21, 'take_photo_receipt_inter', 'PHOTO', 'take_photo_receipt_inter', NULL, NULL, NULL, 5000, 2000, NULL),
   (@tpl_2, 22, 'click_all_apps_inter', 'CLICK', 'click_all_apps_inter', NULL, NULL, NULL, 0, 1000, NULL),

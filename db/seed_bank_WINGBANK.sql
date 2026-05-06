@@ -1,5 +1,5 @@
 -- ============================================================
--- Flow seed for WINGBANK (sourced from ARM-04)
+-- Flow seed for WINGBANK (sourced from MY-01)
 -- Exported by db/export_bank_seed.py
 --
 -- Contains: flow_templates + flow_steps for WINGBANK,
@@ -29,7 +29,7 @@ SET @tpl_1 = LAST_INSERT_ID();
 
 INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, ui_element_key, keymap_type, swipe_key, input_source, pre_delay_ms, post_delay_ms, description) VALUES
   (@tpl_1, 1, 'open_app', 'CLICK', 'open_app', NULL, NULL, NULL, 0, 10000, NULL),
-  (@tpl_1, 2, 'find_local_transfer', 'FIND_AND_CLICK', 'find_local_transfer', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"local_tsfr_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":35,"bottom_percent":54,"left_percent":39,"right_percent":64},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
+  (@tpl_1, 2, 'find_local_transfer', 'FIND_AND_CLICK', 'find_local_transfer', NULL, NULL, NULL, 0, 1000, '{"template":{"enabled":true,"name":"local_transfer_btn"},"ocr":{"enabled":false,"text":"","match":"contains","case_sensitive":false},"combine":"template_only","threshold":0.65,"max_retries":3,"retry_delay_ms":800,"verify_radius_px":30,"disambiguation":"best_score","roi":{"top_percent":33,"bottom_percent":52,"left_percent":36,"right_percent":62},"camera_offsets_mm":[[0,0],[-2,0],[0,-2]]}'),
   (@tpl_1, 3, 'enter_password', 'TYPE', NULL, 'wing_password', NULL, 'password', 0, 5000, NULL),
   (@tpl_1, 4, 'to_wing', 'CLICK', 'to_wing', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_1, 5, 'select_account', 'CLICK', 'select_account', NULL, NULL, NULL, 0, 1000, NULL),
@@ -40,7 +40,7 @@ INSERT INTO flow_steps (flow_template_id, step_number, step_name, action_type, u
   (@tpl_1, 10, 'enter_amount', 'TYPE', NULL, 'wing_amount', NULL, 'amount', 0, 1000, NULL),
   (@tpl_1, 11, 'click_tick', 'CLICK', 'click_tick', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_1, 12, 'click_send', 'CLICK', 'click_send', NULL, NULL, NULL, 0, 3000, NULL),
-  (@tpl_1, 13, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 0, 1000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":30,"bottom_percent":46,"left_percent":14,"right_percent":52},"amount":{"top_percent":53,"bottom_percent":64,"left_percent":28,"right_percent":82},"pay_to_account_name":{"top_percent":42,"bottom_percent":46,"left_percent":18,"right_percent":82}},"roi":{"top_percent":30,"bottom_percent":65,"left_percent":13,"right_percent":83}}'),
+  (@tpl_1, 13, 'ocr_verify_before_transfer', 'OCR_VERIFY', 'ocr_verify_before_transfer', NULL, NULL, NULL, 0, 1000, '{"verify_fields":["pay_to_account_no","amount"],"field_rois":{"pay_to_account_no":{"top_percent":29,"bottom_percent":46,"left_percent":14,"right_percent":44},"amount":{"top_percent":52,"bottom_percent":63,"left_percent":28,"right_percent":83},"pay_to_account_name":{"top_percent":42,"bottom_percent":46,"left_percent":18,"right_percent":82}},"roi":{"top_percent":30,"bottom_percent":65,"left_percent":13,"right_percent":83}}'),
   (@tpl_1, 14, 'confirm_transfer', 'CLICK', 'confirm_transfer', NULL, NULL, NULL, 0, 1000, NULL),
   (@tpl_1, 15, 'enter_password_2', 'TYPE', NULL, 'wing_password', NULL, 'pin', 0, 5000, NULL),
   (@tpl_1, 16, 'take_photo', 'PHOTO', 'take_photo', NULL, NULL, NULL, 5000, 3000, NULL),
