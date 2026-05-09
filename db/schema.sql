@@ -214,6 +214,7 @@ CREATE TABLE IF NOT EXISTS calibrations (
     scale_mm_per_pixel FLOAT NOT NULL DEFAULT 0.204,
     rotation_degrees FLOAT NOT NULL DEFAULT 90.0,
     raw_height INT NOT NULL DEFAULT 480,
+    raw_width INT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (station_id) REFERENCES stations(id)

@@ -26,11 +26,20 @@ import base64
 import time
 import logging
 import threading
-from app.config import CAMERA_ID, CAMERA_WARMUP
+from app.config import CAMERA_ID, CAMERA_WARMUP, CAMERA_VISION_WIDTH, CAMERA_VISION_HEIGHT, CAMERA_VISION_FOURCC
 
 logger = logging.getLogger(__name__)
 
 _BACKEND = cv2.CAP_DSHOW
+
+
+def _apply_capture_mode(cap, width, height, fourcc):
+    if fourcc:
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc[:4]))
+    if width:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
+    if height:
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
 
 
 class Camera:
@@ -47,6 +56,18 @@ class Camera:
         self._enabled = False
         self._streaming = False
         self._consecutive_failures = 0
+        self._last_logged_shape = None
+
+    def _log_frame_shape(self, context, frame):
+        if frame is None:
+            return
+        h, w = frame.shape[:2]
+        shape = (context, w, h)
+        if self._last_logged_shape == shape:
+            return
+        self._last_logged_shape = shape
+        logger.info("Camera %d %s frame: raw=%dx%d rotated=%dx%d",
+                    self.camera_id, context, w, h, h, w)
 
     def camera_open(self):
         if not self._enabled:
@@ -128,6 +149,7 @@ class Camera:
                 self.camera_close()
             return None
         self._consecutive_failures = 0
+        self._log_frame_shape("capture_frame", frame)
         return frame
 
     def capture_fresh(self):
@@ -164,6 +186,48 @@ class Camera:
         if not ret:
             return None
         self._consecutive_failures = 0
+        self._log_frame_shape("capture_fresh", frame)
+        return frame
+
+    def capture_fresh_vision(self):
+        """Fresh high-resolution capture for OCR/CHECK_SCREEN/FIND only.
+        Recorder preview and calibration intentionally keep using capture_fresh()
+        so their pixel coordinate space stays stable."""
+        with self._lock:
+            if self._camera is not None:
+                self._camera.release()
+                self._camera = None
+        with Camera._init_lock:
+            prev = Camera._active_instance
+            if prev is not None and prev is not self:
+                prev._release_hw()
+                time.sleep(0.5)
+            with self._lock:
+                self._camera = cv2.VideoCapture(self.camera_id, _BACKEND)
+                if not self._camera.isOpened():
+                    logger.error("Camera %d: vision reopen failed", self.camera_id)
+                    self._camera = None
+                    return None
+                try:
+                    _apply_capture_mode(
+                        self._camera,
+                        CAMERA_VISION_WIDTH,
+                        CAMERA_VISION_HEIGHT,
+                        CAMERA_VISION_FOURCC,
+                    )
+                    self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    time.sleep(0.3)
+                    for _ in range(max(self.warmup, 3)):
+                        self._camera.read()
+                    ret, frame = self._camera.read()
+                finally:
+                    self._camera.release()
+                    self._camera = None
+                    Camera._active_instance = None
+        if not ret:
+            return None
+        self._consecutive_failures = 0
+        self._log_frame_shape("capture_fresh_vision", frame)
         return frame
 
     def capture_rotated(self):
@@ -238,6 +302,9 @@ def capture_frame():
 
 def capture_fresh():
     return _default.capture_fresh()
+
+def capture_fresh_vision():
+    return _default.capture_fresh_vision()
 
 def capture_rotated():
     return _default.capture_rotated()

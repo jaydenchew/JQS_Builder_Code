@@ -143,7 +143,7 @@ async def find_and_swipe(*, config, station_id, bank_code, arm_name,
         await _hw(executor, arm.move, cam_x, cam_y)
         await asyncio.sleep(retry_delay_ms / 1000.0)
 
-        frame = await _hw(executor, cam.capture_fresh)
+        frame = await _hw(executor, cam.capture_fresh_vision)
         if frame is None:
             logger.warning("FIND_AND_SWIPE: capture failed at (%.1f, %.1f)", cam_x, cam_y)
             diagnostics_attempts.append({
@@ -152,6 +152,7 @@ async def find_and_swipe(*, config, station_id, bank_code, arm_name,
             })
             continue
         rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        vision_rotated_h, vision_rotated_w = rotated.shape[:2]
 
         loc = locate_button(
             rotated,
@@ -198,8 +199,11 @@ async def find_and_swipe(*, config, station_id, bank_code, arm_name,
             continue
 
         # --- compute new swipe coords ----------------------------------
+        cal_px, cal_py = await calibration.vision_pixel_to_calibrated_pixel(
+            station_id, loc["rotated_px"], loc["rotated_py"],
+            vision_rotated_w, vision_rotated_h)
         sx_new, sy_new = await calibration.pixel_to_arm(
-            station_id, loc["rotated_px"], loc["rotated_py"], cam_x, cam_y)
+            station_id, cal_px, cal_py, cam_x, cam_y)
         ex_unclamped = sx_new + offset_x
         ey_unclamped = sy_new + offset_y
         ex_new = _clamp(ex_unclamped, 0.0, max_x)
@@ -224,6 +228,10 @@ async def find_and_swipe(*, config, station_id, bank_code, arm_name,
             "candidates": loc["candidates"],
             "rotated_px": loc["rotated_px"],
             "rotated_py": loc["rotated_py"],
+            "vision_rotated_w": vision_rotated_w,
+            "vision_rotated_h": vision_rotated_h,
+            "calibrated_px": round(cal_px, 2),
+            "calibrated_py": round(cal_py, 2),
             "sx_new": sx_new,
             "sy_new": sy_new,
             "ex_new": ex_new,

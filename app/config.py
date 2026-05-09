@@ -22,6 +22,9 @@ ARM_DIGIT_DELAY = float(os.getenv("ARM_DIGIT_DELAY", "0.5"))
 # Camera defaults
 CAMERA_ID = int(os.getenv("CAMERA_ID", "0"))
 CAMERA_WARMUP = int(os.getenv("CAMERA_WARMUP", "2"))
+CAMERA_VISION_WIDTH = int(os.getenv("CAMERA_VISION_WIDTH", "1600"))
+CAMERA_VISION_HEIGHT = int(os.getenv("CAMERA_VISION_HEIGHT", "1200"))
+CAMERA_VISION_FOURCC = os.getenv("CAMERA_VISION_FOURCC", "MJPG")
 
 # PAS (WA -> PAS callbacks)
 PAS_API_URL = os.getenv("PAS_API_URL", "")

@@ -111,7 +111,7 @@ async def fiducial_save(data: dict):
 
     Returns:
       status: "ok" | "poor_precision" | error message
-      transform_matrix, camera_park_pos, scale_mm_per_pixel, rotation_degrees, raw_height
+      transform_matrix, camera_park_pos, scale_mm_per_pixel, rotation_degrees, raw_width, raw_height
       rmse_mm, per_anchor_error_mm, scale_x_mm_per_px, scale_y_mm_per_px, scale_anisotropy
     """
     try:
@@ -124,6 +124,7 @@ async def fiducial_save(data: dict):
         corners_rot = data["corners_rotated"]
         if len(corners_rot) != 4:
             return {"error": "corners_rotated must have exactly 4 points (TL, TR, BR, BL)"}
+        raw_width = int(data["raw_width"])
         raw_height = int(data["raw_height"])
     except (KeyError, ValueError, TypeError) as e:
         return {"error": "Invalid request: %s" % e}
@@ -176,6 +177,7 @@ async def fiducial_save(data: dict):
         "camera_park_pos": [photo_arm[0], photo_arm[1]],
         "scale_mm_per_pixel": round(scale_avg, 6),
         "rotation_degrees": round(rotation_deg, 2),
+        "raw_width": raw_width,
         "raw_height": raw_height,
     }
 

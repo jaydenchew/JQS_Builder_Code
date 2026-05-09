@@ -447,7 +447,7 @@ async def find_and_click(*, config, station_id, bank_code, arm_name,
         await _hw(executor, arm.move, cam_x, cam_y)
         await asyncio.sleep(retry_delay_ms / 1000.0)
 
-        frame = await _hw(executor, cam.capture_fresh)
+        frame = await _hw(executor, cam.capture_fresh_vision)
         if frame is None:
             logger.warning("FIND_AND_CLICK: capture failed at (%.1f, %.1f)", cam_x, cam_y)
             diagnostics_attempts.append({
@@ -456,6 +456,7 @@ async def find_and_click(*, config, station_id, bank_code, arm_name,
             })
             continue
         rotated = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        vision_rotated_h, vision_rotated_w = rotated.shape[:2]
 
         loc = locate_button(
             rotated,
@@ -508,8 +509,11 @@ async def find_and_click(*, config, station_id, bank_code, arm_name,
         if not loc.get("found"):
             continue
 
+        cal_px, cal_py = await calibration.vision_pixel_to_calibrated_pixel(
+            station_id, loc["rotated_px"], loc["rotated_py"],
+            vision_rotated_w, vision_rotated_h)
         arm_x, arm_y = await calibration.pixel_to_arm(
-            station_id, loc["rotated_px"], loc["rotated_py"], cam_x, cam_y)
+            station_id, cal_px, cal_py, cam_x, cam_y)
 
         result = {
             "found": True,
@@ -519,6 +523,10 @@ async def find_and_click(*, config, station_id, bank_code, arm_name,
             "candidates": loc["candidates"],
             "rotated_px": loc["rotated_px"],
             "rotated_py": loc["rotated_py"],
+            "vision_rotated_w": vision_rotated_w,
+            "vision_rotated_h": vision_rotated_h,
+            "calibrated_px": round(cal_px, 2),
+            "calibrated_py": round(cal_py, 2),
             "arm_x": arm_x,
             "arm_y": arm_y,
             "ocr_text": loc.get("ocr_text"),

@@ -217,7 +217,7 @@ async def execute_ocr_verify(step, bank_code, station_id, transaction, password,
         except (_json.JSONDecodeError, TypeError) as e:
             logger.warning("OCR config parse failed for step %s: %s", step.get("step_name"), e)
 
-    frame = await _hw(executor, c.capture_fresh)
+    frame = await _hw(executor, c.capture_fresh_vision)
     start_time = time.time()
 
     is_receipt_check = bool(ocr_config and ocr_config.get("receipt_status"))
@@ -312,7 +312,7 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
     last_result = None
 
     for attempt in range(1, max_retries + 1):
-        frame = await _hw(executor, c.capture_fresh)
+        frame = await _hw(executor, c.capture_fresh_vision)
         if frame is None:
             logger.error("CHECK_SCREEN: capture failed (attempt %d/%d)", attempt, max_retries)
             await asyncio.sleep(2)

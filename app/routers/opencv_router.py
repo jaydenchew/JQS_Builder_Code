@@ -8,6 +8,7 @@ import os
 import base64
 import logging
 import cv2
+import numpy as np
 from fastapi import APIRouter
 from app import camera, screen_checker
 from app.worker_manager import manager
@@ -28,13 +29,14 @@ def _get_cam(arm_id=None):
     return camera
 
 
-def _ref_path(bank_code, name, arm_name=None):
+def _ref_path(bank_code, name, arm_name=None, create=False):
     """Path: references/{arm_name}/{bank_code}/{name}.jpg or references/{bank_code}/{name}.jpg (legacy)"""
     if arm_name:
         d = os.path.join(REFS_DIR, arm_name, bank_code)
     else:
         d = os.path.join(REFS_DIR, bank_code)
-    os.makedirs(d, exist_ok=True)
+    if create:
+        os.makedirs(d, exist_ok=True)
     return os.path.join(d, "%s.jpg" % name)
 
 
@@ -53,24 +55,37 @@ async def capture_reference(data: dict):
     arm_name = await _get_arm_name(data.get("arm_id"))
 
     cam = _get_cam(data.get("arm_id"))
-    frame = cam.capture_rotated()
+    frame = cam.capture_fresh_vision()
     if frame is None:
         return {"error": "Camera not available"}
+    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
-    path = _ref_path(bank_code, name, arm_name)
+    path = _ref_path(bank_code, name, arm_name, create=True)
     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
     with open(path, "wb") as f:
         f.write(buf.tobytes())
 
     b64 = base64.b64encode(buf).decode("utf-8")
-    return {"success": True, "filename": "%s/%s.jpg" % (bank_code, name), "name": name, "preview": b64}
+    return {
+        "success": True,
+        "filename": "%s/%s.jpg" % (bank_code, name),
+        "name": name,
+        "preview": b64,
+        "width": frame.shape[1],
+        "height": frame.shape[0],
+    }
 
 
 @router.post("/snapshot")
 async def snapshot(data: dict):
     """Capture a rotated frame and return as base64 JPEG (no file saved)."""
     cam = _get_cam(data.get("arm_id"))
-    frame = cam.capture_rotated()
+    if data.get("vision"):
+        frame = cam.capture_fresh_vision()
+        if frame is not None:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    else:
+        frame = cam.capture_rotated()
     if frame is None:
         return {"error": "Camera not available"}
     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -123,7 +138,7 @@ async def compare_screen(data: dict):
     cam = _get_cam(data.get("arm_id"))
     # 必须和 actions.execute_check_screen 走同一条路径：capture_fresh() 关闭并重开相机，
     # 绕过 DSHOW 内部 buffer 的旧帧，保证 Builder "Test Compare" 的分数等于运行时分数。
-    frame = cam.capture_fresh()
+    frame = cam.capture_fresh_vision()
     if frame is None:
         return {"error": "Camera not available"}
     current = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
@@ -159,12 +174,13 @@ async def delete_reference(bank_code: str, name: str, arm_id: int = None):
 # Same path scheme as app/find_and_click.py:get_template_path so the runtime
 # loader and Builder save end up at the same file.
 
-def _tpl_path(bank_code, name, arm_name=None):
+def _tpl_path(bank_code, name, arm_name=None, create=False):
     if arm_name:
         d = os.path.join(REFS_DIR, arm_name, bank_code)
     else:
         d = os.path.join(REFS_DIR, bank_code)
-    os.makedirs(d, exist_ok=True)
+    if create:
+        os.makedirs(d, exist_ok=True)
     return os.path.join(d, "%s_tpl.jpg" % name)
 
 
@@ -175,6 +191,7 @@ async def capture_template(data: dict):
     Body:
         bank_code (str), name (str), arm_id (int)
         rect: {x, y, w, h}  rectangle in rotated-frame pixel coords
+        image_b64: optional base64 JPEG; when present crop this exact image
 
     Returns: {success, filename, name, preview (base64 jpg)}.
     """
@@ -189,10 +206,22 @@ async def capture_template(data: dict):
     if w <= 0 or h <= 0:
         return {"error": "rect.w / rect.h must be positive"}
 
-    cam = _get_cam(data.get("arm_id"))
-    frame = cam.capture_rotated()
-    if frame is None:
-        return {"error": "Camera not available"}
+    image_b64 = data.get("image_b64")
+    if image_b64:
+        try:
+            img_bytes = base64.b64decode(image_b64)
+            arr = np.frombuffer(img_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        except Exception as e:
+            logger.warning("capture-template image decode failed: %s", e)
+            frame = None
+        if frame is None:
+            return {"error": "image_b64 decode failed"}
+    else:
+        cam = _get_cam(data.get("arm_id"))
+        frame = cam.capture_rotated()
+        if frame is None:
+            return {"error": "Camera not available"}
     fh, fw = frame.shape[:2]
     x2 = min(fw, x + w)
     y2 = min(fh, y + h)
@@ -205,7 +234,7 @@ async def capture_template(data: dict):
     if crop.size == 0:
         return {"error": "rect produces empty crop"}
 
-    path = _tpl_path(bank_code, name, arm_name)
+    path = _tpl_path(bank_code, name, arm_name, create=True)
     _, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
     with open(path, "wb") as f:
         f.write(buf.tobytes())

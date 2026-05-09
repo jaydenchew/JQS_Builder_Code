@@ -165,6 +165,14 @@ Per-machine defaults (only used before the arms table is populated):
 
 These are only read when a request lacks `arm_id`. Once the arms table has rows, each worker uses its own per-arm values.
 
+Vision-capture defaults:
+
+- `CAMERA_VISION_WIDTH=1600`
+- `CAMERA_VISION_HEIGHT=1200`
+- `CAMERA_VISION_FOURCC=MJPG`
+
+These apply only to high-resolution still captures used by OCR_VERIFY, CHECK_SCREEN, and FIND steps. Recorder preview, calibration, and normal PHOTO/stall screenshots keep using the standard camera mode. Keep the vision resolution in the same aspect ratio as calibration capture; the current calibration default is 640x480 (4:3), so 1600x1200 is the recommended first high-resolution mode. If you change these values after building flows, re-capture CHECK_SCREEN references and FIND templates for that machine.
+
 ---
 
 ## Step 6: Install the WA Service (creates venv + NSSM)
@@ -395,13 +403,15 @@ py db\export_bank_seed.py <BANK_CODE> <ARM_NAME>
 ```
 Commit the resulting `db/seed_bank_<BANK>.sql` to share with the team.
 
-**Reference images for CHECK_SCREEN are per-machine.** The `references/` folder is not tracked in git (each camera's pose, lens, and lighting produce slightly different pixels, so cross-machine reuse breaks the SSIM match). For every CHECK_SCREEN step:
+**Reference images for CHECK_SCREEN are per-machine.** The `references/` folder is not tracked in git (each camera's pose, lens, and lighting produce slightly different pixels, so cross-machine reuse breaks the SSIM match). CHECK_SCREEN references use the high-resolution vision capture mode, so re-capture them after changing `CAMERA_VISION_WIDTH` / `CAMERA_VISION_HEIGHT` / `CAMERA_VISION_FOURCC`. For every CHECK_SCREEN step:
 
 1. In the Builder step config, click **Capture Now** with the expected screen live on the phone
 2. A JPEG is saved to `references/<arm_name>/<bank_code>/<name>.jpg` on this machine only
 3. Use **Preview** to verify the capture looks right, and **Test Compare** to confirm SSIM >= 0.80 on a live frame
 
 Existing references from a previous install on a different machine should be discarded, not copied. If you changed the camera or the phone fixture, re-capture all CHECK_SCREEN references from that arm.
+
+**FIND_AND_CLICK / FIND_AND_SWIPE templates are also per-machine and vision-resolution dependent.** If you enable or change high-resolution vision capture, re-capture all FIND templates with Builder's Capture Template button before trusting live runs.
 
 See [CHECK_SCREEN_OPS.md](CHECK_SCREEN_OPS.md) for the screen-verification step operations guide.
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## feat(vision): high-resolution capture for OCR, CHECK_SCREEN, and FIND (2026-05-06)
+
+### Problem
+
+The camera hardware can expose high-resolution modes, but the system previously used the default OpenCV capture mode for every path. That kept calibration and Recorder preview stable, but OCR / CHECK_SCREEN / FIND could be limited by a lower-resolution frame.
+
+### What changed
+
+- `app/camera.py`: added `capture_fresh_vision()` for high-resolution still captures controlled by `CAMERA_VISION_WIDTH`, `CAMERA_VISION_HEIGHT`, and `CAMERA_VISION_FOURCC`.
+- Default vision capture is 1600x1200 (4:3) to match the existing 640x480 calibration aspect ratio.
+- OCR_VERIFY runtime now uses the high-resolution vision capture while keeping ROI percentages unchanged.
+- CHECK_SCREEN runtime and Builder `Capture Now` references now use high-resolution vision capture.
+- FIND_AND_CLICK and FIND_AND_SWIPE runtime/live tests now locate on high-resolution frames, then map hit pixels back into calibration pixel space before converting to arm coordinates.
+- FIND template capture now crops from the exact high-resolution snapshot the operator selected, avoiding the old "select rectangle on image A, crop fresh image B" mismatch.
+- `calibrations.raw_width` was added for robust high-resolution FIND pixel mapping. Existing databases are upgraded lazily on first calibration access.
+
+### Compatibility
+
+- Recorder preview stays on the normal capture path.
+- Calibration capture stays on the normal capture path.
+- PHOTO receipt capture and stall/failure screenshots stay on the normal capture path.
+- Existing ROI percentages remain valid.
+- CHECK_SCREEN references and FIND templates should be recaptured after enabling/changing high-resolution vision settings.
+
+---
+
 ## ux(recorder): show saved ROI when reopening ROI selector (2026-05-06)
 
 ### Problem

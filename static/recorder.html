@@ -3627,6 +3627,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('active')
    OCR ROI VISUAL SELECTOR
    ============================================================ */
 let _roiSnapshot = null;
+let _roiSnapshotVision = false;
 
 async function selectOcrRoi() { await selectFieldRoi('_legacy'); }
 
@@ -3759,15 +3760,16 @@ async function selectFieldRoi(fieldName) {
         img.src = imgSrc;
     };
 
-    if (_roiSnapshot) {
+    if (_roiSnapshot && _roiSnapshotVision) {
         showModal(_roiSnapshot);
         return;
     }
 
-    toast('Capturing photo...', 'info');
-    const r = await API.post('/api/opencv/snapshot', { arm_id: getArmId() });
+    toast('Capturing high-res photo...', 'info');
+    const r = await API.post('/api/opencv/snapshot', { arm_id: getArmId(), vision: true });
     if (r.error) { toast(r.error, 'error'); return; }
     _roiSnapshot = 'data:image/jpeg;base64,' + r.image;
+    _roiSnapshotVision = true;
     showModal(_roiSnapshot);
 }
 
@@ -3802,7 +3804,7 @@ async function captureFacTemplate() {
 
     // Capture a snapshot for cropping.
     toast('Capturing photo...', 'info');
-    const snap = await API.post('/api/opencv/snapshot', { arm_id: getArmId() });
+    const snap = await API.post('/api/opencv/snapshot', { arm_id: getArmId(), vision: true });
     if (snap.error) { toast(snap.error, 'error'); return; }
     const imgSrc = 'data:image/jpeg;base64,' + snap.image;
 
@@ -3865,6 +3867,7 @@ async function captureFacTemplate() {
                 bank_code: S.bank,
                 name: name.trim(),
                 arm_id: getArmId(),
+                image_b64: snap.image,
                 rect: { x: fx, y: fy, w: fw, h: fh },
             });
             if (r.error) { toast('Capture failed: ' + r.error, 'error'); return; }
