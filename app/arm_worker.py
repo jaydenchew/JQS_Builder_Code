@@ -119,12 +119,33 @@ class ArmWorker:
         return "step_failed"
 
     async def run(self):
-        """Main loop: fetch and process tasks assigned to this arm."""
+        """Main loop: fetch and process tasks assigned to this arm.
+
+        Resilient to transient DB errors: the initial arm-status update,
+        the task fetch, and the task processing are each wrapped so any
+        exception (including pymysql/aiomysql OperationalError on a MySQL
+        blip) is logged and retried/skipped rather than killing the
+        coroutine. The actual camera hardware open happens lazily inside
+        capture_frame() during _process_task, so it is covered by the
+        outer _process_task wrapper below.
+        """
         self._running = True
         self.camera.camera_enable()
-        await database.execute(
-            "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
-            (self.arm_id,))
+
+        # Initial arm-status update — retry on DB blip so a transient MySQL
+        # outage at service startup doesn't permanently disable this worker.
+        while self._running:
+            try:
+                await database.execute(
+                    "UPDATE arms SET status = 'idle', stall_reason = NULL, "
+                    "stall_details = NULL WHERE id = %s",
+                    (self.arm_id,))
+                break
+            except Exception as e:
+                logger.warning("[%s] Initial arm-status update failed (%s); retrying in 5s",
+                               self.name, e)
+                await asyncio.sleep(5)
+
         logger.info("[%s] Worker started (arm_id=%d)", self.name, self.arm_id)
 
         while self._running:
@@ -139,7 +160,16 @@ class ArmWorker:
             if self._task_event is not None:
                 self._task_event.clear()
 
-            task = await self._fetch_next_task()
+            # Wrap the poll: a transient MySQL drop must not kill this coroutine.
+            # The pool reconnects on next acquire; we just back off and retry.
+            try:
+                task = await self._fetch_next_task()
+            except Exception as e:
+                logger.error("[%s] DB error fetching task; retrying in 5s: %s",
+                             self.name, e)
+                await asyncio.sleep(5)
+                continue
+
             if not task:
                 if self._task_event is not None:
                     try:
@@ -150,7 +180,17 @@ class ArmWorker:
                     await asyncio.sleep(2)
                 continue
 
-            await self._process_task(task)
+            # Defensive wrapper: _process_task has its own try/except around
+            # _execute_task (line 193-205), but DB calls BEFORE that try (line
+            # 183 UPDATE transactions, line 187 UPDATE arms) and AFTER it
+            # (post-task writes) would otherwise propagate up and kill this
+            # coroutine on a MySQL blip.
+            try:
+                await self._process_task(task)
+            except Exception as e:
+                logger.exception("[%s] Unhandled error in _process_task; continuing: %s",
+                                 self.name, e)
+                await asyncio.sleep(2)
 
         logger.info("[%s] Worker stopped", self.name)
 

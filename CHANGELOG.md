@@ -1,5 +1,56 @@
 # Changelog
 
+## fix(reliability): keep arm_worker alive across transient MySQL drops (2026-05-09)
+
+### Problem
+
+On 2026-05-09 06:44 (GMT+7), MySQL had a brief connection drop. Both arm workers (ARM-03 and ARM-04) silently died because:
+
+1. `arm_worker.run()` had no try/except around `_fetch_next_task()`. A single `pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query')` propagated out of the coroutine, terminating the asyncio Task.
+2. `WorkerManager` keeps the dead Task in `self._tasks` indefinitely, so asyncio's "Task exception was never retrieved" warning never fires.
+3. Dashboard reads `worker.get_info()` which returns the last DB-written arm state ("idle"), so operators see no problem.
+
+Result: between 07:20 and 13:15+ (~6 hours), 48 transactions were inserted with `status='queued'` but never picked up. Operator only noticed after manual log review and had to manually fail-and-callback all 48.
+
+### What changed
+
+`app/arm_worker.py:run()` now wraps every long-running call in try/except + back-off so any transient failure is logged and retried/skipped rather than killing the coroutine. Three protected points:
+
+1. **Initial `UPDATE arms SET status='idle'`** — retry loop with 5s back-off. A DB blip at service startup no longer permanently disables the worker.
+2. **`_fetch_next_task()` poll** — try/except + 5s back-off + continue. A DB blip during normal operation now logs and retries instead of killing the coroutine. (This is the exact failure mode that caused the 2026-05-09 incident.)
+3. **`_process_task(task)` outer wrapper** — try/except + 2s back-off + continue. Catches any exception that escapes `_process_task`'s own internal try/except, including DB calls *before* the inner try (lines 183 `UPDATE transactions`, 187 `UPDATE arms`) and post-task DB writes. Also covers exceptions originating from the lazy `cv2.VideoCapture` open inside `capture_frame()`. Ensures the entire task lifecycle is protected, not just the fetch.
+
+`self.camera.camera_enable()` at startup is intentionally **not** wrapped: it only sets a bool flag and cannot raise in practice. The actual hardware open is lazy inside `capture_frame()` and runs under the `_process_task` wrapper above.
+
+The 25 other `database.*` calls inside `_process_task()` and `_execute_task()` flow through the existing per-step error handling and `STALL` recovery flow as before — that path is unchanged. The new outer wrapper is strictly defensive: it catches whatever escapes the existing handlers.
+
+`except Exception` (broad) is intentional: `pymysql.err.OperationalError` and `aiomysql.OperationalError` are different classes depending on which module surfaces the failure, and any DB-side issue (handshake fail, timeout, broken connection) deserves a retry. `asyncio.CancelledError` is a `BaseException` subclass on Python 3.11, so it is **not** caught and worker cancellation via `worker_manager._remove_worker()` continues to work as before. A SQL programming error would loop forever but log loudly each cycle — strictly better than dying silently.
+
+### Files
+
+- `app/arm_worker.py` — +44 / -5 lines, pure additive (no logic removed).
+
+### Compatibility
+
+- No DB schema change.
+- No API or contract change.
+- Behaviour in normal case (no DB error): identical to before — try/except is a no-op when no exception is raised.
+- Behaviour when MySQL goes down: worker logs `[ARM-XX] DB error fetching task; retrying in 5s: ...`, sleeps 5s, retries. Resumes normal operation as soon as MySQL is reachable again. Previously: worker died silently and required service restart.
+- `_process_task()` is unchanged — its existing error handling already covers DB errors mid-task and routes them through the STALL flow.
+
+### Not included (deferred)
+
+- **`worker_manager.py` watchdog** (asyncio Task `done_callback`): for catching unforeseen exceptions that might escape `run()` itself. Not needed today because all calls inside `run()` are now wrapped, but defense-in-depth for future code paths.
+- **Orphaned `running` task recovery on service restart**: tasks that are mid-execution when the service restarts stay `status='running'` forever. Operator policy is to never restart while tasks are running, so deferred.
+- **Hang detection (worker alive but stuck on a never-returning IO)**: distinct from worker death; would need timeouts on every IO call. No current evidence of this in production logs; deferred.
+- **Retry-storm alerting** (e.g. `logger.critical` after N consecutive retries): observability nice-to-have; deferred.
+
+### Reference
+
+Full incident analysis, design rationale, and recovery decisions in `.agent/plans/worker-resilience.md` (untracked, local).
+
+---
+
 ## feat(vision): high-resolution capture for OCR, CHECK_SCREEN, and FIND (2026-05-06)
 
 ### Problem
