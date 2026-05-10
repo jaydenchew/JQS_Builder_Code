@@ -1,5 +1,58 @@
 # Changelog
 
+## fix(reliability): cap every DB call with a timeout to defeat half-open MySQL sockets (2026-05-10)
+
+### Problem
+
+On 2026-05-10 ~01:23 (GMT+8), MySQL had another brief connection blip. The `try/except` retry loop added in the 2026-05-09 fix did its job for connections that surfaced an error — `OperationalError(2013, 'Lost connection to MySQL server during query')` shows up in `service_stderr.log` for several `/api/monitor/stats/today` dashboard requests around that timestamp, and the workers logged nothing at all in that window.
+
+That "logged nothing" is the new failure mode. From 01:23:10 (last `[MY-01] === SUCCESS process_id=5576 ===`) until 11:49 (manual pause by operator), the workers had **zero** log entries — not "DB error fetching task; retrying in 5s", not the 30-second `_event.wait` timeout poll, nothing. PAS kept queuing tasks (`process_id=5578, 5582, 5583, 5709, 5710, 5712`) which sat in `transactions` with `status='queued'` and arm `status='idle'`, but no worker picked them up. The `httpx` heartbeat and dashboard requests in the same log file prove the asyncio event loop itself was still running — only the worker coroutines were frozen.
+
+Root cause: `aiomysql 0.3.2`'s pool keeps a `_free` deque of idle connections. When `pool.acquire()` returns one, it probes liveness via `conn._reader.at_eof()` and `conn._reader.exception()`. Neither check detects a **half-open TCP socket** — the case where the remote side (or an intermediate NAT / firewall / VPN) silently dropped the flow without sending RST/FIN. From the client's perspective the socket is still ESTABLISHED. The `at_eof` flag is False, no exception is queued. `aiomysql` hands the zombie connection to the caller, the caller calls `cur.execute(...)`, and the `await` for the response packet blocks forever because nothing on the other end is going to reply. No exception, no timeout, no log line — the worker just stops being.
+
+The 2026-05-09 fix (try/except in `arm_worker.run()`) cannot save us here because there is no exception to catch. That CHANGELOG entry's `### Not included (deferred)` section called this out: *"Hang detection (worker alive but stuck on a never-returning IO): distinct from worker death; would need timeouts on every IO call. No current evidence of this in production logs; deferred."* — 2026-05-10 01:23 became that evidence.
+
+### What changed
+
+`app/database.py` now caps every pooled DB operation with `asyncio.wait_for`, and force-closes the connection on timeout so the bad socket gets evicted from the pool instead of being recycled to the next caller.
+
+1. `aiomysql.create_pool(...)` now passes `connect_timeout=DB_CONNECT_TIMEOUT_S` (10s). Protects new TCP handshakes when the pool grows beyond `minsize` or after a force-close.
+2. New private helper `_run(op)` wraps every operation in `await asyncio.wait_for(op(conn), timeout=DB_CALL_TIMEOUT_S)` (15s). On `TimeoutError` / `CancelledError`, calls `conn.close()` *before* `pool.release(conn)` so `aiomysql` evicts the zombie from `_free` instead of putting it back. Without the explicit close, the next caller would acquire the same zombie and hang again.
+3. `fetchone`, `fetchall`, `execute`, `execute_many` rewritten as thin shims over `_run(op)`. Behaviour for healthy queries is unchanged — they all complete in <100ms in practice (worker fetch ~13ms, heaviest report ~94ms), so 15s is generous and never fires for a real query.
+
+15s was chosen by reading current production query timings out of the same log file, then leaving headroom. Tighter would risk false positives during a legitimate slow query; looser would extend the worker outage on a real hang. The number is a single constant at the top of `database.py` — easy to tune later if needed.
+
+`asyncio.CancelledError` is included in the except clause specifically because the surrounding `_event.wait(timeout=30)` can cancel the in-flight DB call when the worker is being torn down (`worker_manager._remove_worker()`). We do **not** want a cancelled DB call to leak its zombie connection back to the pool, so we close it on cancel too — but we re-raise so the cancel still propagates and worker shutdown completes normally.
+
+### Verification
+
+A reproduction smoke test in a separate process imported the production `app.database` module, monkey-patched all free connections' `_read_bytes` to hang indefinitely, then ran `database.fetchone('SELECT 1')` repeatedly. Result: each sabotaged acquire produced a `TimeoutError` after 15s, the connection was force-closed, the pool refilled to `minsize`, and the next call against fresh connections returned `1` immediately. Without the fix, the same scenario hangs the test process forever — exactly what production saw. Smoke test was kept under `scripts/` (untracked) for local re-run.
+
+### Files
+
+- `app/database.py` — +43 / -8 lines. Module-level constants, `_run(op)` helper, all four public helpers rewritten as shims. No callers changed.
+
+### Compatibility
+
+- No DB schema change.
+- No API or contract change.
+- No callsite change — `database.fetchone/fetchall/execute/execute_many` keep the same signatures and same return semantics.
+- Healthy-path latency unchanged (the `wait_for` timer never fires for sub-second queries).
+- Behaviour when MySQL hangs (half-open socket, dead VPN, frozen DB process, etc.): caller gets `asyncio.TimeoutError` after 15s. In `arm_worker.run()` this hits the existing `except Exception` from the 2026-05-09 fix → log line + 5s back-off + retry on a fresh connection. Worker self-heals automatically.
+- Behaviour during graceful worker shutdown is preserved: the `CancelledError` branch closes the connection but re-raises, so `worker_manager._remove_worker()` and FastAPI shutdown still complete.
+
+### Not included (deferred)
+
+- **TCP keepalive on the MySQL socket** (OS-level dead-peer detection). `aiomysql 0.3.2` doesn't expose a `sock_kwargs` hook to set `SO_KEEPALIVE` on the underlying socket. Could be added by monkey-patching `Connection._connect` or by upgrading aiomysql, but the per-call `wait_for` already covers the failure mode without touching the network layer. Park for a quiet day.
+- **Per-query timeout tuning**: 15s applies uniformly. The slowest legitimate query is ~94ms so the margin is huge; if a future report query genuinely needs >15s we'll add an opt-in longer-timeout variant rather than raising the global default.
+- **Worker watchdog** (parent task notices a child task that hasn't logged in N minutes and restarts it): still deferred. With the timeout in place every DB hang now self-resolves in 15s, so a watchdog would only catch non-DB hangs (camera, WCF, hardware) — none of which match the 2026-05-10 incident.
+
+### Reference
+
+Full incident analysis (log timeline, py-spy thread dump, `aiomysql` source walkthrough, smoke test design) in `.agent/plans/worker-resilience.md` (untracked, local). The 2026-05-09 entry below documents the predecessor fix that this builds on.
+
+---
+
 ## fix(reliability): keep arm_worker alive across transient MySQL drops (2026-05-09)
 
 ### Problem
