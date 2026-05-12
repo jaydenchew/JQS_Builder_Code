@@ -42,3 +42,7 @@ TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tess
 # true (default): raise RuntimeError → task fails, arm pauses (safe)
 # false: skip verification and continue (useful for environments without OCR)
 OCR_REQUIRED = os.getenv("OCR_REQUIRED", "true").lower() == "true"
+
+# Smart Bird (GeekOpen GSPM1B-ES) MQTT broker
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "127.0.0.1")
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))

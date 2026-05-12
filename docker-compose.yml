@@ -15,5 +15,16 @@ services:
       - ./db/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: wa-mosquitto
+    restart: unless-stopped
+    ports:
+      - '1883:1883'
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
 volumes:
   wa_unified_data:

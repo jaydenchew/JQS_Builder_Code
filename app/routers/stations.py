@@ -139,7 +139,8 @@ async def create_station(data: dict):
 
 @router.put("/{station_id}")
 async def update_station(station_id: int, data: dict):
-    allowed = {"name", "x_offset", "stall_photo_x", "stall_photo_y", "status", "arm_id"}
+    allowed = {"name", "x_offset", "stall_photo_x", "stall_photo_y", "status", "arm_id",
+               "plug_client_id", "plug_enabled"}
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return {"error": "No valid fields"}

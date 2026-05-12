@@ -1,5 +1,114 @@
 # Changelog
 
+## fix(reliability): smart plug follow-up — connection, parsing, exception, and operator UX (2026-05-12, same day)
+
+Follow-up refinements to the same-day smart plug rollout, all driven by end-to-end testing on the live broker + a physical GeekOpen plug (`plug01` and `plug02`).
+
+1. **`app/smart_plug.py`** — `start()` switched from `client.connect()` → `client.connect_async()`. paho 1.x's blocking `connect()` leaves the client in an undefined state if the broker is unreachable on first call and is not guaranteed to retry; `connect_async() + loop_start()` is the documented pattern for "broker may not be up yet at boot" and reliably keeps retrying in the background.
+2. **`app/smart_plug.py`** — `_send_event` and `_send_query` gained explicit `except asyncio.CancelledError: raise` + `except Exception` blocks so that ANY unexpected exception from paho's `publish()` or from `json` is recorded as a failure (counter + last_failure_reason) instead of bubbling up. Contract is now: only `CancelledError` can escape — power_off/on always return a bool or None. This guarantees `arm_worker._process_task`'s `try/finally` always reaches the `power_on` recovery path.
+3. **`app/smart_plug.py`** — both publishes use `json.dumps(..., separators=(",", ":"))` for compact wire format `{"key":1,"type":"event"}`. The plug's auto-reports use compact JSON; we never verified the firmware's tolerance for the default-spaced form. One-line defensive change.
+4. **`app/arm_worker.py` `_process_task`** — moved the `power_off` call *inside* the existing `try` block (was sitting between the plug query and the try in the first cut). If `power_off` raises despite the Fix 2 belt-and-suspenders, the `finally` block still runs `power_on`, so a transaction can never leave the plug stuck OFF. The `power_on` call in `finally` is now also wrapped in its own `try/except Exception` so a failing `power_on` cannot mask the original exception that brought us into the `finally`.
+5. **`app/routers/monitor.py`** — new `GET /api/monitor/mqtt-broker` returns the host's LAN IP (auto-detected via the well-known UDP-socket-to-routable-host trick) and the configured port. Used by `static/settings.html` to display a "point new plugs at: 192.168.x.x port 1883" hint banner so operators don't have to `ipconfig` every time. Multi-homed hosts fall back to whatever interface routes to 8.8.8.8 (banner shows a warning when detection fails so operator knows to read it manually).
+6. **`app/routers/monitor.py`** — new `POST /api/monitor/plug-test/{client_id}/{action}` directly invokes `smart_plug_client.power_on/off()` for the given plug. Kept as a permanent operator/ops endpoint (not stripped after testing) — it shares the singleton + MQTT connection that arm_worker uses, so it's the cleanest way to verify a newly configured plug responds before flipping `plug_enabled` on its station, or to diagnose suspected plug issues in production without going through a transaction.
+7. **`static/settings.html`** — three UI polish items, no behaviour change beyond presentation:
+   - Plug fields renamed from `Plug` (ambiguous with adjacent `Status` column) → `Plug Cutoff` and moved to the end of the row, after Status — eliminates the "is this plug status?" confusion observed in operator testing.
+   - Added `.overview-field input[type="checkbox"]` CSS so the checkbox is not stretched to the 60px-min-width input style; visually aligned with neighbouring fields.
+   - Added the auto-detected MQTT broker hint banner described in (5). Banner self-hides if the endpoint is missing or returns no host, so the page works against older WA versions.
+8. **`deploy/install_service.bat`** — new step (between venv creation and VC++ install) opens TCP 1883 inbound through Windows Firewall for `Private+Domain` profiles via two `netsh advfirewall firewall` calls (delete-then-add, idempotent on re-run). Without this rule the mosquitto container listens on `0.0.0.0:1883` but LAN-side plugs cannot connect — historically the biggest first-time-deployment footgun. Failure to install the rule is a WARNING, not fatal.
+
+### Files
+
+- `app/smart_plug.py` — modified (~30 net lines added: connect_async swap, two `except` blocks, separators=).
+- `app/arm_worker.py` — power_off moved inside try; power_on wrapped in try/except inside finally (~8 net lines).
+- `app/routers/monitor.py` — +35 lines (`mqtt-broker` + `plug-test` endpoints, `socket` import, `MQTT_BROKER_PORT` import).
+- `static/settings.html` — +50 net lines (MQTT hint banner DIV + CSS + `loadMqttHint()` JS + checkbox CSS + form re-order).
+- `deploy/install_service.bat` — +9 lines (netsh rule + WARNING fallback).
+
+### Compatibility
+
+- All additive. No DB / no API contract changes.
+- Endpoints `/api/monitor/mqtt-broker` and `/api/monitor/plug-test` are localhost-only (port 9000 binds to 127.0.0.1) and inherit the existing "monitor router has no auth" posture (see DD-001) — same as `/api/monitor/plug-status`, `/api/monitor/pause`, etc.
+- Compact JSON change is wire-format defensive; the plug already accepted both forms in earlier testing, but we have no formal spec from the vendor on whitespace tolerance, so the safer wire format wins.
+
+### Verification (post-deploy)
+
+1. WA startup log: `Smart plug MQTT connected (rc=0)` + `[plug-bootstrap] restored N plug(s)` (no warning).
+2. `Invoke-RestMethod /api/monitor/mqtt-broker` returns `{host: "192.168.x.x", port: 1883}`.
+3. `Invoke-RestMethod -Method Post /api/monitor/plug-test/plugXX/off` → `{success:true, connected:true}`. Plug physically powers off; next `device-timer-task` auto-report shows `key:0`.
+4. `/api/monitor/plug-test/plugXX/on` → `{success:true}`. Plug powers back on; `key:1`.
+5. Settings UI banner shows `Host: 192.168.x.x ... Subscribe topic: GemeOpen/<client-id>/sub ...`.
+6. A real transaction on a `plug_enabled=1` station completes with `=== SUCCESS process_id=... ===`, no plug warnings, and `power_on_failures` / `power_off_failures` stay at 0.
+7. `netsh advfirewall firewall show rule name="Mosquitto MQTT 1883"` lists the rule as enabled.
+
+---
+
+## feat(reliability): smart plug charge cutoff per transaction (2026-05-12)
+
+### Problem
+
+Phone charging during a transaction has two observed downsides: (1) the charging cable / dock can subtly shift the phone position, causing arm taps to land off-center, and (2) on some phone models the charging-overlay UI briefly intercepts touches when the cable is plugged in. Both manifest as random STALLs that re-running the same flow without charging clears immediately. The historical workaround was to unplug the cable by hand before each session; this is impractical for unattended 24/7 operation.
+
+### What changed
+
+A new MQTT-controlled smart plug (Smart Bird / GeekOpen GSPM1B-ES) cuts charging at transaction start and restores it at transaction end. Wiring is per-station via two new `stations` columns; opt-in per row.
+
+1. **`app/smart_plug.py`** (new) — singleton `SmartPlugClient` wrapping a `paho-mqtt` 1.x client. Exposes `start / stop / bootstrap / power_on / power_off / get_status / is_connected` + in-memory `power_on_failures` / `power_off_failures` / `last_failure_at` / `last_failure_reason` counters. Network loop runs in paho's background thread; on_message dispatches replies back to the asyncio loop via `loop.call_soon_threadsafe` against per-`(client_id, commandName)` pending Futures. All publishes use QoS 1 so the broker confirms delivery. Topic prefix is `GemeOpen` — vendor firmware spelling, not a typo (constant + comment guard against future "fixes").
+2. **`app/main.py` lifespan** — `smart_plug_client.start()` waits for SUBACK (5s) before returning so the first `power_off` is never sent before the reply subscription is active. `bootstrap()` immediately after queries `stations WHERE plug_enabled = 1 AND plug_client_id IS NOT NULL` and sends `power_on` to each, recovering from a previous crash that may have left a plug stuck OFF. Both calls are non-fatal: an unreachable broker or unmigrated schema only logs a warning. On shutdown, plug client is stopped **after** `manager.stop_all()` so worker cancellation's `finally` blocks can still call `power_on`.
+3. **`app/arm_worker.py` `_process_task`** — inline-queries `stations.plug_client_id / plug_enabled` after the START log, calls `power_off` if enabled, then wraps the entire existing task body (DB writes, `_execute_task`, post-task callbacks, stall handling, `_cleanup_arm`) in `try / finally` so `power_on` runs regardless of success, stall, hardware error, or task cancellation. Failure to power_off / power_on logs a warning but never blocks or STALLs the transaction — the user's explicit decision (charging interference is preferable to losing the run entirely).
+4. **`app/routers/stations.py`** — `update_station` whitelist extended with `plug_client_id` / `plug_enabled`. No other endpoint changes; `create_station` keeps its current signature and new stations default to `plug_enabled=0`.
+5. **`app/routers/monitor.py`** — `/api/monitor/services` now reports a `smart_plug` entry alongside mysql / arm_wcf / cloudflare_tunnel / wa_service. New `/api/monitor/plug-status` endpoint exposes the in-memory failure counters for ad-hoc health checks (counters reset on restart by design — this is a "since last restart" indicator, not an audit log).
+6. **`static/settings.html`** — Station edit row gains two inputs (`Plug ID` text box + `Plug` checkbox) between Stall Y and Status. `saveStation()` sends `plug_client_id` (or `null` if empty) and `plug_enabled` (1/0) in the PUT body.
+7. **`db/schema.sql`** — `stations` table adds `plug_client_id VARCHAR(64)` (nullable, no default) and `plug_enabled TINYINT(1) NOT NULL DEFAULT 0`. Existing rows get `plug_enabled=0` — no behaviour change until an operator opts a station in via Settings.
+8. **`docker-compose.yml` + `mosquitto/config/mosquitto.conf`** — adds an Eclipse Mosquitto 2 service (anonymous, listener on `1883`) alongside the existing MySQL container. Persistence + data + log dirs mounted from `./mosquitto/`.
+9. **`app/config.py`** — `MQTT_BROKER_HOST` / `MQTT_BROKER_PORT` env vars with `127.0.0.1` / `1883` defaults. No `validate_config` change — broker unreachable is non-fatal.
+10. **`requirements.txt`** — `paho-mqtt>=1.6.0,<2.0`. Pinned below 2.0 because paho 2.x rewrites the callback API and would silently break the v1-style `on_connect(client, userdata, flags, rc)` signature.
+
+### Files
+
+- `app/smart_plug.py` — NEW (~250 lines).
+- `app/main.py` — +3 lines (import, start+bootstrap, stop).
+- `app/arm_worker.py` — +24 / -0 lines (import, plug query, power_off, try/finally wrapper, power_on). Inner logic re-indented but unchanged.
+- `app/routers/stations.py` — +1 line (whitelist).
+- `app/routers/monitor.py` — +24 / -0 lines (import, /services key, /plug-status endpoint).
+- `static/settings.html` — +6 / -1 lines (2 form inputs, 2 fields in PUT body).
+- `db/schema.sql` — +2 lines.
+- `docker-compose.yml` — +10 lines (mosquitto service).
+- `mosquitto/config/mosquitto.conf` — NEW (2 lines).
+- `app/config.py` — +4 lines.
+- `requirements.txt` — +1 line.
+
+### Compatibility
+
+- **DB schema change** — additive only; new columns nullable / default 0. Existing data fully preserved. Operator must run the ALTER TABLE on the live DB before pulling new code, otherwise `bootstrap()` query catches the missing-column error, warns, and continues — the rest of the service still starts but plug control is unavailable until migration is done.
+- **API**: `/api/stations/{id}` PUT accepts two new optional keys. Older Builder JS still works (just won't send them).
+- **WA execution API** (PAS-facing): unchanged.
+- **Behaviour with `plug_enabled=0`** (all existing stations): identical to before — the inline `if plug_id:` guard short-circuits before any MQTT activity.
+- **Behaviour with `plug_enabled=1`** but broker unreachable: `power_off / power_on` time out after 5s, log a warning, continue. Per-task overhead in the worst case: ~10s (5s pre, 5s post). Counter in `/api/monitor/plug-status` surfaces the failure rate.
+
+### Verification (post-deploy)
+
+1. `DESCRIBE stations` shows `plug_client_id` and `plug_enabled` columns.
+2. `docker compose ps mosquitto` shows the broker running on `1883`.
+3. `mosquitto_pub -h 127.0.0.1 -t "GemeOpen/plug01/pub" -q 1 -m '{"key":1,"type":"event"}'` round-trips: subscribe to `GemeOpen/+/sub` and observe a `controller-event` reply with `key=1`.
+4. Service startup log shows `Smart plug MQTT connected to 127.0.0.1:1883` and `[plug-bootstrap] restored N plug(s)`.
+5. `curl /api/monitor/services` returns a `smart_plug` entry with `online: true`.
+6. `curl /api/monitor/plug-status` returns counters at zero immediately after restart.
+7. Configure one station's plug in Settings (Plug ID `plug01`, check enable, save), run one test transaction. Live Logs should show: `Smart plug power_off ...` → flow steps → `Smart plug power_on ...`. `mosquitto_sub -t "GemeOpen/+/pub" -v` captures both event publishes.
+
+### Not included (deferred)
+
+- **Dashboard arm card plug status / live wattage** — would need periodic `{"type":"statistic"}` polling + WebSocket push extension. Spec §可选增强.
+- **`stations.last_plug_failure_at` + Dashboard red dot** — DB-persisted failure indicator. Defer until in-memory counter proves insufficient.
+- **`plug_events` history table** — full audit trail of every on/off + outcome.
+- **TCP keepalive on MQTT socket via paho hooks** — current 120s MQTT keepalive (`keepalive=_MQTT_KEEPALIVE_S`) is acceptable; OS-level keepalive would require monkey-patching paho or upgrading the library.
+- **Statistic polling for dashboard** — same as above.
+
+### Reference
+
+Full design: `.agent/plans/SMART_PLUG_SPEC.md` (untracked, local). Captures MQTT command reference, reply structures (`controller-event`, `info-all`, `info-statistic`), threading model, and the 11-step rollout plan executed in this commit.
+
+---
+
 ## fix(reliability): cap every DB call with a timeout to defeat half-open MySQL sockets (2026-05-10)
 
 ### Problem

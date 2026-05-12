@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.arm_client import ArmClient
 from app.camera import Camera
 from app import database, actions, pas_client
+from app.smart_plug import smart_plug_client
 
 logger = logging.getLogger(__name__)
 
@@ -220,139 +221,173 @@ class ArmWorker:
         logger.info("[%s] === START task: process_id=%d bank=%s station=%d ===",
                      self.name, process_id, bank_code, station_id)
 
-        await database.execute(
-            "UPDATE transactions SET status = 'running', started_at = NOW() WHERE id = %s",
-            (transaction_id,)
-        )
-        await database.execute("UPDATE arms SET status = 'busy' WHERE id = %s", (self.arm_id,))
-
-        success = False
-        error_msg = None
-        is_hardware_error = False
+        # Smart plug: cut charging before the flow starts so arm movement /
+        # touch detection aren't affected. Station-level config; failure is
+        # non-blocking by design (see SMART_PLUG_SPEC §关键设计决策).
+        # power_off MUST be inside the try so that if it raises (paho/json
+        # edge case) the finally still runs power_on and the plug doesn't
+        # get stuck OFF.
+        station_cfg = await database.fetchone(
+            "SELECT plug_client_id, plug_enabled FROM stations WHERE id = %s",
+            (station_id,))
+        plug_id = (station_cfg["plug_client_id"]
+                   if station_cfg and station_cfg["plug_enabled"] else None)
 
         try:
-            success = await self._execute_task(task, bank_code, station_id, password, transaction_id)
-        except RuntimeError as e:
-            error_str = str(e)
-            if "port open failed" in error_str.lower() or "not responding" in error_str.lower():
-                is_hardware_error = True
-                logger.error("[%s] Hardware error, pausing 30s: %s", self.name, e)
-                await asyncio.sleep(30)
-            error_msg = error_str
-            logger.error("[%s] Task error: %s", self.name, e)
-        except Exception as e:
-            error_msg = str(e)
-            logger.exception("[%s] Task error: %s", self.name, e)
-
-        ocr_result = task.get("_ocr_result")
-        now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        receipt_b64 = None
-
-        row = await database.fetchone(
-            "SELECT receipt_base64 FROM transactions WHERE id = %s", (transaction_id,))
-        if row and row["receipt_base64"]:
-            receipt_b64 = row["receipt_base64"]
-
-        if not receipt_b64 and ocr_result and ocr_result.get("screenshot_b64"):
-            receipt_b64 = ocr_result["screenshot_b64"]
-
-        if success and ocr_result and ocr_result.get("is_receipt_check"):
-            rr = ocr_result.get("receipt_result")
-            status_map = {"success": 1, "failed": 2, "fail": 2, "review": 3}
-            pas_status = status_map.get(rr, 1)
-            db_status = "success" if pas_status == 1 else ("review" if pas_status == 3 else "failed")
+            if plug_id:
+                ok = await smart_plug_client.power_off(plug_id)
+                if not ok:
+                    logger.warning("[%s] Smart plug power_off failed for %s; continuing",
+                                   self.name, plug_id)
 
             await database.execute(
-                "UPDATE transactions SET status = %s, finished_at = NOW() WHERE id = %s",
-                (db_status, transaction_id))
-            cb_result = await pas_client.callback_result(process_id, pas_status, now, receipt_b64)
-            if cb_result is not None:
+                "UPDATE transactions SET status = 'running', started_at = NOW() WHERE id = %s",
+                (transaction_id,)
+            )
+            await database.execute("UPDATE arms SET status = 'busy' WHERE id = %s", (self.arm_id,))
+
+            success = False
+            error_msg = None
+            is_hardware_error = False
+
+            try:
+                success = await self._execute_task(task, bank_code, station_id, password, transaction_id)
+            except RuntimeError as e:
+                error_str = str(e)
+                if "port open failed" in error_str.lower() or "not responding" in error_str.lower():
+                    is_hardware_error = True
+                    logger.error("[%s] Hardware error, pausing 30s: %s", self.name, e)
+                    await asyncio.sleep(30)
+                error_msg = error_str
+                logger.error("[%s] Task error: %s", self.name, e)
+            except Exception as e:
+                error_msg = str(e)
+                logger.exception("[%s] Task error: %s", self.name, e)
+
+            ocr_result = task.get("_ocr_result")
+            now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            receipt_b64 = None
+
+            row = await database.fetchone(
+                "SELECT receipt_base64 FROM transactions WHERE id = %s", (transaction_id,))
+            if row and row["receipt_base64"]:
+                receipt_b64 = row["receipt_base64"]
+
+            if not receipt_b64 and ocr_result and ocr_result.get("screenshot_b64"):
+                receipt_b64 = ocr_result["screenshot_b64"]
+
+            if success and ocr_result and ocr_result.get("is_receipt_check"):
+                rr = ocr_result.get("receipt_result")
+                status_map = {"success": 1, "failed": 2, "fail": 2, "review": 3}
+                pas_status = status_map.get(rr, 1)
+                db_status = "success" if pas_status == 1 else ("review" if pas_status == 3 else "failed")
+
                 await database.execute(
-                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
-            else:
-                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
-            logger.info("[%s] === DONE process_id=%d pas_status=%d receipt=%s ===",
-                        self.name, process_id, pas_status, rr)
-            await self._cleanup_arm()
-            await database.execute(
-                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
-                (self.arm_id,))
-
-        elif success:
-            await database.execute(
-                "UPDATE transactions SET status = 'success', finished_at = NOW() WHERE id = %s",
-                (transaction_id,))
-            cb_result = await pas_client.callback_result(process_id, 1, now, receipt_b64)
-            if cb_result is not None:
-                await database.execute(
-                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
-            else:
-                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
-            logger.info("[%s] === SUCCESS process_id=%d ===", self.name, process_id)
-            await self._cleanup_arm()
-            await database.execute(
-                "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
-                (self.arm_id,))
-
-        else:
-            if not error_msg:
-                if ocr_result and not ocr_result.get("success"):
-                    error_msg = "OCR verification failed"
+                    "UPDATE transactions SET status = %s, finished_at = NOW() WHERE id = %s",
+                    (db_status, transaction_id))
+                cb_result = await pas_client.callback_result(process_id, pas_status, now, receipt_b64)
+                if cb_result is not None:
+                    await database.execute(
+                        "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
                 else:
-                    error_msg = "Step execution failed"
-            self._last_error = error_msg
-            self._stall_reason = self._classify_stall_reason(error_msg)
+                    logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
+                logger.info("[%s] === DONE process_id=%d pas_status=%d receipt=%s ===",
+                            self.name, process_id, pas_status, rr)
+                await self._cleanup_arm()
+                await database.execute(
+                    "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+                    (self.arm_id,))
 
-            stall_screenshot = await self._capture_stall_photo(station_id)
-            if not receipt_b64 and stall_screenshot:
-                receipt_b64 = stall_screenshot
+            elif success:
+                await database.execute(
+                    "UPDATE transactions SET status = 'success', finished_at = NOW() WHERE id = %s",
+                    (transaction_id,))
+                cb_result = await pas_client.callback_result(process_id, 1, now, receipt_b64)
+                if cb_result is not None:
+                    await database.execute(
+                        "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+                else:
+                    logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
+                logger.info("[%s] === SUCCESS process_id=%d ===", self.name, process_id)
+                await self._cleanup_arm()
+                await database.execute(
+                    "UPDATE arms SET status = 'idle', stall_reason = NULL, stall_details = NULL WHERE id = %s",
+                    (self.arm_id,))
 
-            await database.execute(
-                "UPDATE transactions SET status = 'stall', error_message = %s, receipt_base64 = %s, finished_at = NOW() WHERE id = %s",
-                (error_msg, receipt_b64, transaction_id))
+            else:
+                if not error_msg:
+                    if ocr_result and not ocr_result.get("success"):
+                        error_msg = "OCR verification failed"
+                    else:
+                        error_msg = "Step execution failed"
+                self._last_error = error_msg
+                self._stall_reason = self._classify_stall_reason(error_msg)
 
-            # Soft error + arm still connected: auto-close the open APP via per-arm STALL flow
-            # so the phone is back at home screen before the next task arrives.
-            if not is_hardware_error and self.arm_client.is_connected():
+                stall_screenshot = await self._capture_stall_photo(station_id)
+                if not receipt_b64 and stall_screenshot:
+                    receipt_b64 = stall_screenshot
+
+                await database.execute(
+                    "UPDATE transactions SET status = 'stall', error_message = %s, receipt_base64 = %s, finished_at = NOW() WHERE id = %s",
+                    (error_msg, receipt_b64, transaction_id))
+
+                # Soft error + arm still connected: auto-close the open APP via per-arm STALL flow
+                # so the phone is back at home screen before the next task arrives.
+                if not is_hardware_error and self.arm_client.is_connected():
+                    try:
+                        await self._run_stall_close_flow(station_id, transaction_id)
+                    except Exception as e:
+                        logger.warning("[%s] Stall close flow failed (ignored): %s", self.name, e)
+
+                # Reset to (0,0) and close port BEFORE notifying PAS, so by the time PAS
+                # may dispatch the next task the arm is physically at origin.
+                await self._cleanup_arm()
+
+                cb_result = await pas_client.callback_result(process_id, 4, now, receipt_b64)
+                if cb_result is not None:
+                    await database.execute(
+                        "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
+                else:
+                    logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
+                logger.warning("[%s] === STALL process_id=%d error=%s ===", self.name, process_id, error_msg)
+
+                stall_detail = "Step %s: %s" % (self._current_step or "?", error_msg or "unknown")
+                if is_hardware_error:
+                    # Hardware error keeps legacy behaviour: arm goes offline + paused, queue rejected.
+                    await database.execute(
+                        "UPDATE arms SET status = 'offline', stall_reason = %s, stall_details = %s WHERE id = %s",
+                        (self._stall_reason, stall_detail, self.arm_id))
+                    await self._fail_queued_tasks(
+                        "ARM %s stalled — previous task failed, queued tasks auto-rejected" % self.name)
+                    self._paused = True
+                    logger.warning("[%s] ARM PAUSED (hardware) — reason=%s detail=%s",
+                                   self.name, self._stall_reason, stall_detail)
+                else:
+                    # Soft error: arm stays online and ready for the next task.
+                    await database.execute(
+                        "UPDATE arms SET status = 'idle', stall_reason = %s, stall_details = %s WHERE id = %s",
+                        (self._stall_reason, stall_detail, self.arm_id))
+                    logger.warning("[%s] STALL recovered — arm stays online; reason=%s detail=%s",
+                                   self.name, self._stall_reason, stall_detail)
+
+            self._current_task = None
+            self._current_step = None
+            self._task_count += 1
+        finally:
+            # Restore charging unconditionally — success, stall, or task cancellation.
+            # Wrap in try/except so a power_on failure can never mask the
+            # original exception that brought us into this finally block.
+            # (CancelledError is BaseException — propagates through Exception
+            # so shutdown still works.)
+            if plug_id:
                 try:
-                    await self._run_stall_close_flow(station_id, transaction_id)
+                    ok = await smart_plug_client.power_on(plug_id)
+                    if not ok:
+                        logger.warning("[%s] Smart plug power_on failed for %s",
+                                       self.name, plug_id)
                 except Exception as e:
-                    logger.warning("[%s] Stall close flow failed (ignored): %s", self.name, e)
-
-            # Reset to (0,0) and close port BEFORE notifying PAS, so by the time PAS
-            # may dispatch the next task the arm is physically at origin.
-            await self._cleanup_arm()
-
-            cb_result = await pas_client.callback_result(process_id, 4, now, receipt_b64)
-            if cb_result is not None:
-                await database.execute(
-                    "UPDATE transactions SET callback_sent_at = NOW() WHERE id = %s", (transaction_id,))
-            else:
-                logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
-            logger.warning("[%s] === STALL process_id=%d error=%s ===", self.name, process_id, error_msg)
-
-            stall_detail = "Step %s: %s" % (self._current_step or "?", error_msg or "unknown")
-            if is_hardware_error:
-                # Hardware error keeps legacy behaviour: arm goes offline + paused, queue rejected.
-                await database.execute(
-                    "UPDATE arms SET status = 'offline', stall_reason = %s, stall_details = %s WHERE id = %s",
-                    (self._stall_reason, stall_detail, self.arm_id))
-                await self._fail_queued_tasks(
-                    "ARM %s stalled — previous task failed, queued tasks auto-rejected" % self.name)
-                self._paused = True
-                logger.warning("[%s] ARM PAUSED (hardware) — reason=%s detail=%s",
-                               self.name, self._stall_reason, stall_detail)
-            else:
-                # Soft error: arm stays online and ready for the next task.
-                await database.execute(
-                    "UPDATE arms SET status = 'idle', stall_reason = %s, stall_details = %s WHERE id = %s",
-                    (self._stall_reason, stall_detail, self.arm_id))
-                logger.warning("[%s] STALL recovered — arm stays online; reason=%s detail=%s",
-                               self.name, self._stall_reason, stall_detail)
-
-        self._current_task = None
-        self._current_step = None
-        self._task_count += 1
+                    logger.warning("[%s] Smart plug power_on raised for %s: %s; ignoring",
+                                   self.name, plug_id, e)
 
     async def _execute_task(self, task, bank_code, station_id, password, transaction_id):
         """Execute the data-driven flow. Returns True on success."""

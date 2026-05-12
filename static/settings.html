@@ -241,6 +241,48 @@
             font-size: 12px;
             background: var(--surface-3);
         }
+        .overview-field input[type="checkbox"] {
+            width: 16px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0;
+            margin: 6px 0;
+            align-self: flex-start;
+            background: transparent;
+            cursor: pointer;
+        }
+        .mqtt-hint {
+            margin: 10px 0 14px;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface-2);
+            font-size: 12px;
+            color: var(--text-2);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .mqtt-hint-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .mqtt-hint-row > span:first-child {
+            min-width: 200px;
+            color: var(--text-3);
+        }
+        .mqtt-hint code {
+            padding: 2px 6px;
+            background: var(--surface-3);
+            border-radius: 4px;
+            color: var(--text-1);
+            font-family: monospace;
+            cursor: pointer;
+            user-select: all;
+        }
+        .mqtt-hint .mqtt-hint-warn { color: var(--warning, #e0a800); }
         .overview-field .w-xs { width: 58px; }
         .overview-field .w-sm { width: 82px; }
         .overview-field .w-md { width: 118px; }
@@ -330,6 +372,7 @@
                 <button class="btn btn-primary" onclick="addArm()">Add Arm</button>
                 <button class="btn btn-secondary" onclick="scanCameras()">Scan Cameras</button>
             </div>
+            <div id="mqtt-hint" class="mqtt-hint" style="display:none;"></div>
             <div id="overview-tree" class="overview-grid"></div>
         </div>
 
@@ -368,6 +411,33 @@
             API.get('/api/calibration/status'),
         ]);
         renderOverview();
+        loadMqttHint();
+    }
+
+    async function loadMqttHint() {
+        const el = document.getElementById('mqtt-hint');
+        if (!el) return;
+        try {
+            const r = await API.get('/api/monitor/mqtt-broker');
+            if (r && r.host) {
+                el.innerHTML = `
+                    <div style="width:100%;font-weight:600;color:var(--text-1);">Smart plug config — copy these into the plug's MQTT settings</div>
+                    <div class="mqtt-hint-row"><span>Host:</span> <code>${r.host}</code></div>
+                    <div class="mqtt-hint-row"><span>Port:</span> <code>${r.port}</code></div>
+                    <div class="mqtt-hint-row"><span>Username / Password / TLS:</span> <span style="color:var(--text-3);">all empty / disabled</span></div>
+                    <div class="mqtt-hint-row"><span>Client ID:</span> <code>plugNN</code> <span style="color:var(--text-3);">(pick a unique name, e.g. plug02 — copy this into "Plug ID" below)</span></div>
+                    <div class="mqtt-hint-row"><span>Subscribe topic:</span> <code>GemeOpen/&lt;client-id&gt;/sub</code></div>
+                    <div class="mqtt-hint-row"><span>Publish topic:</span> <code>GemeOpen/&lt;client-id&gt;/pub</code></div>
+                    <div style="width:100%;font-size:11px;color:var(--text-3);">Vendor app labels Subscribe/Publish the opposite of the actual MQTT direction — just copy verbatim, don't try to swap them.</div>
+                `;
+            } else {
+                el.innerHTML = `<span class="mqtt-hint-warn">Could not auto-detect LAN IP — run <code>ipconfig</code> on this host.</span>`;
+            }
+            el.style.display = '';
+        } catch (e) {
+            // Endpoint missing or server offline — just hide the banner.
+            el.style.display = 'none';
+        }
     }
 
     function isCollapsed(key) {
@@ -480,6 +550,8 @@
                                     <option value="active" ${st.status === 'active' ? 'selected' : ''}>active</option>
                                     <option value="inactive" ${st.status === 'inactive' ? 'selected' : ''}>inactive</option>
                                 </select></div>
+                                <div class="overview-field"><label>Plug ID</label><input id="s-plug-id-${st.id}" class="w-md" value="${st.plug_client_id || ''}" placeholder="plug01"></div>
+                                <div class="overview-field"><label>Plug Cutoff</label><input id="s-plug-en-${st.id}" type="checkbox" ${st.plug_enabled ? 'checked' : ''}></div>
                             </div>
                         </div>
                         <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
@@ -633,11 +705,15 @@
     async function saveStation(id) {
         const spx = document.getElementById('s-spx-' + id).value;
         const spy = document.getElementById('s-spy-' + id).value;
+        const plugId = document.getElementById('s-plug-id-' + id).value.trim();
+        const plugEn = document.getElementById('s-plug-en-' + id).checked;
         await API.put(`/api/stations/${id}`, {
             name: document.getElementById('s-name-' + id).value,
             x_offset: parseFloat(document.getElementById('s-off-' + id).value) || 0,
             stall_photo_x: spx !== '' ? parseFloat(spx) : null,
             stall_photo_y: spy !== '' ? parseFloat(spy) : null,
+            plug_client_id: plugId || null,
+            plug_enabled: plugEn ? 1 : 0,
             status: document.getElementById('s-st-' + id).value,
         });
         toast('Station saved');

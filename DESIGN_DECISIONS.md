@@ -485,3 +485,47 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 **Files**: `app/main.py` (+5 lines: new `/reports` route), `app/routers/monitor.py` (+200 lines: helper + tz param on two endpoints + per_arm field + new reports endpoint), `static/index.html` (+40 lines: TZ toggle integration, today rate display, stat card rates), `static/transactions.html` (TZ-aware filter URL + listener + shared `formatTZ`), `static/js/api.js` (+45 lines: TZ helpers + nav additions), `static/css/style.css` (+15 lines: nav-tz styling), `static/reports.html` (new, ~430 lines), `static/js/chart.umd.min.js` (new, ~200 KB Chart.js v4.4.6).
 
 **Rollback**: Remove the `/reports` route + delete `static/reports.html` + `static/js/chart.umd.min.js`. Revert the `/stats/today` and `/transactions` endpoints to drop `tz` (removing the parameter is backward-compatible — frontend's `?tz=7` query just becomes a silently-ignored param). Revert frontend changes if you also want to remove the nav toggle. No DB rollback needed because nothing was written.
+
+---
+
+## DD-029: Smart Plug Failure Is Non-blocking, Power-on Always Runs in `finally`
+
+**What**: When a station has `plug_enabled=1` and `plug_client_id` set, `arm_worker._process_task` calls `smart_plug_client.power_off(plug_id)` at the very top of the `try` block and `smart_plug_client.power_on(plug_id)` in the `finally` block. Both calls are individually wrapped in `try/except Exception`. If either call fails — broker down, plug offline, MQTT timeout, paho internal exception — the transaction proceeds (or completes its existing exception path) anyway. `smart_plug_client._send_event` / `_send_query` internally never raise except for `asyncio.CancelledError`; they swallow paho exceptions and return `False` / `None` instead.
+
+**Why**:
+
+- **The cost asymmetry is severe.** Cutting off charging is a defensive measure to avoid a specific class of stalls (touch jitter on some phone models). If the plug doesn't respond, we're back to the pre-feature baseline — slightly worse stall rate, but the transaction still runs. If a plug failure aborted the transaction, every plug or broker hiccup would cost a real withdrawal that PAS just sent us. The first failure mode is "small probability increase of a single stall"; the second is "guaranteed transaction loss whenever MQTT has a problem". Non-blocking is the obvious tradeoff.
+- **The `finally` block must never be skipped.** If `power_off` raised and short-circuited past `try`, the plug would stay OFF forever (until the next transaction's `power_on`, but if there's a long idle gap the phone could fully drain). Wrapping it inside the `try` (rather than before it) plus wrapping the inner call in its own `try/except Exception` is belt-and-suspenders: even if `_send_event` somehow regains a buggy raise, `finally` still runs.
+- **The `power_on` call in `finally` is also wrapped** so that a failing `power_on` cannot mask the original exception that brought us into `finally` (CancelledError, RuntimeError from the task, etc.). Python's "exception during exception handling" semantics replace the original — operationally that means a stall would be reported as "smart plug error" instead of the real stall reason. The wrap prevents this.
+- **`CancelledError` is explicitly re-raised** in `smart_plug.py` because it inherits from `BaseException`, not `Exception`. The non-blocking contract applies to operational failures, not to task cancellation during shutdown — if the worker is being torn down, the MQTT publish should abort, not silently complete.
+
+**Alternative considered**: Treat plug failure as a stall (`status='stall'` + `paused`). Rejected — see cost asymmetry above. The plug is an accessory, not a load-bearing component.
+
+**Alternative considered**: Retry on plug failure. Rejected — `power_off` is time-critical (transaction starts immediately after). Burning 5-10 seconds on retries means the phone moves on its own (auto-lock screen, app foreground change). The MQTT broker also retries internally with QoS=1 already.
+
+**Visibility**: Failures are logged at `WARNING` level with the plug_id, increment `power_on_failures` / `power_off_failures` counters in `app/smart_plug.py`, and surface in `GET /api/monitor/plug-status`. Operators see them, but they don't auto-page anyone. The `GET /api/monitor/services` endpoint reports `smart_plug.online = false` if the MQTT TCP connection itself is down — that's the actionable signal for "the whole subsystem needs attention".
+
+**Files**: `app/smart_plug.py` (inner `try/except Exception` in `_send_event` + `_send_query` + explicit `CancelledError` re-raise), `app/arm_worker.py` (`_process_task` — power_off moved inside try, power_on wrapped in `try/except`), `app/routers/monitor.py` (`plug-status` endpoint + `services` integration).
+
+**Rollback**: Set `plug_enabled=0` on every station — the entire code path is skipped without removing any module. Or remove the plug query + power_off + power_on calls from `_process_task` (4 lines + the wrap around power_on). `smart_plug.py` is a singleton that does nothing if no one calls it.
+
+---
+
+## DD-030: Smart Plug Identity Is `client_id` (Logical Name), Not MAC Address
+
+**What**: Each smart plug is identified by an operator-chosen `client_id` string like `plug01`, `plug02` stored in `stations.plug_client_id`. The MAC address — the only globally-unique fixed identifier the hardware has — is not stored anywhere in WA. MQTT topics, monitoring endpoints, and the operator UI all key off `client_id`.
+
+**Why**:
+
+- **The vendor App requires the operator to enter a Client ID anyway** in the plug's MQTT configuration screen — that's what the plug subscribes / publishes against. The MAC is visible inside the App but is not used in the MQTT protocol. So `client_id` is the operator's lingua franca already; making the DB store something else (the MAC) would mean two identifiers to keep in sync where one is enough.
+- **MACs are write-protected hardware identifiers**: 12 hex chars, no spaces, indistinguishable from each other at a glance. If `stations` had a MAC column, every plug change-out (RMA, battery replacement, simple physical swap from station 3 to station 5) would require an operator to read the MAC off a tiny sticker and type it in. `client_id` is whatever the operator wants — `plug01`, `plug_kitchen`, `kh-1` — and stays the same across hardware replacements as long as the new plug is configured with the same string.
+- **MAC-based identity would tightly couple WA to a single brand's hardware quirks.** The GeekOpen plug exposes its MAC in the App; another vendor's plug might not. Using `client_id` keeps the integration generic — any MQTT-speaking plug that lets the user pick a topic prefix would work, with no schema change.
+- **Diagnostic clarity wins over collision-proof uniqueness.** A logical name in logs reads `Smart plug power_off failed for plug03` — actionable, points at a specific physical location. A MAC reads `Smart plug power_off failed for AA:BB:CC:DD:EE:FF` — operator has to cross-reference a sticker or App screen to figure out which plug. Multiplied by N daily plug failures on N stations, the log-readability cost compounds.
+
+**The tradeoff being accepted**: `client_id` is operator-assigned, so it's possible to mis-type (two plugs both configured as `plug01` will compete for the same MQTT topic and the second one to connect kicks the first one off — paho default behaviour). This has happened exactly zero times in practice because plug setup is a one-time per-station thing, the operator immediately tests via `/api/monitor/plug-test/{client_id}/off` and sees the wrong plug toggle, and fixes it. We could add a uniqueness constraint on `stations.plug_client_id` to refuse duplicates at the DB layer, but: (a) the UI already shows the existing assignments above the form, (b) a soft constraint at validation time is fine, (c) some setups might legitimately want two stations sharing a plug (one physical plug controlling charging for two adjacent phones). Not worth the schema rigidity.
+
+**Alternative considered**: Store both — MAC for hardware tracking, `client_id` for routing. Rejected as YAGNI. There is no scenario in the current system where the MAC is queried for anything. If hardware tracking ever becomes needed (e.g., warranty / serial number audits), it can be added as a free-text field on the station row without touching the routing logic.
+
+**Files**: `db/schema.sql` (`stations.plug_client_id VARCHAR(64)` + `plug_enabled TINYINT(1)`), `static/settings.html` (`Plug ID` text input on the station form), `app/smart_plug.py` (topic builds from `client_id` only), `app/routers/monitor.py` (`plug-test/{client_id}/...` route).
+
+**Rollback**: No code change needed to "switch to MAC" — `plug_client_id` is a VARCHAR(64), it can hold a MAC string just as well as `plug01`. Operators would just type the MAC into the same UI field. The decision is a convention, not a constraint.

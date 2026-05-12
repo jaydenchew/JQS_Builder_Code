@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS stations (
     stall_photo_x FLOAT NULL COMMENT 'Arm X position for stall screenshot (full phone view)',
     stall_photo_y FLOAT NULL COMMENT 'Arm Y position for stall screenshot (full phone view)',
     status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+    plug_client_id VARCHAR(64) DEFAULT NULL COMMENT 'Smart plug MQTT client_id, e.g. plug01',
+    plug_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Enable smart plug charge cutoff per transaction',
     FOREIGN KEY (arm_id) REFERENCES arms(id)
 ) ENGINE=InnoDB;
 

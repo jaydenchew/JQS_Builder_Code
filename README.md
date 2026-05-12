@@ -40,13 +40,13 @@ checklist. The condensed version below is for reference only.
 
 The script auto-creates `config.yml` and installs as Windows service. See `deploy/README.md` for details.
 
-### Step 4: Start Database
+### Step 4: Start Database + MQTT Broker
 
 ```bash
 docker-compose up -d
 ```
 
-Wait ~30s for MySQL init. Docker auto-runs `db/schema.sql`.
+Wait ~30s for MySQL init. Docker auto-runs `db/schema.sql`. The same compose file also starts an Eclipse Mosquitto broker on port `1883` for the optional smart-plug charge-cutoff feature (see INSTALL.md Step 8.5). If you don't use smart plugs the broker just sits idle — no config needed.
 
 > If old `builder-mysql` is on port 3308: `docker stop builder-mysql`
 
@@ -227,6 +227,9 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | `/api/monitor/ws` | WS | None (localhost) | Real-time status push |
 | `/api/monitor/logs/ws` | WS | None (localhost) | Real-time log streaming |
 | `/api/monitor/pause\|resume\|offline/{arm_id}` | POST | None (localhost) | Machine control |
+| `/api/monitor/mqtt-broker` | GET | None (localhost) | LAN IP + port for plug setup (auto-detected) |
+| `/api/monitor/plug-test/{client_id}/{on\|off}` | POST | None (localhost) | Manually toggle a smart plug (diagnostics) |
+| `/api/monitor/plug-status` | GET | None (localhost) | Smart plug failure counters |
 
 ## Documentation
 
@@ -238,12 +241,14 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | `DESIGN_DECISIONS.md` | 14 ADRs — why things are built the way they are |
 | `CHANGELOG.md` | All changes with dates |
 | `AUDIT_REPORT_7.md` | Latest code audit report |
+| `.agent/plans/SMART_PLUG_SPEC.md` | Smart plug (GeekOpen) integration — MQTT topics, wire format, design notes |
 
 ## File Structure
 
 ```
 Builder_JQS_Code/
-├── docker-compose.yml      MySQL container
+├── docker-compose.yml      MySQL + Mosquitto MQTT broker containers
+├── mosquitto/              Mosquitto config (broker for smart plug control)
 ├── .env                    Configuration (not in git)
 ├── requirements.txt        Python dependencies
 ├── README.md               This file

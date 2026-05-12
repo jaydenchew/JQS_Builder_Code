@@ -13,6 +13,7 @@ from app.routers import (
 )
 from app import camera, arm_client, config, pas_client, database
 from app.worker_manager import manager
+from app.smart_plug import smart_plug_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,12 +55,16 @@ async def lifespan(app):
             logger.warning("Recovered stale transaction: process_id=%d → stall", t["process_id"])
         logger.info("Recovered %d stale running transactions", len(stale))
 
+    await smart_plug_client.start()
+    await smart_plug_client.bootstrap()
+
     await manager.start_all()
     logger.info("WA Unified System started — port 9000")
 
     yield
 
     await manager.stop_all()
+    await smart_plug_client.stop()
 
     if arm_client.is_connected():
         try:

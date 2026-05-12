@@ -3,6 +3,7 @@ import asyncio
 import base64
 import json
 import logging
+import socket
 import subprocess
 import time
 from datetime import datetime, timezone, timedelta
@@ -13,7 +14,8 @@ from app import database
 from app.auth import verify_api_key
 from app.camera import Camera
 from app.worker_manager import manager
-from app.config import ARM_SERVICE_URL
+from app.smart_plug import smart_plug_client
+from app.config import ARM_SERVICE_URL, MQTT_BROKER_PORT
 
 _start_time = time.time()
 
@@ -412,7 +414,81 @@ async def get_service_status():
     minutes = remainder // 60
     result["wa_service"] = {"online": True, "detail": "%dh %dm" % (hours, minutes)}
 
+    # Smart Plug MQTT
+    plug_connected = smart_plug_client.is_connected()
+    result["smart_plug"] = {
+        "online": plug_connected,
+        "detail": "Connected" if plug_connected else "Broker unreachable",
+    }
+
     return result
+
+
+@router.get("/mqtt-broker")
+async def get_mqtt_broker():
+    """Auto-detect the LAN address the smart plug should point at.
+
+    Uses the well-known UDP-socket trick: open a UDP socket to a routable
+    address (no packet is sent), then read getsockname() to learn which
+    interface the OS would use to reach the internet. On a typical
+    single-LAN deployment that's the same subnet the plug is on.
+
+    Multi-homed hosts: the result picks the default-route interface,
+    which may not be the same subnet as the plug. In that case the
+    operator still needs to read the right IP from ipconfig manually.
+    """
+    host = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            host = s.getsockname()[0]
+        finally:
+            s.close()
+    except Exception as e:
+        logger.warning("LAN IP autodetect failed: %s", e)
+    return {"host": host, "port": MQTT_BROKER_PORT}
+
+
+@router.post("/plug-test/{client_id}/{action}")
+async def plug_test(client_id: str, action: str):
+    """Operator-only manual toggle for a smart plug.
+
+    Calls smart_plug_client.power_on/off directly — same singleton, same
+    MQTT connection, same reply-matching as arm_worker uses, but without
+    touching any task / arm. Useful for verifying a newly configured
+    plug responds before flipping plug_enabled on its station.
+    """
+    if action not in ("on", "off"):
+        return {"success": False, "error": "action must be 'on' or 'off'"}
+    if action == "on":
+        ok = await smart_plug_client.power_on(client_id)
+    else:
+        ok = await smart_plug_client.power_off(client_id)
+    return {
+        "success": bool(ok),
+        "client_id": client_id,
+        "action": action,
+        "connected": smart_plug_client.is_connected(),
+    }
+
+
+@router.get("/plug-status")
+async def get_plug_status():
+    """Smart plug MQTT client health + failure counters.
+
+    Counters are in-memory and reset on service restart. Use this to
+    spot silent plug failures since the last restart — power_off/on
+    failures are not surfaced anywhere else because the design
+    explicitly chooses not to STALL on plug error.
+    """
+    return {
+        "connected": smart_plug_client.is_connected(),
+        "power_off_failures": smart_plug_client.power_off_failures,
+        "power_on_failures": smart_plug_client.power_on_failures,
+        "last_failure_at": smart_plug_client.last_failure_at,
+        "last_failure_reason": smart_plug_client.last_failure_reason,
+    }
 
 
 @router.post("/pause/{arm_id}")

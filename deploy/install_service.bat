@@ -47,6 +47,22 @@ if not exist "%VENV_PY%" (
     )
 )
 
+:: Open Windows Firewall for the Mosquitto MQTT broker (smart plug control).
+:: The mosquitto container in docker-compose.yml binds 0.0.0.0:1883, but
+:: Windows Firewall blocks LAN-inbound by default. Without this rule, smart
+:: plugs on the LAN cannot reach the broker even though the host listens.
+:: Idempotent: delete the existing rule (if any) then re-add.
+:: To remove later: netsh advfirewall firewall delete rule name="Mosquitto MQTT 1883"
+echo Configuring Windows Firewall for Mosquitto MQTT (TCP 1883, Private+Domain)...
+netsh advfirewall firewall delete rule name="Mosquitto MQTT 1883" >nul 2>&1
+netsh advfirewall firewall add rule name="Mosquitto MQTT 1883" dir=in action=allow protocol=TCP localport=1883 profile=private,domain >nul
+if errorlevel 1 (
+    echo WARNING: failed to add firewall rule for TCP 1883.
+    echo          Smart plug control will not work until this is fixed manually.
+) else (
+    echo Firewall rule "Mosquitto MQTT 1883" installed.
+)
+
 :: Install VC++ x64 Redistributable first — required by PyTorch (EasyOCR dependency).
 :: Without it, importing torch raises WinError 126 (c10.dll not found) and
 :: OCR steps fail at runtime. The x86 version (arm_service\VC_redist.x86.exe)
@@ -73,8 +89,8 @@ if exist "%VC_X64%" (
 )
 
 echo Updating venv dependencies...
-"%VENV_PY%" -m pip install -q --upgrade pip
-"%VENV_PY%" -m pip install -q -r "%APP_DIR%\requirements.txt"
+"%VENV_PY%" -m pip install --upgrade pip
+"%VENV_PY%" -m pip install -r "%APP_DIR%\requirements.txt"
 if errorlevel 1 (
     echo ERROR: pip install failed.
     pause

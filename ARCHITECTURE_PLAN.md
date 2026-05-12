@@ -32,6 +32,10 @@
 │ └──────────────┘ └──────────────┘ └──────────────┘         │
 ├─────────────────────────────────────────────────────────────┤
 │ MySQL (wa-unified-mysql:3308) — 14 张表                      │
+├─────────────────────────────────────────────────────────────┤
+│ Mosquitto MQTT (wa-mosquitto:1883, LAN-only)                 │
+│   ↕ app/smart_plug.py (paho-mqtt)                            │
+│   ↕ Smart plugs on LAN — power off/on per transaction        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +62,7 @@ bank_name_mappings (独立)
 | 表 | 关键设计 |
 |---|---------|
 | `arms` | `camera_id`, `active` (worker 是否启动), `status` (idle/busy/offline) |
-| `stations` | `id AUTO_INCREMENT`; `stall_photo_x/y` — stall 时 arm 移动到此位置拍摄手机全屏截图 |
+| `stations` | `id AUTO_INCREMENT`; `stall_photo_x/y` — stall 时 arm 移动到此位置拍摄手机全屏截图；`plug_client_id` + `plug_enabled` — 可选智能插座（充电断电），见"模块交互/Smart plug 充电断电" |
 | `transactions` | `status` ENUM 含 `stall` — 步骤失败需人工介入的状态 |
 | `flow_templates` | `arm_id` 绑定到特定机器；`transfer_type` (SAME/INTER/NULL) |
 | `calibrations` | 每个 station 的仿射矩阵、park 位、scale、旋转角 |
@@ -80,7 +84,10 @@ PAS → POST /process-withdrawal
        │
        ├→ 查 flow_templates (bank_code + arm_id + transfer_type)
        ├→ 查 flow_steps
+       ├→ 查 stations.plug_client_id + plug_enabled
        ├→ open_port + motor_lock (在 ThreadPoolExecutor 线程里)
+       │
+       ├→ (可选) smart_plug.power_off(plug_id)  ← 在 try 块内，失败 non-blocking
        │
        ├→ 逐步执行 (actions.execute_step)
        │    ├→ CLICK: lookup_ui_element → arm.click (executor)
@@ -92,6 +99,7 @@ PAS → POST /process-withdrawal
        │
        ├→ 根据结果决定 PAS callback status
        ├→ close_port（摄像头保持打开，不关闭）
+       ├→ finally: (可选) smart_plug.power_on(plug_id)  ← 无论成功/stall/cancel 都恢复通电
        └→ 下一笔任务
 ```
 
@@ -200,9 +208,10 @@ arm_worker._process_task 读取 _ocr_result：
 
 ```
 Builder_JQS_Code/
-├── docker-compose.yml         MySQL container (wa-unified-mysql:3308)
+├── docker-compose.yml         MySQL (wa-unified-mysql:3308) + Mosquitto (wa-mosquitto:1883)
+├── mosquitto/                 Mosquitto broker 配置 (listener + 匿名访问)
 ├── .env                       配置 (DB + PAS + Auth)
-├── requirements.txt           依赖
+├── requirements.txt           依赖 (含 paho-mqtt 用于智能插座)
 ├── README.md                  部署指南 + API 列表
 ├── CHANGELOG.md               变更记录
 ├── ARCHITECTURE_PLAN.md       本文档
@@ -214,16 +223,17 @@ Builder_JQS_Code/
 │   └── export_seed.py         导出当前 DB 配置数据到 seed.sql
 │
 ├── app/
-│   ├── main.py                入口 (lifespan: DB + WorkerManager + cleanup)
-│   ├── config.py              .env 配置读取
+│   ├── main.py                入口 (lifespan: DB + WorkerManager + smart_plug + cleanup)
+│   ├── config.py              .env 配置读取 (含 MQTT_BROKER_HOST/PORT)
 │   ├── database.py            aiomysql 连接池
 │   ├── auth.py                API Key 认证
 │   ├── models.py              Pydantic 模型
 │   │
 │   ├── worker_manager.py      管理所有 ArmWorker (asyncio.Lock + _remove_worker 原子操作)
-│   ├── arm_worker.py          单台机器 Worker (ThreadPoolExecutor + 任务循环)
+│   ├── arm_worker.py          单台机器 Worker (ThreadPoolExecutor + 任务循环 + 插座断电/通电)
 │   ├── arm_client.py          ArmClient 类 + 模块级兼容函数
 │   ├── camera.py              Camera 类 + 模块级兼容函数
+│   ├── smart_plug.py          智能插座 MQTT 客户端 (paho-mqtt + 单例, non-blocking)
 │   │
 │   ├── actions.py             步骤执行器 (全部非阻塞, executor 参数)
 │   ├── keyboard_engine.py     智能键盘引擎 (非阻塞)
@@ -404,3 +414,27 @@ references/{arm_name}/{bank_code}/{name}.jpg
 ```
 
 不同 arm 的摄像头拍出的图不同（光线、角度），参考图不能共用。加载时先找 arm 目录，找不到回退到无 arm 的旧路径。
+
+### 9. Smart plug 充电断电
+
+部分手机型号在 USB 充电时会发生触控抖动或机械臂触碰位置偏移，导致随机 stall。`app/smart_plug.py` 在每笔交易开始前断电、结束后通电（充电）。
+
+**架构关键点：**
+
+```
+app/smart_plug.py — 单例 SmartPlugClient (paho-mqtt 后台线程)
+   ↓ connect_async(MQTT_BROKER_HOST, 1883) + loop_start
+   ↓                                 ↑ broker 晚启动可自动重连
+wa-mosquitto (docker)
+   ↓ TCP 1883 (Windows Firewall 已在 install_service.bat 开放)
+LAN 上的 GeekOpen 智能插座（每个有独立 client_id, 如 plug01/02）
+```
+
+- **配置位置：** `stations.plug_client_id` + `stations.plug_enabled`。`plug_enabled=0` 或 `plug_client_id` 为空时整段逻辑直接跳过。
+- **arm_worker 调用：** `_process_task` 在 try 块开头 `await smart_plug_client.power_off(plug_id)`，在 finally 块 `await smart_plug_client.power_on(plug_id)`。两端调用都各自包了 `try/except Exception` —— 插座失败永远不阻塞交易，永远不掩盖原始异常。
+- **MQTT 拓扑（从插座视角）：** 插座订阅 `GemeOpen/<client-id>/sub`（收 WA 发来的指令），发布到 `GemeOpen/<client-id>/pub`（自报状态）。WA 也订阅 pub topic 用于 publish 后等待 ack。
+- **Wire format：** `json.dumps(..., separators=(",", ":"))` 紧凑 JSON `{"key":1,"type":"event"}`（`key:1` = 通电，`key:0` = 断电）。
+- **运维端点：** `GET /api/monitor/mqtt-broker`（自动检测本机 LAN IP，给 Settings 页面横幅显示）、`POST /api/monitor/plug-test/{client_id}/{on|off}`（无 worker 介入直接测试）、`GET /api/monitor/plug-status`（失败计数器）。
+- **失败模型：** 见 DD-029（非阻塞失败设计）、DD-030（用 client_id 而不是 MAC 作为身份）。
+
+完整规范、消息格式细节、调试历史：`.agent/plans/SMART_PLUG_SPEC.md`。

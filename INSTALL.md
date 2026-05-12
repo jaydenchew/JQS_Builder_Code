@@ -121,19 +121,19 @@ Verify:
 
 ---
 
-## Step 4: Start MySQL (Docker)
+## Step 4: Start MySQL + Mosquitto (Docker)
 
 ```powershell
 docker-compose up -d
 ```
 
-Wait about 30 seconds for MySQL to initialize. First run automatically executes `db/schema.sql` to create tables.
+Wait about 30 seconds for MySQL to initialize. First run automatically executes `db/schema.sql` to create tables. The same compose file also brings up an Eclipse Mosquitto MQTT broker on port `1883` — used by the optional smart-plug charge-cutoff feature (see Step 8.5). The broker runs unconditionally; if you never enable any plug, it just sits idle.
 
 Verify:
 
 ```powershell
 docker ps
-# Should show wa-unified-mysql running
+# Should show wa-unified-mysql AND wa-mosquitto running
 
 docker exec wa-unified-mysql mysql -uroot -pwa_unified_2026 -e "SHOW DATABASES;"
 # Should list wa_db
@@ -321,6 +321,76 @@ After major settings changes (especially adding arms or changing `camera_id`), r
 ```powershell
 nssm restart WA-Unified
 ```
+
+---
+
+## Step 8.5: Smart plug charging cutoff (optional)
+
+Skip this step if you are not using smart plugs. Stations work fine without — they just keep the phone permanently powered. The feature exists because, on some phone models, an attached charging cable shifts the phone or briefly intercepts touch events, causing random STALLs that re-running without charging immediately clears. The plug cuts charging before each transaction and restores it after.
+
+### 8.5.1 Prerequisites already done
+
+- `docker-compose up -d` started the Mosquitto broker on `1883` (Step 4).
+- `install_service.bat` opened Windows Firewall TCP/1883 for `Private+Domain` profiles (Step 6).
+
+If you skipped either, smart plugs cannot connect. Re-run those steps first.
+
+### 8.5.2 Configure the plug device
+
+You need a **Smart Bird / GeekOpen GSPM1B-ES** (the model verified for this project). Other MQTT plugs may work but message formats are not guaranteed.
+
+Open the **Settings** page (`http://localhost:9000/settings`). A blue banner above the stations tree shows the auto-detected values for the plug's MQTT configuration:
+
+```
+Host:               <this machine's LAN IP>
+Port:               1883
+Username / Password / TLS:   all empty / disabled
+Client ID:          plugNN  (pick a unique name, e.g. plug02)
+Subscribe topic:    GemeOpen/<client-id>/sub
+Publish topic:      GemeOpen/<client-id>/pub
+```
+
+Open the plug's vendor App on your phone, scan the new plug into the same Wi-Fi network this machine is on, then enter the values above into the plug's MQTT settings. **Each plug needs a unique Client ID** (`plug01`, `plug02`, ...).
+
+> The vendor App labels the subscribe / publish topics in a way that looks reversed compared to MQTT convention. **Copy the strings shown in the banner verbatim** — do not try to swap them. This is documented in `.agent/plans/SMART_PLUG_SPEC.md`.
+
+### 8.5.3 Verify the plug responds
+
+Before wiring the plug into transactions, test it directly via the operator endpoint:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9000/api/monitor/plug-test/plug01/off
+# Should return { success: true, connected: true }
+# Plug physically powers off
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9000/api/monitor/plug-test/plug01/on
+# Should return { success: true }
+# Plug powers back on
+```
+
+If `success: false` and `connected: true`, the broker is reachable but the plug isn't replying — check the broker logs for a `New client connected ... as plugNN` line:
+
+```powershell
+docker logs wa-mosquitto | Select-String "as plug"
+```
+
+If your plug ID isn't listed there, the plug hasn't connected. Most common causes: wrong Wi-Fi SSID, typo in client ID / topics, or the firewall rule didn't install (check `netsh advfirewall firewall show rule name="Mosquitto MQTT 1883"`).
+
+### 8.5.4 Enable the plug for a station
+
+In Settings → expand the station the plug is physically wired to:
+
+- `Plug ID`: type the same client ID you set on the device (e.g., `plug01`)
+- `Plug Cutoff`: check the box
+- **Save Station**
+
+That's it. Next transaction on that station will call `power_off(plug01)` at the start and `power_on(plug01)` in the `finally` block, regardless of success / stall / cancellation. Failures are non-blocking — the transaction still runs even if the plug doesn't respond (the design tradeoff: charging interference is preferable to losing the run entirely). See DD-029.
+
+### 8.5.5 Monitoring
+
+- Operational counters: `Invoke-RestMethod /api/monitor/plug-status` returns `power_on_failures` / `power_off_failures` (reset on WA restart).
+- Broader health: `/api/monitor/services` includes a `smart_plug` entry (`online: true/false`).
+- Live MQTT traffic: `docker exec wa-mosquitto sh -c "mosquitto_sub -v -t 'GemeOpen/#'"` — Ctrl+C to exit.
 
 ---
 
