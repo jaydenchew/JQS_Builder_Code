@@ -63,7 +63,7 @@ bank_name_mappings (独立)
 |---|---------|
 | `arms` | `camera_id`, `active` (worker 是否启动), `status` (idle/busy/offline) |
 | `stations` | `id AUTO_INCREMENT`; `stall_photo_x/y` — stall 时 arm 移动到此位置拍摄手机全屏截图；`plug_client_id` + `plug_enabled` — 可选智能插座（充电断电），见"模块交互/Smart plug 充电断电" |
-| `transactions` | `status` ENUM 含 `stall` — 步骤失败需人工介入的状态 |
+| `transactions` | `status` ENUM 含 `stall`; `superseded_by INT NULL` — 被 retry 取代的 tx 指向链尾 tx id，dedup 报表排除 |
 | `flow_templates` | `arm_id` 绑定到特定机器；`transfer_type` (SAME/INTER/NULL) |
 | `calibrations` | 每个 station 的仿射矩阵、park 位、scale、旋转角 |
 | `keymaps` | `keyboard_type VARCHAR(50)` — 支持长名称如 `s1_cimb_account_number` |
@@ -79,6 +79,7 @@ PAS → POST /process-withdrawal
   ├→ 查 stations → 得到 arm_id
   ├→ 检查 arm active + status
   ├→ INSERT transactions (status='queued')
+  ├→ _link_retry_chain(): 15min 内同 pay_to+amount 的 stall/failed → 设 superseded_by
   │
   └→ ArmWorker 轮询发现新任务
        │

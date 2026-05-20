@@ -1,8 +1,8 @@
 # WA API Specification
 
-> Version: 1.0
+> Version: 1.1
 > Base URL: `https://wa.evolution-x.io`
-> Last updated: 2026-04-23
+> Last updated: 2026-05-21
 
 ---
 
@@ -184,6 +184,7 @@ Uses the same headers as withdrawal endpoints:
 |-----------|------|----------|-------------|
 | `date` | String `YYYY-MM-DD` | No | Calendar day to summarize in the selected timezone. If omitted, defaults to yesterday. |
 | `tz` | Integer | No | Display timezone offset. Allowed values: `7` or `8`. Default: `7`. |
+| `dedup` | Integer | No | `1` = exclude transactions superseded by a retry (linked via `superseded_by` column). Default: `0` (all transactions counted). |
 
 ### Counting Rules
 
@@ -191,6 +192,7 @@ Uses the same headers as withdrawal endpoints:
 - Only final operational statuses are included in totals: `success`, `failed`, `stall`.
 - `queued`, `running`, and `review` are excluded from this export.
 - Results are grouped by arm, then by source bank (`pay_from_bank_code`).
+- When `dedup=1`, transactions whose `superseded_by IS NOT NULL` are excluded. These are stall/failed transactions that were retried within 15 minutes with the same recipient and amount. The retry chain's final transaction (chain tail) is always counted.
 
 ### Response
 
@@ -198,6 +200,7 @@ Uses the same headers as withdrawal endpoints:
 {
   "date": "2026-05-04",
   "tz": 7,
+  "dedup": false,
   "start_utc": "2026-05-03 17:00:00",
   "end_utc": "2026-05-04 17:00:00",
   "total": {

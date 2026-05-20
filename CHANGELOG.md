@@ -1,5 +1,32 @@
 # Changelog
 
+## feat(reports): transaction retry chaining + dedup view + pagination + process ID search (2026-05-21)
+
+Automatically links retry transactions so reports can show deduplicated counts.
+
+1. **`db/schema.sql`** — new `superseded_by INT NULL` column + index on `transactions` table. Points to the retry tx that replaced a stall/failed tx.
+2. **`app/routers/withdrawal.py`** — new `_link_retry_chain()` helper. On every incoming withdrawal (all 3 INSERT paths), checks if a matching stall/failed tx exists within 15 min (same `pay_to_bank_code + pay_to_account_no + amount`). If found, updates the entire chain's `superseded_by` to point to the new tx. Wrapped in try/except — chain detection failure never blocks a withdrawal.
+3. **`app/routers/monitor.py`** — `stats/today`, `reports/summary`, and `export/daily-summary` accept `?dedup=1` to exclude superseded transactions. Default `dedup=0` returns identical results to before. Also added `process_id` filter to `list_transactions()`, and `t.superseded_by` to its SELECT columns.
+4. **`static/transactions.html`** — Process ID search input, Prev/Next pagination, "Show retries" checkbox (hides superseded rows by default), superseded banner in detail modal.
+5. **`static/reports.html`** — "Deduped" toggle button re-fetches with `&dedup=1`.
+
+### Chain rules
+
+- Match: `pay_to_bank_code + pay_to_account_no + amount` (pay_from not used — retry may use different source account)
+- Prior tx status: `stall` or `failed` only (`review` excluded — transfer may have gone through)
+- Time window: adjacent gap < 15 min (transitive — chains can extend indefinitely)
+- All links in a chain point to the latest tx (chain tail)
+
+### Deploy
+
+```sql
+ALTER TABLE transactions ADD COLUMN superseded_by INT NULL AFTER callback_sent_at, ADD INDEX idx_superseded (superseded_by);
+```
+
+Restart WA Unified. Historical data backfilled via iterative SQL (354 rows linked, 9 chains consolidated).
+
+---
+
 ## fix(reliability): smart plug follow-up — connection, parsing, exception, and operator UX (2026-05-12, same day)
 
 Follow-up refinements to the same-day smart plug rollout, all driven by end-to-end testing on the live broker + a physical GeekOpen plug (`plug01` and `plug02`).

@@ -9,11 +9,11 @@
         /* ── Filters bar ── */
         .filters {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             margin-bottom: 16px;
             align-items: flex-end;
-            flex-wrap: wrap;
-            padding: 14px 16px;
+            flex-wrap: nowrap;
+            padding: 10px 12px;
             border-radius: var(--radius-lg);
             border: 1px solid var(--border);
             background: var(--surface);
@@ -37,8 +37,8 @@
         .filter-group select,
         .filter-group input {
             width: auto;
-            min-width: 110px;
-            padding: 6px 10px;
+            min-width: 80px;
+            padding: 6px 8px;
             font-size: 12px;
         }
 
@@ -47,7 +47,7 @@
             height: 32px;
             background: var(--border);
             align-self: flex-end;
-            margin: 0 4px;
+            margin: 0 2px;
         }
 
         .filter-actions {
@@ -55,6 +55,7 @@
             gap: 6px;
             align-items: flex-end;
             margin-left: auto;
+            flex-shrink: 0;
         }
 
         .tx-count {
@@ -188,6 +189,39 @@
 
         .empty-tip { color: var(--text-2); padding: 24px; text-align: center; font-size: 13px; }
 
+        .pagination-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 8px 0;
+        }
+        .page-label {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-2);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .tx-row.superseded td { opacity: 0.45; }
+        .superseded-label {
+            font-size: 10px; color: var(--text-3); font-style: italic; white-space: nowrap;
+        }
+        .superseded-banner {
+            margin-bottom: 12px; padding: 8px 10px; border-radius: var(--radius);
+            background: var(--warning-dim, rgba(255,180,0,0.08));
+            font-size: 12px; color: var(--warning, #e0a800);
+        }
+        .superseded-banner a { color: var(--accent); cursor: pointer; }
+        .retry-chain-info {
+            margin-bottom: 12px; padding: 8px 10px; border-radius: var(--radius);
+            background: rgba(255,255,255,0.03); font-size: 12px; color: var(--text-2);
+        }
+        .retry-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+        .retry-toggle input { width: auto; margin: 0; }
+
         /* ── Screenshot modal ── */
         .screen-modal {
             max-width: 520px;
@@ -209,6 +243,10 @@
 
         <!-- Filters -->
         <div class="filters">
+            <div class="filter-group">
+                <label>Process ID</label>
+                <input type="text" id="filter-process-id" placeholder="Search..." style="min-width:70px;width:80px;">
+            </div>
             <div class="filter-group">
                 <label>Status</label>
                 <select id="filter-status">
@@ -252,7 +290,11 @@
                 </select>
             </div>
             <div class="filter-actions">
-                <button class="btn btn-primary" onclick="loadTransactions()">Filter</button>
+                <label class="retry-toggle">
+                    <input type="checkbox" id="show-retries" onchange="applyRetryFilter()">
+                    Show retries
+                </label>
+                <button class="btn btn-primary" onclick="resetPage()">Filter</button>
                 <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
                 <span id="tx-count" class="tx-count"></span>
             </div>
@@ -276,6 +318,12 @@
                 </thead>
                 <tbody id="tx-body"></tbody>
             </table>
+        </div>
+
+        <div class="pagination-bar">
+            <button id="page-prev" class="btn btn-secondary btn-sm" onclick="pagePrev()" disabled>Prev</button>
+            <span id="page-label" class="page-label">Page 1</span>
+            <button id="page-next" class="btn btn-secondary btn-sm" onclick="pageNext()">Next</button>
         </div>
 
     </div>
@@ -359,13 +407,18 @@
         ['filter-status','filter-bank','filter-to-bank','filter-arm'].forEach(id => {
             document.getElementById(id).value = '';
         });
+        document.getElementById('filter-process-id').value = '';
         document.getElementById('filter-date-from').value = '';
         document.getElementById('filter-date-to').value = '';
         document.getElementById('filter-pagesize').value = '100';
+        currentPage = 0;
         loadTransactions();
     }
 
+    let currentPage = 0;
+
     async function loadTransactions() {
+        const processId = document.getElementById('filter-process-id').value.trim();
         const status   = document.getElementById('filter-status').value;
         const bank     = document.getElementById('filter-bank').value;
         const toBank   = document.getElementById('filter-to-bank').value;
@@ -373,37 +426,58 @@
         const dateFrom = document.getElementById('filter-date-from').value;
         const dateTo   = document.getElementById('filter-date-to').value;
         const pageSize = document.getElementById('filter-pagesize').value;
-        const params   = pageSize ? ['limit=' + pageSize] : ['limit=0'];
+        const numLimit = pageSize ? parseInt(pageSize) : 0;
+        const params   = ['limit=' + numLimit];
+        if (numLimit > 0) params.push('offset=' + (currentPage * numLimit));
         params.push('tz=' + getDisplayTZ());
-        if (status)   params.push('status='    + status);
-        if (bank)     params.push('bank='      + bank);
-        if (toBank)   params.push('to_bank='   + toBank);
-        if (arm)      params.push('arm_id='    + arm);
-        if (dateFrom) params.push('date_from=' + dateFrom);
-        if (dateTo)   params.push('date_to='   + dateTo);
+        if (processId) params.push('process_id=' + processId);
+        if (status)    params.push('status='     + status);
+        if (bank)      params.push('bank='       + bank);
+        if (toBank)    params.push('to_bank='    + toBank);
+        if (arm)       params.push('arm_id='     + arm);
+        if (dateFrom)  params.push('date_from='  + dateFrom);
+        if (dateTo)    params.push('date_to='    + dateTo);
 
         const rows = await API.get('/api/monitor/transactions?' + params.join('&'));
         const tbody = document.getElementById('tx-body');
+        const showRetries = document.getElementById('show-retries').checked;
+        const allRows = Array.isArray(rows) ? rows : [];
+        const visible = showRetries ? allRows : allRows.filter(tx => !tx.superseded_by);
         document.getElementById('tx-count').textContent =
-            (Array.isArray(rows) ? rows.length : 0) + ' rows';
+            visible.length + (visible.length < allRows.length ? ' / ' + allRows.length + ' total' : '') + ' rows';
 
-        tbody.innerHTML = (Array.isArray(rows) ? rows : []).map(tx => {
+        tbody.innerHTML = allRows.map(tx => {
+            const isSuperseded = !!tx.superseded_by;
+            if (isSuperseded && !showRetries) return '';
             const dur = tx.started_at && tx.finished_at
                 ? Math.round((new Date(tx.finished_at) - new Date(tx.started_at)) / 1000) + 's'
                 : '—';
-            return `<tr class="tx-row" onclick="showDetail(${tx.id})">
+            const ssLabel = isSuperseded ? `<br><span class="superseded-label">&rarr; #${tx.superseded_by}</span>` : '';
+            return `<tr class="tx-row${isSuperseded ? ' superseded' : ''}" onclick="showDetail(${tx.id})">
                 <td class="tx-id">#${tx.id}</td>
                 <td class="tx-id">${tx.process_id}</td>
                 <td>${tx.arm_name || '—'}</td>
                 <td><strong>${tx.pay_from_bank_code}</strong></td>
                 <td>${tx.pay_to_bank_code || '—'}</td>
                 <td class="tx-amount">$${tx.amount}</td>
-                <td><span class="status-${tx.status}">${tx.status}</span></td>
+                <td><span class="status-${tx.status}">${tx.status}</span>${ssLabel}</td>
                 <td style="font-family:var(--font-mono);font-size:12px;">${formatTZ(tx.created_at)}</td>
                 <td class="tx-dur">${dur}</td>
             </tr>`;
         }).join('') || '<tr><td colspan="9" class="empty-tip">No transactions found</td></tr>';
+
+        const prevBtn = document.getElementById('page-prev');
+        const nextBtn = document.getElementById('page-next');
+        const pageLabel = document.getElementById('page-label');
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = numLimit === 0 || allRows.length < numLimit;
+        pageLabel.textContent = 'Page ' + (currentPage + 1);
     }
+
+    function applyRetryFilter() { currentPage = 0; loadTransactions(); }
+    function pageNext() { currentPage++; loadTransactions(); }
+    function pagePrev() { if (currentPage > 0) { currentPage--; loadTransactions(); } }
+    function resetPage() { currentPage = 0; loadTransactions(); }
 
     async function showDetail(id) {
         const [tx, logs] = await Promise.all([
@@ -420,7 +494,12 @@
         const btnClass = tx.callback_sent_at ? 'btn-secondary' : 'btn-primary';
         const btnAttrs = isFinished ? '' : 'disabled title="Transaction not finished"';
 
+        const supersededHtml = tx.superseded_by
+            ? `<div class="superseded-banner">This transaction was superseded by <a onclick="closeDetail();showDetail(${tx.superseded_by})">#${tx.superseded_by}</a></div>`
+            : '';
+
         document.getElementById('detail-info').innerHTML = `
+            ${supersededHtml}
             <div class="detail-grid">
                 <div class="detail-field"><label>From</label><div class="val">${tx.pay_from_bank_code}</div></div>
                 <div class="detail-field"><label>To</label><div class="val">${tx.pay_to_bank_code || '—'}</div></div>

@@ -51,32 +51,31 @@ async def get_queue_status():
 
 
 @router.get("/stats/today")
-async def get_today_stats(tz: int = 7):
+async def get_today_stats(tz: int = 7, dedup: int = 0):
     """Today's transaction statistics. `tz` (7 or 8) selects the calendar day
-    boundary used to count rows; defaults to GMT+7 for backward compat."""
+    boundary used to count rows; defaults to GMT+7 for backward compat.
+    `dedup=1` excludes transactions superseded by a retry."""
     display_tz = _resolve_display_tz(tz)
     today_local = datetime.now(display_tz).date()
     start_local = datetime.combine(today_local, datetime.min.time(), tzinfo=display_tz)
     end_local = datetime.combine(today_local, datetime.max.time(), tzinfo=display_tz)
     start_utc = start_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     end_utc = end_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    dedup_bare = " AND superseded_by IS NULL" if dedup else ""
+    dedup_t = " AND t.superseded_by IS NULL" if dedup else ""
 
     rows = await database.fetchall(
         "SELECT status, COUNT(*) as cnt FROM transactions "
-        "WHERE created_at >= %s AND created_at <= %s "
+        "WHERE created_at >= %s AND created_at <= %s" + dedup_bare + " "
         "GROUP BY status",
         (start_utc, end_utc),
     )
     stats = {r["status"]: r["cnt"] for r in rows}
 
-    # Per-arm breakdown for today: {arm_id: {success, total}} where total
-    # counts success + failed + stall. Used by the dashboard arm cards to
-    # show "Today: success/total". Replaces the old worker in-memory counter
-    # which was independent of date / timezone.
     per_arm_rows = await database.fetchall(
         "SELECT s.arm_id, t.status, COUNT(*) AS cnt FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + dedup_t + " "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY s.arm_id, t.status",
         (start_utc, end_utc),
@@ -101,7 +100,7 @@ async def get_today_stats(tz: int = 7):
 
 @router.get("/reports/summary")
 async def reports_summary(date_from: str, date_to: str,
-                          tz: int = 7, arm_id: int = None):
+                          tz: int = 7, arm_id: int = None, dedup: int = 0):
     """Aggregate report for a date range, in the requested display timezone.
 
     Returns 5 sections:
@@ -113,6 +112,7 @@ async def reports_summary(date_from: str, date_to: str,
         slowest_steps       — list of {step_name, action_type, avg_ms, max_ms, count}
 
     All read-only; no business logic affected.
+    `dedup=1` excludes transactions superseded by a retry.
     """
     display_tz = _resolve_display_tz(tz)
     try:
@@ -133,12 +133,13 @@ async def reports_summary(date_from: str, date_to: str,
     if arm_id:
         arm_clause = " AND s.arm_id = %s"
         arm_params = (int(arm_id),)
+    dedup_clause = " AND t.superseded_by IS NULL" if dedup else ""
 
     # --- 1. Overall summary -------------------------------------------------
     overall_rows = await database.fetchall(
         "SELECT t.status, COUNT(*) as cnt FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "GROUP BY t.status",
         (start_utc, end_utc) + arm_params,
     )
@@ -165,7 +166,7 @@ async def reports_summary(date_from: str, date_to: str,
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
         "JOIN arms a ON s.arm_id = a.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY a.id, a.name, t.status",
         (start_utc, end_utc) + arm_params,
@@ -176,7 +177,7 @@ async def reports_summary(date_from: str, date_to: str,
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
         "JOIN arms a ON s.arm_id = a.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "AND t.started_at IS NOT NULL AND t.finished_at IS NOT NULL "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY a.id",
@@ -204,7 +205,7 @@ async def reports_summary(date_from: str, date_to: str,
         "SELECT t.pay_from_bank_code AS bank_code, t.status, COUNT(*) AS cnt "
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
-        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "WHERE t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY t.pay_from_bank_code, t.status",
         (start_utc, end_utc) + arm_params,
@@ -233,7 +234,7 @@ async def reports_summary(date_from: str, date_to: str,
         "JOIN transactions t ON l.transaction_id = t.id "
         "JOIN stations s ON t.station_id = s.id "
         "WHERE l.result = 'fail' "
-        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "GROUP BY l.step_name, l.action_type "
         "ORDER BY fail_count DESC LIMIT 10",
         (start_utc, end_utc) + arm_params,
@@ -246,7 +247,7 @@ async def reports_summary(date_from: str, date_to: str,
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
         "WHERE t.status = 'stall' AND t.error_message IS NOT NULL "
-        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "GROUP BY reason ORDER BY cnt DESC LIMIT 10",
         (start_utc, end_utc) + arm_params,
     )
@@ -261,7 +262,7 @@ async def reports_summary(date_from: str, date_to: str,
         "JOIN transactions t ON l.transaction_id = t.id "
         "JOIN stations s ON t.station_id = s.id "
         "WHERE l.duration_ms IS NOT NULL AND l.duration_ms > 0 "
-        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + " "
+        "AND t.created_at >= %s AND t.created_at <= %s" + arm_clause + dedup_clause + " "
         "GROUP BY l.step_name, l.action_type "
         "HAVING cnt >= 5 "
         "ORDER BY avg_ms DESC LIMIT 10",
@@ -286,11 +287,12 @@ async def reports_summary(date_from: str, date_to: str,
 
 
 @router.get("/export/daily-summary", dependencies=[Depends(verify_api_key)])
-async def export_daily_summary(date: str = None, tz: int = 7):
+async def export_daily_summary(date: str = None, tz: int = 7, dedup: int = 0):
     """Authenticated daily summary for external report aggregation.
 
     If date is omitted, summarize yesterday in the requested display timezone.
     Only final statuses requested by operations are included: success/failed/stall.
+    `dedup=1` excludes transactions superseded by a retry.
     """
     if tz not in (7, 8):
         return {"error": "tz must be 7 or 8"}
@@ -317,6 +319,7 @@ async def export_daily_summary(date: str = None, tz: int = 7):
         .astimezone(timezone.utc)
         .strftime("%Y-%m-%d %H:%M:%S")
     )
+    dedup_clause = " AND t.superseded_by IS NULL" if dedup else ""
 
     rows = await database.fetchall(
         "SELECT a.id AS arm_id, a.name AS arm_name, "
@@ -324,7 +327,7 @@ async def export_daily_summary(date: str = None, tz: int = 7):
         "FROM transactions t "
         "JOIN stations s ON t.station_id = s.id "
         "JOIN arms a ON s.arm_id = a.id "
-        "WHERE t.created_at >= %s AND t.created_at < %s "
+        "WHERE t.created_at >= %s AND t.created_at < %s" + dedup_clause + " "
         "AND t.status IN ('success', 'failed', 'stall') "
         "GROUP BY a.id, a.name, t.pay_from_bank_code, t.status "
         "ORDER BY a.name, t.pay_from_bank_code, t.status",
@@ -370,6 +373,7 @@ async def export_daily_summary(date: str = None, tz: int = 7):
     return {
         "date": report_date,
         "tz": tz,
+        "dedup": bool(dedup),
         "start_utc": start_utc,
         "end_utc": end_utc,
         "total": total,
@@ -645,16 +649,19 @@ async def swap_camera(data: dict):
 
 @router.get("/transactions")
 async def list_transactions(status: str = None, bank: str = None, to_bank: str = None,
-                            arm_id: int = None,
+                            arm_id: int = None, process_id: int = None,
                             date_from: str = None, date_to: str = None,
                             limit: int = 50, offset: int = 0,
                             tz: int = 7):
     """List transactions with optional filters: status, bank, to_bank, arm_id,
-    date range. `tz` (7 or 8) controls how date_from/date_to are interpreted
-    as calendar-day boundaries; defaults to GMT+7."""
+    process_id, date range. `tz` (7 or 8) controls how date_from/date_to are
+    interpreted as calendar-day boundaries; defaults to GMT+7."""
     display_tz = _resolve_display_tz(tz)
     where = []
     params = []
+    if process_id:
+        where.append("t.process_id = %s")
+        params.append(process_id)
     if status:
         where.append("t.status = %s")
         params.append(status)
@@ -693,7 +700,7 @@ async def list_transactions(status: str = None, bank: str = None, to_bank: str =
     rows = await database.fetchall(
         "SELECT t.id, t.process_id, t.pay_from_bank_code, t.pay_to_bank_code, t.amount, t.status, "
         "t.created_at, t.started_at, t.finished_at, t.error_message, t.station_id, "
-        "s.arm_id, a.name as arm_name "
+        "t.superseded_by, s.arm_id, a.name as arm_name "
         "FROM transactions t "
         "LEFT JOIN stations s ON t.station_id = s.id "
         "LEFT JOIN arms a ON s.arm_id = a.id "

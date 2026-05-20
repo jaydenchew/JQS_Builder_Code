@@ -240,6 +240,7 @@
                 <button class="btn btn-secondary range-btn" onclick="setSingleDay(1,this)">Yesterday</button>
                 <button class="btn btn-secondary range-btn" onclick="setRange(7,this)">7 days</button>
                 <button class="btn btn-secondary range-btn" onclick="setRange(30,this)">30 days</button>
+                <button id="dedup-btn" class="btn btn-secondary range-btn" onclick="toggleDedup(this)">Deduped</button>
                 <button class="btn btn-primary range-btn" onclick="loadReport()">Refresh</button>
             </div>
             <div class="filter-meta">
@@ -372,6 +373,13 @@
     }
 
     let loadInFlight = false;
+    let dedupActive = false;
+
+    function toggleDedup(btn) {
+        dedupActive = !dedupActive;
+        btn.classList.toggle('active', dedupActive);
+        loadReport();
+    }
 
     async function loadReport(silent = false) {
         if (loadInFlight) return;
@@ -383,10 +391,12 @@
             if (!dateFrom || !dateTo) return;
             const params = ['date_from=' + dateFrom, 'date_to=' + dateTo, 'tz=' + getDisplayTZ()];
             if (armId) params.push('arm_id=' + armId);
+            if (dedupActive) params.push('dedup=1');
             if (!silent) document.getElementById('range-info').textContent = 'Loading…';
             const r = await API.get('/api/monitor/reports/summary?' + params.join('&'));
             if (r.error) { document.getElementById('range-info').textContent = 'Error: ' + r.error; return; }
-            document.getElementById('range-info').textContent = `${dateFrom} → ${dateTo} (GMT+${getDisplayTZ()})`;
+            const modeLabel = dedupActive ? ' [Deduped]' : '';
+            document.getElementById('range-info').textContent = `${dateFrom} → ${dateTo} (GMT+${getDisplayTZ()})${modeLabel}`;
             const offsetMs = getDisplayTZ() * 60 * 60 * 1000;
             const tsInTz = new Date(Date.now() + offsetMs).toISOString().substring(11, 19);
             document.getElementById('refresh-info').textContent = `Updated ${tsInTz}`;

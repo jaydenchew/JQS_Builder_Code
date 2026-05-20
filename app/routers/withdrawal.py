@@ -27,6 +27,21 @@ def _sanitize_account_no(value):
     return _ACCOUNT_NO_STRIP.sub('', str(value))
 
 
+async def _link_retry_chain(new_tx_id, pay_to_bank_code, pay_to_account_no, amount):
+    """Link this tx to a recent stall/failed tx with the same recipient+amount."""
+    pred = await database.fetchone(
+        "SELECT id FROM transactions "
+        "WHERE pay_to_bank_code = %s AND pay_to_account_no = %s AND amount = %s "
+        "AND status IN ('stall', 'failed') AND superseded_by IS NULL "
+        "AND id != %s AND created_at >= NOW() - INTERVAL 15 MINUTE "
+        "ORDER BY created_at DESC LIMIT 1",
+        (pay_to_bank_code, pay_to_account_no, amount, new_tx_id))
+    if pred:
+        await database.execute(
+            "UPDATE transactions SET superseded_by = %s WHERE id = %s OR superseded_by = %s",
+            (new_tx_id, pred["id"], pred["id"]))
+
+
 @router.post("/process-withdrawal", response_model=StandardResponse, dependencies=[Depends(verify_api_key)])
 async def process_withdrawal(req: WithdrawalRequest):
     req.pay_from_account_no = _sanitize_account_no(req.pay_from_account_no)
@@ -50,7 +65,7 @@ async def process_withdrawal(req: WithdrawalRequest):
 
     if not bank_app:
         try:
-            await database.execute(
+            new_tx_id = await database.execute(
                 """INSERT INTO transactions 
                 (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
                  pay_to_bank_code, pay_to_account_no, pay_to_account_name, status, error_message)
@@ -62,6 +77,10 @@ async def process_withdrawal(req: WithdrawalRequest):
             if e.args[0] == 1062:
                 return StandardResponse(status=False, message="Duplicate process_id")
             raise
+        try:
+            await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+        except Exception:
+            logger.warning("retry chain link failed for tx %d", new_tx_id)
         return StandardResponse(status=False, message="Bank app not found for given bank_code + account_no")
 
     arm = await database.fetchone(
@@ -69,7 +88,7 @@ async def process_withdrawal(req: WithdrawalRequest):
     )
     if not arm or not arm["active"] or arm["status"] == "offline":
         try:
-            await database.execute(
+            new_tx_id = await database.execute(
                 """INSERT INTO transactions 
                 (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
                  pay_to_bank_code, pay_to_account_no, pay_to_account_name,
@@ -83,10 +102,14 @@ async def process_withdrawal(req: WithdrawalRequest):
             if e.args[0] == 1062:
                 return StandardResponse(status=False, message="Duplicate process_id")
             raise
+        try:
+            await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+        except Exception:
+            logger.warning("retry chain link failed for tx %d", new_tx_id)
         return StandardResponse(status=False, message="Assigned arm is offline or inactive")
 
     try:
-        await database.execute(
+        new_tx_id = await database.execute(
             """INSERT INTO transactions 
             (process_id, currency_code, amount, pay_from_bank_code, pay_from_account_no,
              pay_to_bank_code, pay_to_account_no, pay_to_account_name,
@@ -100,6 +123,11 @@ async def process_withdrawal(req: WithdrawalRequest):
         if e.args[0] == 1062:
             return StandardResponse(status=False, message="Duplicate process_id")
         raise
+
+    try:
+        await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+    except Exception:
+        logger.warning("retry chain link failed for tx %d", new_tx_id)
 
     manager.notify_worker(bank_app["arm_id"])
 

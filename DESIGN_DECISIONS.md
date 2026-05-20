@@ -529,3 +529,29 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 **Files**: `db/schema.sql` (`stations.plug_client_id VARCHAR(64)` + `plug_enabled TINYINT(1)`), `static/settings.html` (`Plug ID` text input on the station form), `app/smart_plug.py` (topic builds from `client_id` only), `app/routers/monitor.py` (`plug-test/{client_id}/...` route).
 
 **Rollback**: No code change needed to "switch to MAC" — `plug_client_id` is a VARCHAR(64), it can hold a MAC string just as well as `plug01`. Operators would just type the MAC into the same UI field. The decision is a convention, not a constraint.
+
+---
+
+## DD-031: Retry Chain Detection Uses Recipient + Amount Only (Not Source Account)
+
+**What**: `_link_retry_chain()` matches transactions by `pay_to_bank_code + pay_to_account_no + amount` within a 15-minute window. `pay_from_bank_code`, `pay_from_account_no`, and `station_id` are deliberately excluded from the match condition.
+
+**Why**: When PAS retries a stall/failed transaction, the operator may choose a different source account (different bank app, different station, different arm). The recipient and amount are the stable identifiers of "the same logical transfer". Including `pay_from` would miss these cross-account retries, which are the most common retry pattern in practice.
+
+**The tradeoff being accepted**: Two genuinely different transactions to the same recipient for the same amount within 15 minutes could be falsely linked. This is very unlikely in practice (different customers, same recipient, same amount, within 15 min). If it happens, the raw view (default `dedup=0`) is unaffected — only the deduped view undercounts by 1. Operators can toggle back to raw to verify.
+
+**Alternative considered**: Include `station_id` in the match to reduce false positives. Rejected because cross-station retries are common and would break chaining.
+
+**Files**: `app/routers/withdrawal.py` (`_link_retry_chain()`), `db/schema.sql` (`transactions.superseded_by`).
+
+---
+
+## DD-032: Dedup Is a Query-Time Filter (`?dedup=1`), Not a Default
+
+**What**: All report endpoints (`stats/today`, `reports/summary`, `export/daily-summary`) default to `dedup=0`, returning raw counts identical to pre-feature behaviour. Deduped counts require explicitly passing `?dedup=1`.
+
+**Why**: The external report system and dashboard already consume these endpoints. Changing the default would silently alter their numbers without any code change on their side. Making dedup opt-in means: (a) existing integrations are untouched, (b) operators can compare raw vs deduped side-by-side via the Reports UI toggle, (c) if the chain detection ever produces a false positive, the raw view is always available as ground truth.
+
+**Alternative considered**: Return both raw and deduped counts in the same response (dual fields). Rejected — doubles the response schema complexity and every consumer needs updating. The `?dedup=1` approach changes zero response fields; the same JSON shape, just filtered differently.
+
+**Files**: `app/routers/monitor.py` (`dedup` param on 3 endpoints), `static/reports.html` (Deduped toggle button).

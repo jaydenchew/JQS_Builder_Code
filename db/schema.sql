@@ -86,10 +86,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     started_at DATETIME NULL,
     finished_at DATETIME NULL,
     callback_sent_at DATETIME NULL,
+    superseded_by INT NULL COMMENT 'Points to the retry tx that replaced this one; non-NULL = excluded when dedup=1',
     INDEX idx_status (status),
     INDEX idx_process_id (process_id),
     INDEX idx_station_id (station_id),
-    INDEX idx_bank_app_id (bank_app_id)
+    INDEX idx_bank_app_id (bank_app_id),
+    INDEX idx_superseded (superseded_by)
 ) ENGINE=InnoDB;
 
 -- transaction_logs
