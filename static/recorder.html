@@ -425,6 +425,7 @@
             <option value="always_decimal">Amt: .00</option>
         </select>
         <button class="btn btn-sm btn-primary" onclick="createBank()" title="Create new bank template">+</button>
+        <button class="btn btn-sm btn-secondary" onclick="importSeed()" title="Import a ready-made flow from a seed file for the selected arm">Import Seed</button>
         <button class="btn btn-sm btn-secondary" onclick="copyFlow()" title="Copy flow to another arm or transfer type">Copy</button>
         <button class="btn btn-sm btn-danger" onclick="deleteFlow()" title="Delete current flow">Del</button>
     </div>
@@ -3552,6 +3553,33 @@ async function copyFlow() {
     }
 }
 
+async function importSeed() {
+    if (!S.armId) { toast('Select an arm first', 'error'); return; }
+    const seeds = await API.get('/api/seeds/flows');
+    const list = (Array.isArray(seeds) ? seeds : []).map(s => s.code);
+    if (!list.length) { toast('No flow seeds found in db/', 'error'); return; }
+    const choice = prompt(
+        'Import flow seed for ARM ' + S.armId + '\n\n' +
+        'Available: ' + list.join(', ') + '\n\n' +
+        'Note: this REPLACES the existing flow for that bank on this arm.\n' +
+        'Coordinates are kept (matched by name).\n\n' +
+        'Enter bank code:'
+    );
+    if (!choice) return;
+    const code = choice.trim().toUpperCase();
+    if (!list.includes(code)) { toast('Unknown seed: ' + code, 'error'); return; }
+    setStatus('Importing ' + code + ' ...');
+    const r = await API.post('/api/seeds/flows/apply', { seed: code, arm_id: S.armId });
+    if (r.success) {
+        toast(r.message || ('Imported ' + code));
+        await reloadTemplates();
+        setStatus('Imported ' + code + ' - select it in the Bank dropdown.');
+    } else {
+        toast(r.error || 'Import failed', 'error');
+        setStatus('Import failed');
+    }
+}
+
 async function deleteFlow() {
     if (!S.tplId) { toast('No flow selected', 'error'); return; }
     if (!confirm(`Delete flow "${S.bank}"?\nThis removes the template and all its steps.`)) return;
@@ -4210,6 +4238,7 @@ async function loadMappings() {
 
     let html = `<div style="margin-bottom:10px;">
         <button class="btn btn-primary btn-sm" onclick="showAddMapping()">+ Add Mapping</button>
+        <button class="btn btn-secondary btn-sm" onclick="importMappingSeed()" title="Import bank name mappings from a seed file">Import Seed</button>
     </div><div id="mp-add-form"></div>`;
 
     for (const [from, list] of Object.entries(grouped).sort()) {
@@ -4248,6 +4277,24 @@ function showAddMapping() {
             <button class="btn btn-primary btn-sm" onclick="addMapping()">Add</button>
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('mp-add-form').innerHTML=''">Cancel</button>
         </div>`;
+}
+
+async function importMappingSeed() {
+    const seeds = await API.get('/api/seeds/mappings');
+    const list = (Array.isArray(seeds) ? seeds : []).map(s => s.code);
+    if (!list.length) { toast('No mapping seeds found in db/', 'error'); return; }
+    const choice = prompt(
+        'Import bank name mapping seed\n\n' +
+        'Available: ' + list.join(', ') + '\n\n' +
+        'Note: this REPLACES all existing mappings for that from-bank.\n\n' +
+        'Enter from-bank code:'
+    );
+    if (!choice) return;
+    const code = choice.trim().toUpperCase();
+    if (!list.includes(code)) { toast('Unknown seed: ' + code, 'error'); return; }
+    const r = await API.post('/api/seeds/mappings/apply', { seed: code });
+    if (r.success) { toast(r.message || ('Imported ' + code + ' mappings')); loadMappings(); }
+    else toast(r.error || 'Import failed', 'error');
 }
 
 async function addMapping() {

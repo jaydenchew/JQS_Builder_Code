@@ -9,7 +9,7 @@ from app.database import get_pool, close_pool
 from app.routers import (
     stations, banks, flows, coordinates,
     calibration_router, stream, recorder,
-    opencv_router, withdrawal, monitor,
+    opencv_router, withdrawal, monitor, seeds,
 )
 from app import camera, arm_client, config, pas_client, database
 from app.worker_manager import manager
@@ -94,6 +94,7 @@ app.include_router(calibration_router.router)
 app.include_router(stream.router)
 app.include_router(recorder.router)
 app.include_router(opencv_router.router)
+app.include_router(seeds.router)
 
 # --- WA Execution API ---
 app.include_router(withdrawal.router)
