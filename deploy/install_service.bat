@@ -53,9 +53,9 @@ if not exist "%VENV_PY%" (
 :: plugs on the LAN cannot reach the broker even though the host listens.
 :: Idempotent: delete the existing rule (if any) then re-add.
 :: To remove later: netsh advfirewall firewall delete rule name="Mosquitto MQTT 1883"
-echo Configuring Windows Firewall for Mosquitto MQTT (TCP 1883, Private+Domain)...
+echo Configuring Windows Firewall for Mosquitto MQTT (TCP 1883, all profiles)...
 netsh advfirewall firewall delete rule name="Mosquitto MQTT 1883" >nul 2>&1
-netsh advfirewall firewall add rule name="Mosquitto MQTT 1883" dir=in action=allow protocol=TCP localport=1883 profile=private,domain >nul
+netsh advfirewall firewall add rule name="Mosquitto MQTT 1883" dir=in action=allow protocol=TCP localport=1883 >nul
 if errorlevel 1 (
     echo WARNING: failed to add firewall rule for TCP 1883.
     echo          Smart plug control will not work until this is fixed manually.
