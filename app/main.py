@@ -11,7 +11,7 @@ from app.routers import (
     calibration_router, stream, recorder,
     opencv_router, withdrawal, monitor, seeds,
 )
-from app import camera, arm_client, config, pas_client, database
+from app import camera, arm_client, config, pas_client, database, notify
 from app.worker_manager import manager
 from app.smart_plug import smart_plug_client
 
@@ -74,6 +74,7 @@ async def lifespan(app):
             pass
     camera.camera_close()
     await pas_client.close_client()
+    await notify.close_client()
     await close_pool()
     logger.info("WA Unified System stopped")
 

@@ -176,11 +176,12 @@ FastAPI (port 9000, localhost only in production)
 
 See `ARCHITECTURE_PLAN.md` for full technical details.
 
-## Database (14 tables)
+## Database (15 tables)
 
 | Table | Purpose |
 |-------|---------|
 | arms | Machines (com_port, camera_id, active) |
+| arm_notify_configs | Per-arm Slack/Telegram stall notification settings (1:1 with arms) |
 | stations | Stations per arm |
 | phones, bank_apps | Phones and bank accounts per station |
 | transactions, transaction_logs | Transaction records + step logs |
@@ -215,7 +216,7 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | 1 | Success | `success` | Continue |
 | 2 | Fail (receipt check) | `failed` | Continue |
 | 3 | In Review (receipt check) | `failed` | Continue |
-| 4 | Stall (any step failure) | `stall` | Offline + pause, queued tasks auto-rejected |
+| 4 | Stall (any step failure) | `stall` | Offline + pause, queued tasks auto-rejected; optional per-arm Slack/Telegram alert (see Settings) |
 
 ## Key API Endpoints
 
@@ -230,6 +231,8 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | `/api/monitor/mqtt-broker` | GET | None (localhost) | LAN IP + port for plug setup (auto-detected) |
 | `/api/monitor/plug-test/{client_id}/{on\|off}` | POST | None (localhost) | Manually toggle a smart plug (diagnostics) |
 | `/api/monitor/plug-status` | GET | None (localhost) | Smart plug failure counters |
+| `/api/stations/arms/{id}/notify` | GET/PUT | None (localhost) | Read/save per-arm Slack/Telegram stall config |
+| `/api/stations/arms/{id}/notify/test` | POST | None (localhost) | Send a test stall notification |
 
 ## Documentation
 

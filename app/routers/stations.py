@@ -6,7 +6,7 @@ import time
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter
-from app import database
+from app import database, notify
 from app.worker_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,69 @@ async def delete_arm(arm_id: int):
         await manager._remove_worker(arm_id)
 
     await database.execute("DELETE FROM arms WHERE id = %s", (arm_id,))
+    return {"success": True}
+
+
+# === Arm notification configs (per-arm Slack/Telegram stall alerts) ===
+
+NOTIFY_FIELDS = {"slack_enabled", "slack_bot_token", "slack_channel",
+                 "telegram_enabled", "telegram_bot_token", "telegram_chat_id"}
+
+
+@router.get("/arms-notify")
+async def list_arm_notify():
+    return await database.fetchall("SELECT * FROM arm_notify_configs")
+
+
+@router.get("/arms/{arm_id}/notify")
+async def get_arm_notify(arm_id: int):
+    cfg = await database.fetchone("SELECT * FROM arm_notify_configs WHERE arm_id = %s", (arm_id,))
+    return cfg or {}
+
+
+@router.put("/arms/{arm_id}/notify")
+async def update_arm_notify(arm_id: int, data: dict):
+    fields = {k: v for k, v in data.items() if k in NOTIFY_FIELDS}
+    if not fields:
+        return {"error": "No valid fields"}
+    existing = await database.fetchone("SELECT id FROM arm_notify_configs WHERE arm_id = %s", (arm_id,))
+    if existing:
+        sets = ", ".join("%s = %%s" % k for k in fields)
+        await database.execute(
+            "UPDATE arm_notify_configs SET %s WHERE arm_id = %%s" % sets,
+            (*fields.values(), arm_id))
+    else:
+        cols = ", ".join(["arm_id"] + list(fields.keys()))
+        placeholders = ", ".join(["%s"] * (len(fields) + 1))
+        await database.execute(
+            "INSERT INTO arm_notify_configs (%s) VALUES (%s)" % (cols, placeholders),
+            (arm_id, *fields.values()))
+    return {"success": True}
+
+
+@router.post("/arms/{arm_id}/notify/test")
+async def test_arm_notify(arm_id: int):
+    cfg = await database.fetchone("SELECT * FROM arm_notify_configs WHERE arm_id = %s", (arm_id,))
+    if not cfg:
+        return {"success": False, "error": "No notification config saved for this arm"}
+    if not (cfg["slack_enabled"] or cfg["telegram_enabled"]):
+        return {"success": False, "error": "No provider enabled"}
+    arm = await database.fetchone("SELECT name FROM arms WHERE id = %s", (arm_id,))
+    results = await notify.dispatch(cfg, {
+        "arm": arm["name"] if arm else arm_id,
+        "process_id": 0,
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "amount": "0.00",
+        "currency": "TEST",
+        "pay_from_bank": "TEST_FROM",
+        "pay_to_bank": "TEST_TO",
+        "pay_to_account_no": "0000000000",
+        "pay_to_account_name": "Test Notification",
+        "status": "test",
+    }, None)
+    failed = [k for k, ok in results.items() if not ok]
+    if failed:
+        return {"success": False, "error": "Failed: %s (check token/channel and logs)" % ", ".join(failed)}
     return {"success": True}
 
 

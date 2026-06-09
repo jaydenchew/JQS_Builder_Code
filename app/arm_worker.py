@@ -12,7 +12,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from app.arm_client import ArmClient
 from app.camera import Camera
-from app import database, actions, pas_client
+from app import database, actions, pas_client, notify
 from app.smart_plug import smart_plug_client
 
 logger = logging.getLogger(__name__)
@@ -350,6 +350,29 @@ class ArmWorker:
                 else:
                     logger.error("[%s] PAS callback failed for process_id=%d, callback_sent_at NOT updated", self.name, process_id)
                 logger.warning("[%s] === STALL process_id=%d error=%s ===", self.name, process_id, error_msg)
+
+                # Per-arm Slack/Telegram stall notification. Fired as a BACKGROUND task
+                # (notify.fire) so a slow/unreachable Slack/Telegram can never delay this
+                # worker or the next task. The only awaited part is the local DB config
+                # read (sub-100ms, hang-protected); the network sends run detached.
+                try:
+                    cfg = await database.fetchone(
+                        "SELECT * FROM arm_notify_configs WHERE arm_id = %s", (self.arm_id,))
+                    if cfg and (cfg["slack_enabled"] or cfg["telegram_enabled"]):
+                        notify.fire(notify.dispatch(cfg, {
+                            "arm": self.name,
+                            "process_id": process_id,
+                            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "amount": task["amount"],
+                            "currency": task.get("currency_code"),
+                            "pay_from_bank": task["pay_from_bank_code"],
+                            "pay_to_bank": task["pay_to_bank_code"],
+                            "pay_to_account_no": task["pay_to_account_no"],
+                            "pay_to_account_name": task["pay_to_account_name"],
+                            "status": "stall",
+                        }, receipt_b64))
+                except Exception as e:
+                    logger.error("[%s] Stall notification dispatch failed (ignored): %s", self.name, e)
 
                 stall_detail = "Step %s: %s" % (self._current_step or "?", error_msg or "unknown")
                 if is_hardware_error:

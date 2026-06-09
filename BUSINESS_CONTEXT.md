@@ -182,6 +182,7 @@ There are two stall paths, decided by the type of error.
 4. Runs the arm's per-arm STALL flow (`flow_templates` row with `bank_code='STALL'`) — this typically taps the recent-apps button and swipes to close the open banking app, leaving the phone at home screen.
 5. Resets the arm to (0,0) and closes the COM port.
 6. Sends PAS callback `status=4` + screenshot — this happens AFTER the arm is back at origin so PAS knows the arm is ready before it dispatches the next task.
+6a. If this arm has Slack/Telegram notifications enabled (Settings → per-arm), also pushes a stall alert (arm, process_id, amount, pay-from/to bank, pay-to account no/name, status, stall screenshot). This is fire-and-forget — a notification failure never affects the callback or the arm.
 7. Arm stays online (`arms.status='idle'`); the worker fetches the next task as soon as PAS sends one.
 8. The `stall_reason` / `stall_details` columns on `arms` keep the previous failure visible on the Dashboard until the next task succeeds (it then clears them).
 9. **Human action**: typically none — operators only intervene when stalls become frequent or look systemic. Inspect via Transactions page to see the stall photo and `stall_reason`.
@@ -190,8 +191,8 @@ There are two stall paths, decided by the type of error.
 
 1. Worker logs the hardware error and pauses 30 seconds.
 2. Captures stall photo (no-op if camera is also unreachable; otherwise still saved).
-3. Marks the transaction `status='stall'`, sends PAS callback `status=4`.
-4. Arm goes `offline` + worker `paused`. Any queued tasks for this arm are batch-rejected to PAS with `status=4` (defensive — should not happen under PAS serialized dispatch, but kept for safety).
+3. Marks the transaction `status='stall'`, sends PAS callback `status=4` (and the per-arm Slack/Telegram alert, same as the soft path).
+4. Arm goes `offline` + worker `paused`. Any queued tasks for this arm are batch-rejected to PAS with `status=4` (defensive — should not happen under PAS serialized dispatch, but kept for safety). The batch-rejected queued tasks do NOT trigger Slack/Telegram alerts — only the stalled task itself does.
 5. **Human must**: power-cycle / re-seat the arm or COM cable, then Resume on Dashboard.
 
 **Per-arm STALL flow setup**: Each arm should have its own STALL flow defined in Builder (one `flow_template` per arm with `bank_code='STALL'`, plus per-station coordinates recorded under the same `bank_code='STALL'`). If the STALL flow is missing for a given arm, soft stalls degrade gracefully — the arm still cleans up to (0,0) and goes idle, just without auto-closing whatever banking app was open.

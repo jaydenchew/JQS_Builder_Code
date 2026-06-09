@@ -394,6 +394,7 @@
     <script src="/static/js/api.js"></script>
     <script>
     let armsData = [], stationsData = [], phonesData = [], bankAppsData = [], calData = {};
+    let notifyByArm = {};
 
     function switchTab(name) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -403,13 +404,17 @@
     }
 
     async function loadAll() {
-        [armsData, stationsData, phonesData, bankAppsData, calData] = await Promise.all([
+        let notifyData;
+        [armsData, stationsData, phonesData, bankAppsData, calData, notifyData] = await Promise.all([
             API.get('/api/stations/arms'),
             API.get('/api/stations/'),
             API.get('/api/stations/phones'),
             API.get('/api/banks/apps'),
             API.get('/api/calibration/status'),
+            API.get('/api/stations/arms-notify'),
         ]);
+        notifyByArm = {};
+        (notifyData || []).forEach(c => { notifyByArm[c.arm_id] = c; });
         renderOverview();
         loadMqttHint();
     }
@@ -583,6 +588,7 @@
                             <div class="overview-field"><label>Max X</label><input id="a-max-x-${arm.id}" type="number" step="0.1" class="w-xs" value="${arm.max_x ?? 90}"></div>
                             <div class="overview-field"><label>Max Y</label><input id="a-max-y-${arm.id}" type="number" step="0.1" class="w-xs" value="${arm.max_y ?? 120}"></div>
                         </div>
+                        ${renderArmNotify(arm.id)}
                     </div>
                     <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
                         <span class="badge ${arm.active ? 'badge-active' : 'badge-inactive'} active-toggle" onclick="toggleArmActive(${arm.id}, ${arm.active})">${arm.active ? 'ON' : 'OFF'}</span>
@@ -650,6 +656,45 @@
         const r = await API.del(`/api/stations/arms/${id}`);
         if (r.success) { toast('Arm deleted'); loadAll(); }
         else toast(r.error || 'Failed', 'error');
+    }
+
+    /* ── ARM STALL NOTIFICATIONS (Slack / Telegram) ── */
+    function renderArmNotify(id) {
+        const c = notifyByArm[id] || {};
+        return `<div class="overview-fields" style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px;">
+            <div class="overview-section-label" style="width:100%;">Stall Notifications (Slack / Telegram)</div>
+            <div class="overview-field"><label>Telegram</label><input id="nt-tg-en-${id}" type="checkbox" ${c.telegram_enabled ? 'checked' : ''}></div>
+            <div class="overview-field"><label>TG Bot Token</label><input id="nt-tg-token-${id}" class="w-md" value="${c.telegram_bot_token || ''}" placeholder="123456:ABC-..."></div>
+            <div class="overview-field"><label>TG Chat ID</label><input id="nt-tg-chat-${id}" class="w-md" value="${c.telegram_chat_id || ''}" placeholder="-1001234567890"></div>
+            <div class="overview-field"><label>Slack</label><input id="nt-sl-en-${id}" type="checkbox" ${c.slack_enabled ? 'checked' : ''}></div>
+            <div class="overview-field"><label>Slack Bot Token</label><input id="nt-sl-token-${id}" class="w-md" value="${c.slack_bot_token || ''}" placeholder="xoxb-..."></div>
+            <div class="overview-field"><label>Slack Channel</label><input id="nt-sl-chan-${id}" class="w-md" value="${c.slack_channel || ''}" placeholder="#alerts"></div>
+            <button class="btn btn-sm btn-primary" onclick="saveArmNotify(${id})">Save Notify</button>
+            <button class="btn btn-sm btn-secondary" onclick="testArmNotify(${id})">Test</button>
+        </div>`;
+    }
+
+    function _armNotifyBody(id) {
+        return {
+            telegram_enabled: document.getElementById('nt-tg-en-' + id).checked ? 1 : 0,
+            telegram_bot_token: document.getElementById('nt-tg-token-' + id).value.trim(),
+            telegram_chat_id: document.getElementById('nt-tg-chat-' + id).value.trim(),
+            slack_enabled: document.getElementById('nt-sl-en-' + id).checked ? 1 : 0,
+            slack_bot_token: document.getElementById('nt-sl-token-' + id).value.trim(),
+            slack_channel: document.getElementById('nt-sl-chan-' + id).value.trim(),
+        };
+    }
+
+    async function saveArmNotify(id) {
+        await API.put(`/api/stations/arms/${id}/notify`, _armNotifyBody(id));
+        toast('Notification settings saved');
+        loadAll();
+    }
+
+    async function testArmNotify(id) {
+        await API.put(`/api/stations/arms/${id}/notify`, _armNotifyBody(id));
+        const r = await API.post(`/api/stations/arms/${id}/notify/test`, {});
+        toast(r.success ? 'Test sent — check your channel/chat' : (r.error || 'Test failed'), r.success ? 'success' : 'error');
     }
 
     async function scanCameras() {

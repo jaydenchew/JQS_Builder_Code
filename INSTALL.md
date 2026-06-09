@@ -394,6 +394,35 @@ That's it. Next transaction on that station will call `power_off(plug01)` at the
 
 ---
 
+## Step 8.6: Stall notifications — Slack / Telegram (optional)
+
+Skip this step if you only need the PAS callback. When enabled, every stall (PAS `status=4`) also pushes an alert — with arm, process_id, amount, pay-from/to bank, pay-to account no/name, status, and the stall screenshot — to Slack and/or Telegram. Configured **independently per arm**, so different machines/arms can alert different teams. Sends are fire-and-forget: a notification failure never affects the PAS callback or the arm (see DD-033).
+
+### 8.6.1 Get your tokens
+
+**Telegram:**
+1. Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the **bot token** (`123456:ABC-...`).
+2. Add the bot to your group/channel.
+3. Get the numeric **chat id** (e.g. `-1001234567890`) — easiest via [@userinfobot] or `https://api.telegram.org/bot<token>/getUpdates` after sending a message in the chat.
+
+**Slack:**
+1. Create an app at [api.slack.com/apps](https://api.slack.com/apps) → **OAuth & Permissions** → add bot scopes `chat:write` and `files:write`.
+2. Install to workspace → copy the **Bot User OAuth Token** (`xoxb-...`).
+3. **Invite the bot into the target channel** (`/invite @yourbot`), otherwise posts fail.
+
+### 8.6.2 Configure in the UI
+
+`/settings` → expand the arm → **Stall Notifications (Slack / Telegram)**:
+
+- Telegram: check the box, paste **TG Bot Token** + **TG Chat ID**.
+- Slack: check the box, paste **Slack Bot Token** + **Slack Channel** (`#alerts`).
+- Either or both providers can be enabled.
+- **Save Notify** to persist, **Test** to send a sample alert immediately.
+
+No restart needed — the worker reads the config from DB at stall time. Tokens are stored in the DB (localhost-only); they are plaintext, like the other credentials this system already holds.
+
+---
+
 ## Step 9: Calibrate each station
 
 Every station needs a one-time calibration mapping camera pixels to arm coordinates. This uses the 50x50mm fiducial calibration card shipped with the arm.

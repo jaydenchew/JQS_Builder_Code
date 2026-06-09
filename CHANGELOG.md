@@ -1,5 +1,43 @@
 # Changelog
 
+## feat(notify): per-arm Slack/Telegram stall notifications (2026-06-08)
+
+When a transaction stalls (PAS callback status=4), WA now also pushes an alert to Slack and/or Telegram, configured independently per arm in Settings. The notification carries arm, process_id, amount, pay-from/to bank, pay-to account no/name, status, and the stall screenshot. Sends are fire-and-forget — a notification failure can never affect the transaction flow or the PAS callback.
+
+1. **`db/schema.sql`** — new `arm_notify_configs` table (1:1 with `arms`, `arm_id` UNIQUE + `ON DELETE CASCADE`). Columns: `slack_enabled` / `slack_bot_token` / `slack_channel`, `telegram_enabled` / `telegram_bot_token` / `telegram_chat_id`. Either or both providers can be enabled per arm.
+2. **`app/notify.py`** (new) — single reused `httpx.AsyncClient` (like `pas_client`). `dispatch(cfg, info, image_b64)` sends to whichever providers are enabled and returns a per-provider result map; each send is wrapped so it never raises. `fire(coro)` schedules a send as a detached `asyncio` background task (references held in a module set) so the caller never waits on network I/O. Telegram: `sendPhoto` with HTML caption (or `sendMessage` if no image). Slack: `chat.postMessage` for text (the response resolves the `#channel` name to a channel ID), then the v2 file-upload flow (`getUploadURLExternal` → PUT bytes → `completeUploadExternal`) to attach the screenshot.
+3. **`app/arm_worker.py`** — in the stall branch, right after the PAS callback, looks up `arm_notify_configs` for the arm and fires `notify.fire(notify.dispatch(...))` with the transaction fields + stall screenshot (`receipt_b64`). The network sends run in the background (not awaited) so a slow/unreachable Slack/Telegram cannot delay the worker or the next task; only the local config `SELECT` is awaited. Whole block wrapped in try/except.
+4. **`app/routers/stations.py`** — `GET /api/stations/arms-notify` (all configs), `GET/PUT /api/stations/arms/{id}/notify` (read/upsert), `POST /api/stations/arms/{id}/notify/test` (send a test alert).
+5. **`static/settings.html`** — each arm card gains a "Stall Notifications (Slack / Telegram)" block with token/channel/chat fields, enable checkboxes, and Save / Test buttons.
+6. **`app/main.py`** — `await notify.close_client()` on shutdown.
+
+### Deploy
+
+```sql
+CREATE TABLE IF NOT EXISTS arm_notify_configs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    arm_id INT NOT NULL UNIQUE,
+    slack_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    slack_bot_token VARCHAR(255) NULL,
+    slack_channel VARCHAR(100) NULL,
+    telegram_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    telegram_bot_token VARCHAR(255) NULL,
+    telegram_chat_id VARCHAR(100) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+```
+
+Restart WA Unified to load the new code.
+
+### Provider setup notes
+
+- **Telegram**: create a bot via @BotFather → bot token; add the bot to the group/channel; get the numeric chat id (e.g. `-1001234567890`).
+- **Slack**: create an app with a bot token (`xoxb-...`) and scopes `chat:write` + `files:write`; invite the bot into the target channel; enter the channel as `#name`.
+
+---
+
 ## feat(reports): transaction retry chaining + dedup view + pagination + process ID search (2026-05-21)
 
 Automatically links retry transactions so reports can show deduplicated counts.

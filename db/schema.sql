@@ -25,6 +25,21 @@ CREATE TABLE IF NOT EXISTS arms (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- arm_notify_configs (per-arm Slack/Telegram stall notifications)
+CREATE TABLE IF NOT EXISTS arm_notify_configs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    arm_id INT NOT NULL UNIQUE,
+    slack_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    slack_bot_token VARCHAR(255) NULL COMMENT 'Slack bot token xoxb-...',
+    slack_channel VARCHAR(100) NULL COMMENT 'Slack channel name or ID, e.g. #alerts',
+    telegram_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    telegram_bot_token VARCHAR(255) NULL COMMENT 'Telegram bot token',
+    telegram_chat_id VARCHAR(100) NULL COMMENT 'Telegram chat id, e.g. -1001234567890',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 -- stations
 CREATE TABLE IF NOT EXISTS stations (
     id INT PRIMARY KEY AUTO_INCREMENT,

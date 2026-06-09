@@ -31,7 +31,7 @@
 │ │ LogHandler   │ │ LogHandler   │ │ LogHandler   │         │
 │ └──────────────┘ └──────────────┘ └──────────────┘         │
 ├─────────────────────────────────────────────────────────────┤
-│ MySQL (wa-unified-mysql:3308) — 14 张表                      │
+│ MySQL (wa-unified-mysql:3308) — 15 张表                      │
 ├─────────────────────────────────────────────────────────────┤
 │ Mosquitto MQTT (wa-mosquitto:1883, LAN-only)                 │
 │   ↕ app/smart_plug.py (paho-mqtt)                            │
@@ -39,16 +39,17 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 数据库 (14 张表)
+## 数据库 (15 张表)
 
 ```
 arms ──< stations ──< phones
-              │──< bank_apps
-              │──< ui_elements
-              │──< keymaps
-              │──< swipe_actions
-              │──< keyboard_configs
-              │──< calibrations
+  │           │──< bank_apps
+  │           │──< ui_elements
+  │           │──< keymaps
+  │           │──< swipe_actions
+  │           │──< keyboard_configs
+  │           │──< calibrations
+  └──< arm_notify_configs (1:1, ON DELETE CASCADE)
 
 flow_templates (arm_id) ──< flow_steps
 
@@ -62,6 +63,7 @@ bank_name_mappings (独立)
 | 表 | 关键设计 |
 |---|---------|
 | `arms` | `camera_id`, `active` (worker 是否启动), `status` (idle/busy/offline) |
+| `arm_notify_configs` | 每个 arm 独立的 Slack/Telegram stall 通知配置（1:1，`arm_id` UNIQUE + ON DELETE CASCADE）；可单开或同开两个渠道 |
 | `stations` | `id AUTO_INCREMENT`; `stall_photo_x/y` — stall 时 arm 移动到此位置拍摄手机全屏截图；`plug_client_id` + `plug_enabled` — 可选智能插座（充电断电），见"模块交互/Smart plug 充电断电" |
 | `transactions` | `status` ENUM 含 `stall`; `superseded_by INT NULL` — 被 retry 取代的 tx 指向链尾 tx id，dedup 报表排除 |
 | `flow_templates` | `arm_id` 绑定到特定机器；`transfer_type` (SAME/INTER/NULL) |
@@ -99,6 +101,7 @@ PAS → POST /process-withdrawal
        │    └→ CHECK_SCREEN: arm.move → camera.capture → screen_checker.compare → trigger 判断 (on_mismatch=必看到才 ok / on_match=必消失才 ok) → 不达期望则跑 handler+retry (executor)
        │
        ├→ 根据结果决定 PAS callback status
+       ├→ (stall 时) 查 arm_notify_configs → notify.dispatch() 发 Slack/Telegram（fire-and-forget，失败只记日志）
        ├→ close_port（摄像头保持打开，不关闭）
        ├→ finally: (可选) smart_plug.power_on(plug_id)  ← 无论成功/stall/cancel 都恢复通电
        └→ 下一笔任务
@@ -218,7 +221,7 @@ Builder_JQS_Code/
 ├── ARCHITECTURE_PLAN.md       本文档
 │
 ├── db/
-│   ├── schema.sql             14 张表 DDL
+│   ├── schema.sql             15 张表 DDL
 │   ├── seed.sql               从 builder-mysql 导出的真实数据
 │   ├── run_sql.py             SQL 执行工具
 │   └── export_seed.py         导出当前 DB 配置数据到 seed.sql
@@ -242,12 +245,13 @@ Builder_JQS_Code/
 │   ├── ocr.py                 可配置 OCR (字段可选 + receipt status)
 │   ├── (stall_detector.py 已删除 — 零调用，stall 由 arm_worker OCR 分支处理)
 │   ├── pas_client.py          PAS HTTP 回调
+│   ├── notify.py              Slack/Telegram stall 通知 (per-arm, fire-and-forget)
 │   ├── calibration.py         标定 (async, DB-backed, 缓存)
 │   │
 │   └── routers/
 │       ├── withdrawal.py      WA API (接收任务, arm 可用性检查)
 │       ├── monitor.py         监控 API + WebSocket (status/logs/control)
-│       ├── stations.py        CRUD: arms (auto add_worker), stations, phones
+│       ├── stations.py        CRUD: arms (auto add_worker), stations, phones, arm_notify_configs (Slack/TG)
 │       ├── banks.py           CRUD: templates (arm_id, copy), apps, mappings
 │       ├── flows.py           CRUD: flow_steps (reorder)
 │       ├── coordinates.py     CRUD: ui_elements, keymaps, swipes, keyboards
@@ -260,7 +264,7 @@ Builder_JQS_Code/
 │   ├── index.html             Dashboard (机器卡片 + Live Logs + WebSocket)
 │   ├── recorder.html          Flow Builder (arm 选择 + 标定 + OCR 配置)
 │   ├── transactions.html      交易列表 + 详情 + 日志 + 截图
-│   ├── settings.html          Arms/Stations/Phones/BankApps 管理
+│   ├── settings.html          Arms/Stations/Phones/BankApps 管理 + 每 arm Slack/TG stall 通知
 │   ├── css/style.css
 │   └── js/api.js              API client + 导航栏
 │

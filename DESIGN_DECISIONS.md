@@ -555,3 +555,19 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 **Alternative considered**: Return both raw and deduped counts in the same response (dual fields). Rejected — doubles the response schema complexity and every consumer needs updating. The `?dedup=1` approach changes zero response fields; the same JSON shape, just filtered differently.
 
 **Files**: `app/routers/monitor.py` (`dedup` param on 3 endpoints), `static/reports.html` (Deduped toggle button).
+
+---
+
+## DD-033: Stall Notifications Are Per-Arm, Stored in DB, and Fire-and-Forget
+
+**What**: Slack/Telegram stall alerts are configured independently per arm in a dedicated `arm_notify_configs` table (1:1 with `arms`), not in `.env` and not as extra columns on `arms`. Each arm may enable Slack, Telegram, both, or neither. Sending happens after the PAS callback in the stall branch and is wrapped so it can never raise into the transaction flow.
+
+**Why a separate table, not `.env`**: Tokens/channels differ per machine *and* per arm, and operators must edit them from the Settings UI without touching files or restarting. `.env` is process-global and not editable from the UI. A separate table (vs. ~6 nullable columns on `arms`) keeps the hot `SELECT * FROM arms` path lean and groups all notification state in one place. `ON DELETE CASCADE` means deleting an arm cleans up its config automatically — no change needed in `delete_arm`.
+
+**Why fire-and-forget AND backgrounded**: A stall is already a degraded state; the only guaranteed-critical action is the PAS callback. A Slack/Telegram outage, bad token, or removed bot must not delay or block the callback, the arm cleanup, or the next task. Two layers ensure this: (1) `notify.dispatch()` swallows every exception and only logs — no retry (unlike PAS), because a missed alert is operationally harmless; (2) the worker schedules it via `notify.fire()` (an `asyncio` background task) and does **not** `await` the network sends, so even if Slack/Telegram hangs for the full per-request timeout (30s, up to ~4 calls for Slack), the worker returns to `idle` and picks up the next task immediately. The only awaited part is the local config `SELECT` (sub-100ms, 15s hang-protected like every other DB call). Background task references are held in a module-level set so they are not GC'd mid-flight.
+
+**Why post-then-upload for Slack**: Slack's file-upload v2 API needs a channel *ID*, but operators enter a `#channel` *name*. Posting the text via `chat.postMessage` first resolves the name to an ID (returned in the response), which is then reused for the image upload — avoiding a separate `conversations.list` lookup. Telegram has no such issue: `sendPhoto` takes the chat id and caption in one call.
+
+**Tradeoff accepted**: Tokens are stored in plaintext in the DB. Acceptable because the DB is localhost-only and the same DB already holds bank PINs/passwords; per-arm, UI-editable config has no simpler secure option in this single-host deployment.
+
+**Files**: `db/schema.sql` (`arm_notify_configs`), `app/notify.py`, `app/arm_worker.py` (stall branch), `app/routers/stations.py` (notify endpoints), `static/settings.html` (per-arm notification block).

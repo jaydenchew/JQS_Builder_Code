@@ -47,9 +47,10 @@ This is a physical RPA system — mechanical arms tapping on real phones to do b
 | Core execution | `app/arm_worker.py`, `app/actions.py` |
 | Worker lifecycle | `app/worker_manager.py` |
 | PAS integration | `app/routers/withdrawal.py`, `app/pas_client.py` |
+| Stall notifications | `app/notify.py` (per-arm Slack/Telegram), `app/routers/stations.py` |
 | Camera | `app/camera.py` (capture_fresh = reopen camera) |
 | Keyboard typing | `app/keyboard_engine.py`, `app/actions.py` (CHAR_ALIASES) |
 | OCR | `app/ocr.py`, `app/screen_checker.py` |
 | Builder UI | `static/recorder.html` |
 | Dashboard | `static/index.html` |
-| Database | `db/schema.sql` (14 tables) |
+| Database | `db/schema.sql` (15 tables) |
