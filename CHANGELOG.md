@@ -1,5 +1,22 @@
 # Changelog
 
+## change(retry): link retry chains by PAS `ref_process_id` instead of fuzzy matching (2026-06-10)
+
+PAS now sends `ref_process_id` on every retry — always the **original (first)** stall's process_id, regardless of how many retries (101 stalls → 102 ref=101 → 103 ref=101). This replaces the old recipient+amount+15-minute fuzzy match, removing its false-positive risk and time-window guesswork.
+
+1. **`app/models.py`** — `WithdrawalRequest` gains optional `ref_process_id`. Backward compatible (defaults to `None`; first-time withdrawals omit it).
+2. **`app/routers/withdrawal.py`** — `_link_retry_chain()` rewritten: looks up the root tx by `process_id = ref_process_id`, follows its `superseded_by` pointer to the current chain tail, then re-points the tail + everyone pointing at it to the new tx. Still called from all 3 INSERT paths, still wrapped in try/except. Old fuzzy `SELECT` (recipient+amount+15min) removed.
+3. **Docs** — DD-031 marked superseded by new **DD-034**; `API_SPEC.md` request table + dedup note updated.
+
+### Unchanged
+- `transactions.superseded_by` column/index, the `?dedup=1` report filter (`monitor.py`), and the Transactions "Show retries" UI all keep working — only *how* `superseded_by` is set changed.
+- No DB schema change, no PAS status guard (PAS only retries stall/failed).
+
+### Deploy
+Overwrite `app/models.py` + `app/routers/withdrawal.py`, restart WA Unified. No SQL needed.
+
+---
+
 ## feat(notify): per-arm Slack/Telegram stall notifications (2026-06-08)
 
 When a transaction stalls (PAS callback status=4), WA now also pushes an alert to Slack and/or Telegram, configured independently per arm in Settings. The notification carries arm, process_id, amount, pay-from/to bank, pay-to account no/name, status, and the stall screenshot. Sends are fire-and-forget — a notification failure can never affect the transaction flow or the PAS callback.

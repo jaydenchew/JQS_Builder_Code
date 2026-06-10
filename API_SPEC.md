@@ -34,6 +34,7 @@ Content-Type: application/json
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `process_id` | Integer | Yes | Unique withdrawal process ID (assigned by PAS) |
+| `ref_process_id` | Integer | No | On a retry, the process_id of the **original (first)** stall transaction this retry replaces. Always the first stall's id, even across multiple retries (e.g. 101 stalls → 102 carries `ref_process_id=101` → 103 also carries `ref_process_id=101`). WA uses it to link the retry chain so the deduped report counts only the latest attempt. Omit on a first-time (non-retry) withdrawal. |
 | `currency_code` | String | Yes | Currency: `USD`, `KHR`, etc. |
 | `amount` | Float | Yes | Transfer amount (must be > 0) |
 | `pay_from_bank_code` | String | Yes | Source bank code (e.g., `ABA`, `ACLEDA`, `WINGBANK`) |
@@ -192,7 +193,7 @@ Uses the same headers as withdrawal endpoints:
 - Only final operational statuses are included in totals: `success`, `failed`, `stall`.
 - `queued`, `running`, and `review` are excluded from this export.
 - Results are grouped by arm, then by source bank (`pay_from_bank_code`).
-- When `dedup=1`, transactions whose `superseded_by IS NOT NULL` are excluded. These are stall/failed transactions that were retried within 15 minutes with the same recipient and amount. The retry chain's final transaction (chain tail) is always counted.
+- When `dedup=1`, transactions whose `superseded_by IS NOT NULL` are excluded. These are stall/failed transactions that were retried — linked via the `ref_process_id` PAS sends on each retry (the original stall's process_id). The retry chain's final transaction (chain tail) is always counted.
 
 ### Response
 

@@ -532,7 +532,9 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 
 ---
 
-## DD-031: Retry Chain Detection Uses Recipient + Amount Only (Not Source Account)
+## DD-031: Retry Chain Detection Uses Recipient + Amount Only (Not Source Account) (Superseded by DD-034)
+
+**Status**: Superseded — PAS now sends `ref_process_id` explicitly, so fuzzy recipient+amount+time matching is no longer used. See DD-034.
 
 **What**: `_link_retry_chain()` matches transactions by `pay_to_bank_code + pay_to_account_no + amount` within a 15-minute window. `pay_from_bank_code`, `pay_from_account_no`, and `station_id` are deliberately excluded from the match condition.
 
@@ -571,3 +573,17 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 **Tradeoff accepted**: Tokens are stored in plaintext in the DB. Acceptable because the DB is localhost-only and the same DB already holds bank PINs/passwords; per-arm, UI-editable config has no simpler secure option in this single-host deployment.
 
 **Files**: `db/schema.sql` (`arm_notify_configs`), `app/notify.py`, `app/arm_worker.py` (stall branch), `app/routers/stations.py` (notify endpoints), `static/settings.html` (per-arm notification block).
+
+---
+
+## DD-034: Retry Chains Are Linked by PAS-Supplied `ref_process_id` (Replaces DD-031)
+
+**What**: PAS now includes `ref_process_id` on every retry — always the process_id of the *original* (first) stall, regardless of how many times it has been retried (e.g. 101 stalls → retry 102 carries ref=101 → retry 103 also carries ref=101). `_link_retry_chain(new_tx_id, ref_process_id)` looks up that root transaction directly and collapses the whole chain onto the newest retry. The old fuzzy match (recipient + amount + 15-minute window) is removed.
+
+**Why**: An explicit identifier from PAS is exact — it eliminates the false-positive risk in DD-031 (two unrelated transfers to the same recipient for the same amount within 15 minutes) and removes the time-window guesswork entirely. PAS only retries `stall`/`failed` transactions (a `success` cannot be retried), so no status guard is needed on our side.
+
+**How the chain collapses with a root-only ref**: Because PAS always sends the *first* process_id, we cannot rely on `superseded_by IS NULL` to find the chain tail (the root is already superseded after the first retry). Instead we read the root's `superseded_by` pointer, which — by invariant — always points at the *current* tail. We then run `UPDATE ... SET superseded_by = new WHERE id = tail OR superseded_by = tail`, re-pointing the tail and every member already pointing at it onto the new tx. Invariant maintained: **every superseded member points directly at the current tail**, so the deduped view always shows exactly one row (the latest retry).
+
+**Unchanged**: the `transactions.superseded_by` column/index, the deduped report filter (`monitor.py`), and the Transactions "Show retries" UI all keep working as-is — only how `superseded_by` gets set has changed.
+
+**Files**: `app/models.py` (`WithdrawalRequest.ref_process_id`), `app/routers/withdrawal.py` (`_link_retry_chain()`).

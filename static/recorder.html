@@ -2832,11 +2832,17 @@ async function testOne(i) {
                             const hUiEls = {};
                             const hUi = await API.get(`/api/coords/ui/${hBankCode}/${S.station}`);
                             (Array.isArray(hUi) ? hUi : []).forEach(e => { hUiEls[e.element_key] = e; });
+                            const hSwipes = {};
+                            const hSw = await API.get(`/api/coords/swipes/${hBankCode}/${S.station}`);
+                            (Array.isArray(hSw) ? hSw : []).forEach(s => { hSwipes[s.swipe_key] = s; });
                             const hSteps = await API.get(`/api/flows/${hId}/steps`);
                             for (const hs of hSteps) {
                                 if (hs.action_type === 'CLICK' || hs.action_type === 'ARM_MOVE') {
                                     const el = hUiEls[hs.ui_element_key] || S.uiEls[hs.ui_element_key];
                                     if (el) await API.post('/api/recorder/test-step', { action_type: hs.action_type, x: el.x, y: el.y, arm_id: getArmId() });
+                                } else if (hs.action_type === 'SWIPE') {
+                                    const sc = hSwipes[hs.swipe_key] || S.swipes[hs.swipe_key];
+                                    if (sc) await API.post('/api/recorder/test-step', { action_type: 'SWIPE', start_x: sc.start_x, start_y: sc.start_y, end_x: sc.end_x, end_y: sc.end_y, arm_id: getArmId() });
                                 }
                                 if (hs.pre_delay_ms > 0) await sleep(hs.pre_delay_ms);
                                 if (hs.post_delay_ms > 0) await sleep(hs.post_delay_ms);
@@ -2962,6 +2968,9 @@ async function testAll() {
                                         const hUiEls = {};
                                         const hUi = await API.get(`/api/coords/ui/${hBankCode}/${S.station}`);
                                         (Array.isArray(hUi) ? hUi : []).forEach(e => { hUiEls[e.element_key] = e; });
+                                        const hSwipes = {};
+                                        const hSw = await API.get(`/api/coords/swipes/${hBankCode}/${S.station}`);
+                                        (Array.isArray(hSw) ? hSw : []).forEach(s => { hSwipes[s.swipe_key] = s; });
                                         // Also check current bank's coords as fallback
                                         const hSteps = await API.get(`/api/flows/${hId}/steps`);
                                         for (const hs of hSteps) {
@@ -2973,6 +2982,15 @@ async function testAll() {
                                                     S.curX = el.x; S.curY = el.y;
                                                 } else {
                                                     addLog(log, `    ${hs.step_name}: no coords found`, 'error');
+                                                }
+                                            } else if (hs.action_type === 'SWIPE') {
+                                                const sc = hSwipes[hs.swipe_key] || S.swipes[hs.swipe_key];
+                                                if (sc) {
+                                                    addLog(log, `    SWIPE ${hs.step_name} (${sc.start_x},${sc.start_y})->(${sc.end_x},${sc.end_y})`, 'info');
+                                                    await API.post('/api/recorder/test-step', { action_type: 'SWIPE', start_x: sc.start_x, start_y: sc.start_y, end_x: sc.end_x, end_y: sc.end_y, arm_id: getArmId() });
+                                                    S.curX = sc.end_x; S.curY = sc.end_y;
+                                                } else {
+                                                    addLog(log, `    ${hs.step_name}: no swipe coords found`, 'error');
                                                 }
                                             }
                                             if (hs.pre_delay_ms > 0) await sleep(hs.pre_delay_ms);

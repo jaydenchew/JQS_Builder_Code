@@ -27,19 +27,29 @@ def _sanitize_account_no(value):
     return _ACCOUNT_NO_STRIP.sub('', str(value))
 
 
-async def _link_retry_chain(new_tx_id, pay_to_bank_code, pay_to_account_no, amount):
-    """Link this tx to a recent stall/failed tx with the same recipient+amount."""
-    pred = await database.fetchone(
-        "SELECT id FROM transactions "
-        "WHERE pay_to_bank_code = %s AND pay_to_account_no = %s AND amount = %s "
-        "AND status IN ('stall', 'failed') AND superseded_by IS NULL "
-        "AND id != %s AND created_at >= NOW() - INTERVAL 15 MINUTE "
-        "ORDER BY created_at DESC LIMIT 1",
-        (pay_to_bank_code, pay_to_account_no, amount, new_tx_id))
-    if pred:
-        await database.execute(
-            "UPDATE transactions SET superseded_by = %s WHERE id = %s OR superseded_by = %s",
-            (new_tx_id, pred["id"], pred["id"]))
+async def _link_retry_chain(new_tx_id, ref_process_id):
+    """Link this tx to the stall it retries, identified by PAS via ref_process_id.
+
+    PAS always sends the *original* (first) stall's process_id as ref_process_id,
+    no matter how many times it retries. We locate that root transaction, follow
+    its superseded_by pointer to the current chain tail, then re-point the tail
+    and every member already pointing at it to this new tx. Invariant: every
+    superseded member points directly at the current tail, so the whole chain
+    collapses onto the latest retry and the deduped view shows only this tx.
+    """
+    if not ref_process_id:
+        return
+    root = await database.fetchone(
+        "SELECT id, superseded_by FROM transactions WHERE process_id = %s",
+        (ref_process_id,))
+    if not root:
+        return
+    tail_id = root["superseded_by"] or root["id"]
+    if tail_id == new_tx_id:
+        return
+    await database.execute(
+        "UPDATE transactions SET superseded_by = %s WHERE id = %s OR superseded_by = %s",
+        (new_tx_id, tail_id, tail_id))
 
 
 @router.post("/process-withdrawal", response_model=StandardResponse, dependencies=[Depends(verify_api_key)])
@@ -78,7 +88,7 @@ async def process_withdrawal(req: WithdrawalRequest):
                 return StandardResponse(status=False, message="Duplicate process_id")
             raise
         try:
-            await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+            await _link_retry_chain(new_tx_id, req.ref_process_id)
         except Exception:
             logger.warning("retry chain link failed for tx %d", new_tx_id)
         return StandardResponse(status=False, message="Bank app not found for given bank_code + account_no")
@@ -103,7 +113,7 @@ async def process_withdrawal(req: WithdrawalRequest):
                 return StandardResponse(status=False, message="Duplicate process_id")
             raise
         try:
-            await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+            await _link_retry_chain(new_tx_id, req.ref_process_id)
         except Exception:
             logger.warning("retry chain link failed for tx %d", new_tx_id)
         return StandardResponse(status=False, message="Assigned arm is offline or inactive")
@@ -125,7 +135,7 @@ async def process_withdrawal(req: WithdrawalRequest):
         raise
 
     try:
-        await _link_retry_chain(new_tx_id, req.pay_to_bank_code, req.pay_to_account_no, req.amount)
+        await _link_retry_chain(new_tx_id, req.ref_process_id)
     except Exception:
         logger.warning("retry chain link failed for tx %d", new_tx_id)
 

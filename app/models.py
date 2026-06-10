@@ -7,6 +7,7 @@ from typing import Optional
 
 class WithdrawalRequest(BaseModel):
     process_id: int
+    ref_process_id: Optional[int] = Field(default=None, description="process_id of the original (first) stall transaction this is a retry of")
     currency_code: str
     amount: float = Field(gt=0, description="Transfer amount, must be positive")
     pay_from_bank_code: str

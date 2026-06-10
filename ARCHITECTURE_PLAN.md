@@ -81,7 +81,7 @@ PAS → POST /process-withdrawal
   ├→ 查 stations → 得到 arm_id
   ├→ 检查 arm active + status
   ├→ INSERT transactions (status='queued')
-  ├→ _link_retry_chain(): 15min 内同 pay_to+amount 的 stall/failed → 设 superseded_by
+  ├→ _link_retry_chain(): 按 PAS 传入的 ref_process_id(原始首笔)定位重试链 → 设 superseded_by
   │
   └→ ArmWorker 轮询发现新任务
        │
