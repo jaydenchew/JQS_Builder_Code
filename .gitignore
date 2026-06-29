@@ -43,6 +43,8 @@ env/
 
 # Claude / Agent 本地
 .claude/
+.codegraph/
+CLAUDE-FABLE-5.md
 
 # IDE
 .vscode/
@@ -59,6 +61,9 @@ test_output/
 
 # 临时调试工具脚本（per-machine debug helpers）
 tools/
+
+#installpackage
+JQS_install_package/
 
 # OS
 Thumbs.db

@@ -352,7 +352,7 @@ Publish topic:      GemeOpen/<client-id>/pub
 
 Open the plug's vendor App on your phone, scan the new plug into the same Wi-Fi network this machine is on, then enter the values above into the plug's MQTT settings. **Each plug needs a unique Client ID** (`plug01`, `plug02`, ...).
 
-> The vendor App labels the subscribe / publish topics in a way that looks reversed compared to MQTT convention. **Copy the strings shown in the banner verbatim** — do not try to swap them. This is documented in `.agent/plans/SMART_PLUG_SPEC.md`.
+> The vendor App labels the subscribe / publish topics in a way that looks reversed compared to MQTT convention. **Copy the strings shown in the banner verbatim** — do not try to swap them. This is documented in `SMART_PLUG_SPEC.md`.
 
 ### 8.5.3 Verify the plug responds
 
@@ -660,5 +660,5 @@ Each file is idempotent (deletes existing rows for that source bank then reinser
 - Cloudflare tunnel -> `deploy\logs\` (via NSSM) or `services.msc` -> CF-Tunnel -> "Recent events"
 - WCF arm service (JxbService) -> Windows Event Viewer -> Application log
 - MySQL -> `docker logs wa-unified-mysql`
-- Algorithm decisions -> `DESIGN_DECISIONS.md` (DD-001 through DD-023)
+- Algorithm decisions -> `DESIGN_DECISIONS.md` (DD-001 through DD-034)
 - Feature history -> `CHANGELOG.md`

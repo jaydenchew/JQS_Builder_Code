@@ -1,5 +1,31 @@
 # Changelog
 
+## perf(ocr): reorder tesseract methods by hit-frequency (psm6-first) to cut OCR latency ~32% (2026-06-29)
+
+### Problem
+
+`_ocr_field` tried six preprocessing methods (`inverted`, `adapt_inv`, `otsu_inv`, `direct`, `adapt_direct`, `otsu_direct`) each at psm 6 then psm 7, but the nesting was method-outer / psm-inner — so most fields paid for several `(method, psm)` attempts before reaching the variant that actually matches. Against 30-day production data, psm6 wins almost all matches, yet the old order spent attempts on psm7 variants of early methods before getting to psm6 of later ones. Average attempts per field ran ~2.6.
+
+### What changed
+
+`app/ocr.py` `_ocr_field` now drives a single flat `trial_order` list instead of nested `for proc / for psm` loops:
+
+1. The six preprocessed images are built once into a `proc_by_name` dict keyed by name (`inverted`, `adapt_inv`, `otsu_inv`, `direct`, `adapt_direct`, `otsu_direct`).
+2. `trial_order` lists all 12 `(method, psm)` attempts explicitly: every method at **psm6 first** in descending observed-success order, then the same six at psm7. The *set* of attempts is identical to before — only the order changes — so worst-case behaviour (no match → EasyOCR fallback) is unchanged, but most fields now match far earlier (avg ~2.6 tries → ~1.4).
+3. A `bordered_cache` dict memoises the `copyMakeBorder` result per method, so a method reused across psm6/psm7 only pays the border cost once.
+4. `method_name` is now built straight from the trial's `name` (`"%s_psm%d"`) instead of indexing into `METHOD_NAMES`.
+
+### Files
+
+- `app/ocr.py` — `_ocr_field` rewritten (~13 net lines): `methods` list → `proc_by_name` dict + `trial_order`, flat loop with `bordered_cache`.
+
+### Compatibility
+
+- No DB / API / contract change. Same six preprocessing methods, same two psm values, same EasyOCR fallback — purely a re-ordering plus border-cache optimisation.
+- `_done(...)` still receives the same `method_name` / `attempts` semantics; the `best_text` / `best_method` near-miss bookkeeping is preserved.
+
+---
+
 ## change(retry): link retry chains by PAS `ref_process_id` instead of fuzzy matching (2026-06-10)
 
 PAS now sends `ref_process_id` on every retry — always the **original (first)** stall's process_id, regardless of how many retries (101 stalls → 102 ref=101 → 103 ref=101). This replaces the old recipient+amount+15-minute fuzzy match, removing its false-positive risk and time-window guesswork.
@@ -52,6 +78,65 @@ Restart WA Unified to load the new code.
 
 - **Telegram**: create a bot via @BotFather → bot token; add the bot to the group/channel; get the numeric chat id (e.g. `-1001234567890`).
 - **Slack**: create an app with a bot token (`xoxb-...`) and scopes `chat:write` + `files:write`; invite the bot into the target channel; enter the channel as `#name`.
+
+---
+
+## fix(deploy): open MQTT 1883 firewall rule on all profiles (2026-06-01)
+
+### Problem
+
+The 2026-05-12 smart-plug rollout added a Windows Firewall rule opening TCP 1883 inbound, but scoped it to the `private,domain` profiles. On hosts whose Wi-Fi network is classified by Windows as **Public**, that rule doesn't apply — the mosquitto broker listens on `0.0.0.0:1883` but the LAN-side plug is silently blocked from reaching it, so plug control just doesn't work with no obvious error.
+
+### What changed
+
+`deploy/install_service.bat` drops the `profile=private,domain` restriction from the `netsh advfirewall firewall add rule` call so TCP 1883 is allowed inbound regardless of the network category. The delete-then-add idempotency and the WARNING-on-failure fallback are unchanged; the echo line is updated from `(TCP 1883, Private+Domain)` to `(TCP 1883, all profiles)`.
+
+### Files
+
+- `deploy/install_service.bat` — 2 lines changed (echo text + the `add rule` line; `profile=private,domain` removed).
+
+### Compatibility
+
+- Additive in effect — it widens an existing rule, never narrows it. Hosts on Private/Domain networks behave exactly as before; Public-network hosts now also reach the broker.
+- Re-running the installer deletes the old narrower rule and re-adds the all-profiles one (idempotent), so existing deployments self-correct on next install.
+
+### Verification
+
+`netsh advfirewall firewall show rule name="Mosquitto MQTT 1883"` lists the rule with `Profiles: Domain,Private,Public` (or `Any`) and `Enabled: Yes`.
+
+---
+
+## feat(builder): one-click import of flow & bank-mapping seeds (2026-06-01)
+
+### Problem
+
+Bringing up a flow or bank-name mappings for a new arm/bank meant running `db/import_bank_seed.py` (or hand-applying `seed_bank_*.sql`) from a shell — operators working in the Recorder UI had no in-app path, and the seed-application detail (`{ARM_NAME}` substitution, multi-statement scripts, keeping existing coordinates) was easy to get wrong by hand.
+
+### What changed
+
+A new `/api/seeds` router discovers and applies the bundled SQL seeds from `db/`, wired to two "Import Seed" buttons in the Recorder UI.
+
+1. **`app/routers/seeds.py`** (new, ~126 lines) — discovers `seed_bank_<CODE>.sql` (flows) and `seed_bank_name_mappings_<CODE>.sql` (mappings) in `db/` via two regexes (the flow regex uses a negative lookahead so `seed_bank_name_mappings_*.sql` is *not* matched as a flow). Endpoints:
+   - `GET /api/seeds/flows` / `GET /api/seeds/mappings` — list available seed codes.
+   - `POST /api/seeds/flows/apply` — takes `{seed, arm_id}`, looks up the arm name, requires the seed to contain an `{ARM_NAME}` placeholder, substitutes it (single-quote-escaped), and runs the script.
+   - `POST /api/seeds/mappings/apply` — takes `{seed}` and runs the mapping script (no placeholder).
+   Seeds are idempotent (DELETE + INSERT). Scripts run on a short-lived dedicated `aiomysql` connection with `CLIENT.MULTI_STATEMENTS` (10s connect timeout, autocommit) so they don't borrow from the shared app pool and cannot disturb running workers. Coordinates (`ui_elements` / `swipe_actions` / keymaps) are matched to flow steps by name and are not touched by seeds, so re-importing keeps existing coordinates.
+2. **`app/main.py`** — imports and `include_router`s the new `seeds` router.
+3. **`static/recorder.html`** — two "Import Seed" buttons + their handlers:
+   - Toolbar button → `importSeed()`: requires a selected arm, lists flow seeds, prompts for a bank code, POSTs to `/api/seeds/flows/apply`, then reloads templates. Warns that import REPLACES the existing flow for that bank on that arm (coordinates kept).
+   - Mappings tab button → `importMappingSeed()`: lists mapping seeds, prompts for a from-bank code, POSTs to `/api/seeds/mappings/apply`, then reloads mappings. Warns that import REPLACES all existing mappings for that from-bank.
+
+### Files
+
+- `app/routers/seeds.py` — NEW (~126 lines).
+- `app/main.py` — +2 lines (router import + `include_router`).
+- `static/recorder.html` — +2 buttons, +`importSeed()` / +`importMappingSeed()` handlers (~60 net lines).
+
+### Compatibility
+
+- Purely additive. No DB schema change, no change to existing endpoints, and no change to the worker/transaction path.
+- The CLI workflow (`db/import_bank_seed.py`) still works; this just adds an in-UI path that uses the same seed files.
+- Apply errors are returned as `{"error": ...}` (unknown seed, missing arm, missing `{ARM_NAME}`, or a failed script) rather than raised, so a bad import surfaces a toast instead of a 500.
 
 ---
 

@@ -192,7 +192,7 @@ The smart plug feature uses Eclipse Mosquitto running as the `wa-mosquitto` Dock
 
 ### What `install_service.bat` configures automatically
 
-- Opens **TCP 1883** in Windows Firewall for `Private+Domain` profiles. Without this rule the container listens but LAN-side plugs are silently blocked at the host edge. Idempotent — re-running the installer just re-creates the rule.
+- Opens **TCP 1883** in Windows Firewall for **all profiles**. Without this rule the container listens but LAN-side plugs are silently blocked at the host edge. Idempotent — re-running the installer just re-creates the rule.
 - To verify: `netsh advfirewall firewall show rule name="Mosquitto MQTT 1883"`.
 - To remove: `netsh advfirewall firewall delete rule name="Mosquitto MQTT 1883"`.
 
@@ -232,7 +232,7 @@ Invoke-RestMethod /api/monitor/services
 # Look for the smart_plug entry — online: true means MQTT connected
 ```
 
-Full design / wire format / topic conventions: `.agent/plans/SMART_PLUG_SPEC.md`.
+Full design / wire format / topic conventions: `SMART_PLUG_SPEC.md`.
 
 ## 5. Troubleshooting
 

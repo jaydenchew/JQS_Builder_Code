@@ -13,7 +13,7 @@ This is a physical RPA system — mechanical arms tapping on real phones to do b
 
 1. **`BUSINESS_CONTEXT.md`** — What the system does, why it exists, PAS protocol, transfer types, physical deployment, operations guide. **Read this first.**
 
-2. **`DESIGN_DECISIONS.md`** — 14 Architecture Decision Records explaining choices that may look like bugs but are intentional. **Read before flagging anything as a bug.**
+2. **`DESIGN_DECISIONS.md`** — 34 Architecture Decision Records explaining choices that may look like bugs but are intentional. **Read before flagging anything as a bug.**
 
 3. **`ARCHITECTURE_PLAN.md`** — Technical architecture: execution flow, camera design, UI element coordinates, stall handling, non-blocking model, PAS callbacks.
 
@@ -54,3 +54,5 @@ This is a physical RPA system — mechanical arms tapping on real phones to do b
 | Builder UI | `static/recorder.html` |
 | Dashboard | `static/index.html` |
 | Database | `db/schema.sql` (15 tables) |
+
+> See also: `DOCS_MAP.md` — the doc-ownership / which-doc-to-update map (which file to edit when a given thing changes).

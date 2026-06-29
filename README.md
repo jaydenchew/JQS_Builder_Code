@@ -241,10 +241,10 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | `README.md` | This file — installation and quick reference |
 | `ARCHITECTURE_PLAN.md` | Technical architecture, module interactions, camera design |
 | `BUSINESS_CONTEXT.md` | Business context, PAS protocol, operations guide |
-| `DESIGN_DECISIONS.md` | 14 ADRs — why things are built the way they are |
+| `DESIGN_DECISIONS.md` | 34 ADRs — why things are built the way they are |
 | `CHANGELOG.md` | All changes with dates |
-| `AUDIT_REPORT_7.md` | Latest code audit report |
-| `.agent/plans/SMART_PLUG_SPEC.md` | Smart plug (GeekOpen) integration — MQTT topics, wire format, design notes |
+| `SMART_PLUG_SPEC.md` | Smart plug (GeekOpen) integration — MQTT topics, wire format, design notes |
+| `DOCS_MAP.md` | 文档维护地图 / which-doc-to-update map |
 
 ## File Structure
 
@@ -259,7 +259,6 @@ Builder_JQS_Code/
 ├── BUSINESS_CONTEXT.md     Business context & operations
 ├── DESIGN_DECISIONS.md     Architecture Decision Records
 ├── CHANGELOG.md            Change history
-├── AUDIT_REPORT_7.md       Latest audit report
 ├── arm_service/            Arm WCF Windows Service
 ├── deploy/                 NSSM service scripts + tools
 ├── db/                     Schema + seed + export script

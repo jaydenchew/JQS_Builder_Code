@@ -442,4 +442,4 @@ LAN 上的 GeekOpen 智能插座（每个有独立 client_id, 如 plug01/02）
 - **运维端点：** `GET /api/monitor/mqtt-broker`（自动检测本机 LAN IP，给 Settings 页面横幅显示）、`POST /api/monitor/plug-test/{client_id}/{on|off}`（无 worker 介入直接测试）、`GET /api/monitor/plug-status`（失败计数器）。
 - **失败模型：** 见 DD-029（非阻塞失败设计）、DD-030（用 client_id 而不是 MAC 作为身份）。
 
-完整规范、消息格式细节、调试历史：`.agent/plans/SMART_PLUG_SPEC.md`。
+完整规范、消息格式细节、调试历史：`SMART_PLUG_SPEC.md`。
