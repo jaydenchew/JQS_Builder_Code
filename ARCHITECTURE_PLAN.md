@@ -31,7 +31,7 @@
 │ │ LogHandler   │ │ LogHandler   │ │ LogHandler   │         │
 │ └──────────────┘ └──────────────┘ └──────────────┘         │
 ├─────────────────────────────────────────────────────────────┤
-│ MySQL (wa-unified-mysql:3308) — 15 张表                      │
+│ MySQL (wa-unified-mysql:3308) — 18 张表                      │
 ├─────────────────────────────────────────────────────────────┤
 │ Mosquitto MQTT (wa-mosquitto:1883, LAN-only)                 │
 │   ↕ app/smart_plug.py (paho-mqtt)                            │
@@ -39,7 +39,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 数据库 (15 张表)
+## 数据库 (18 张表)
 
 ```
 arms ──< stations ──< phones
@@ -49,13 +49,16 @@ arms ──< stations ──< phones
   │           │──< swipe_actions
   │           │──< keyboard_configs
   │           │──< calibrations
-  └──< arm_notify_configs (1:1, ON DELETE CASCADE)
+  │──< arm_notify_configs (1:1, ON DELETE CASCADE)
+  └──< arm_maintenance_configs (1:1, ON DELETE CASCADE)
 
 flow_templates (arm_id) ──< flow_steps
 
 transactions ──< transaction_logs
 
 bank_name_mappings (独立)
+balance_checks (独立 — 夜间余额巡检结果，故意不挂 transactions)
+report_threads (独立 — 每天每渠道一条日报 thread 引用)
 ```
 
 ### 关键字段
@@ -66,7 +69,10 @@ bank_name_mappings (独立)
 | `arm_notify_configs` | 每个 arm 独立的 Slack/Telegram stall 通知配置（1:1，`arm_id` UNIQUE + ON DELETE CASCADE）；可单开或同开两个渠道 |
 | `stations` | `id AUTO_INCREMENT`; `stall_photo_x/y` — stall 时 arm 移动到此位置拍摄手机全屏截图；`plug_client_id` + `plug_enabled` — 可选智能插座（充电断电），见"模块交互/Smart plug 充电断电" |
 | `transactions` | `status` ENUM 含 `stall`; `superseded_by INT NULL` — 被 retry 取代的 tx 指向链尾 tx id，dedup 报表排除 |
-| `flow_templates` | `arm_id` 绑定到特定机器；`transfer_type` (SAME/INTER/NULL) |
+| `flow_templates` | `arm_id` 绑定到特定机器；`transfer_type` (SAME/INTER/BALANCE/NULL — BALANCE 为维护余额巡检 flow，正常任务永不选中) |
+| `arm_maintenance_configs` | 每 arm 维护窗口（start/end HH:MM + tz_offset 7/8）+ 独立的余额日报 Slack/TG 凭据 |
+| `balance_checks` | 夜间余额巡检结果：photo + OCR 余额（`balance_text`/`balance_value`），与 transactions 完全隔离 |
+| `report_threads` | `(report_date, provider, channel)` 唯一 — Slack thread ts / TG 头消息 id，多 arm 共用当天同一 thread |
 | `calibrations` | 每个 station 的仿射矩阵、park 位、scale、旋转角 |
 | `keymaps` | `keyboard_type VARCHAR(50)` — 支持长名称如 `s1_cimb_account_number` |
 
@@ -79,6 +85,7 @@ PAS → POST /process-withdrawal
   │
   ├→ 查 bank_apps (bank_code + account_no) → 得到 station_id
   ├→ 查 stations → 得到 arm_id
+  ├→ 维护窗口检查 (maintenance.get_active_window, fail-open) → 窗口内直接拒绝且不落库
   ├→ 检查 arm active + status
   ├→ INSERT transactions (status='queued')
   ├→ _link_retry_chain(): 按 PAS 传入的 ref_process_id(原始首笔)定位重试链 → 设 superseded_by
@@ -221,7 +228,7 @@ Builder_JQS_Code/
 ├── ARCHITECTURE_PLAN.md       本文档
 │
 ├── db/
-│   ├── schema.sql             15 张表 DDL
+│   ├── schema.sql             18 张表 DDL
 │   ├── seed.sql               从 builder-mysql 导出的真实数据
 │   ├── run_sql.py             SQL 执行工具
 │   └── export_seed.py         导出当前 DB 配置数据到 seed.sql
@@ -246,6 +253,7 @@ Builder_JQS_Code/
 │   ├── (stall_detector.py 已删除 — 零调用，stall 由 arm_worker OCR 分支处理)
 │   ├── pas_client.py          PAS HTTP 回调
 │   ├── notify.py              Slack/Telegram stall 通知 (per-arm, fire-and-forget)
+│   ├── maintenance.py         夜间维护窗口调度 + BALANCE flow 巡检 + 余额日报 (Slack thread / TG reply)
 │   ├── calibration.py         标定 (async, DB-backed, 缓存)
 │   │
 │   └── routers/

@@ -423,6 +423,32 @@ No restart needed — the worker reads the config from DB at stall time. Tokens 
 
 ---
 
+## Step 8.7: Nightly maintenance window + balance report (optional)
+
+Skip if you don't need automated end-of-day balance reports. When enabled per arm, the system rejects new PAS tasks during a short nightly window, runs a **BALANCE flow** for each bank on the arm, and posts the balance photo + OCR'd number into a per-day Slack thread and/or Telegram reply chain. See BUSINESS_CONTEXT.md "Nightly Maintenance Window" for the exact behaviour.
+
+### 8.7.1 Build one BALANCE flow per bank (Builder)
+
+1. `/recorder` → connect the arm → flow type dropdown: **Balance** → enter the bank code → `+` (creates e.g. `ABA Balance Check Flow`).
+2. Record the steps: open app → login → navigate to the balance page. **Only CLICK / ARM_MOVE / TYPE / SWIPE / PHOTO are supported** (no CHECK_SCREEN / FIND_AND_*, they are skipped in maintenance runs). Existing keymaps/ui_elements for the bank are reused automatically.
+3. Final step: **OCR VERIFY** — set the camera position, tick **Balance (maintenance)**, Select ROI around the balance number, then add `done`.
+
+Banks without a BALANCE flow are skipped silently — you can roll this out one bank at a time.
+
+### 8.7.2 Configure the window (Settings)
+
+`/settings` → expand the arm → **Maintenance Window & Balance Report**:
+
+- **Start / End** (HH:MM) + **Timezone** (UTC+7 / UTC+8) — e.g. `23:55`–`00:05` UTC+7 for an end-of-day report on the Cambodia day boundary. Midnight-spanning windows are handled.
+- Slack: bot token (`chat:write` + `files:write` scopes, bot invited to the channel) + channel — use a **different channel** than stall alerts if you want them separate.
+- Telegram: bot token + chat id.
+- **Save Maintenance** to persist, **Test** to post a sample message into today's thread, **Run Now** to execute a full balance run immediately (pauses the arm → runs → resumes; takes a few minutes).
+- Finally tick **Maintenance** (enabled) so the nightly schedule takes effect.
+
+Tables `arm_maintenance_configs` / `balance_checks` / `report_threads` are created by `schema.sql`; the scheduler starts with the service (restart required after upgrading to this version).
+
+---
+
 ## Step 9: Calibrate each station
 
 Every station needs a one-time calibration mapping camera pixels to arm coordinates. This uses the 50x50mm fiducial calibration card shipped with the arm.

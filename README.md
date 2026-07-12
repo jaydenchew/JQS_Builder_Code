@@ -176,21 +176,24 @@ FastAPI (port 9000, localhost only in production)
 
 See `ARCHITECTURE_PLAN.md` for full technical details.
 
-## Database (15 tables)
+## Database (18 tables)
 
 | Table | Purpose |
 |-------|---------|
 | arms | Machines (com_port, camera_id, active) |
 | arm_notify_configs | Per-arm Slack/Telegram stall notification settings (1:1 with arms) |
+| arm_maintenance_configs | Per-arm nightly maintenance window + balance report Slack/TG credentials (1:1 with arms) |
 | stations | Stations per arm |
 | phones, bank_apps | Phones and bank accounts per station |
 | transactions, transaction_logs | Transaction records + step logs |
-| flow_templates | Flow definitions (bound to arm_id + transfer_type) |
+| flow_templates | Flow definitions (bound to arm_id + transfer_type; `BALANCE` = maintenance balance flow) |
 | flow_steps | Steps within flows |
 | ui_elements, keymaps, swipe_actions | Coordinates per bank per station |
 | keyboard_configs | Multi-page keyboard definitions (JSON) |
 | bank_name_mappings | Interbank transfer: bank code → search text |
 | calibrations | Camera-to-arm transform data per station |
+| balance_checks | Nightly balance flow results (photo + OCR'd balance), separate from transactions |
+| report_threads | Daily Slack thread / Telegram header per report channel |
 
 ## PAS Integration
 
@@ -233,6 +236,10 @@ Retry: up to 3 times (5s/15s/30s backoff)
 | `/api/monitor/plug-status` | GET | None (localhost) | Smart plug failure counters |
 | `/api/stations/arms/{id}/notify` | GET/PUT | None (localhost) | Read/save per-arm Slack/Telegram stall config |
 | `/api/stations/arms/{id}/notify/test` | POST | None (localhost) | Send a test stall notification |
+| `/api/stations/arms-maintenance` | GET | None (localhost) | All per-arm maintenance configs |
+| `/api/stations/arms/{id}/maintenance` | PUT | None (localhost) | Save per-arm maintenance window + balance report config |
+| `/api/stations/arms/{id}/maintenance/test` | POST | None (localhost) | Post a test message into today's balance-report thread |
+| `/api/stations/arms/{id}/maintenance/run` | POST | None (localhost) | Run balance flows now (pause → drain → run → resume) |
 
 ## Documentation
 

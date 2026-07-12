@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from pymysql.err import IntegrityError
 from app.models import WithdrawalRequest, StandardResponse, HealthResponse, StatusResponse
 from app.auth import verify_api_key
-from app import database
+from app import database, maintenance
 from app.worker_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,18 @@ async def process_withdrawal(req: WithdrawalRequest):
         except Exception:
             logger.warning("retry chain link failed for tx %d", new_tx_id)
         return StandardResponse(status=False, message="Bank app not found for given bank_code + account_no")
+
+    # Maintenance window: reject WITHOUT writing a transaction row, so the
+    # process_id stays free for PAS to resend after the window. Fail-open —
+    # any error inside the check lets the withdrawal proceed normally.
+    mnt = await maintenance.get_active_window(bank_app["arm_id"])
+    if mnt:
+        logger.info("Withdrawal rejected (maintenance window): process_id=%d arm=%d",
+                    req.process_id, bank_app["arm_id"])
+        return StandardResponse(
+            status=False,
+            message="System under maintenance, please resend after %s (UTC+%d)"
+                    % (mnt["end_time"], mnt["tz_offset"]))
 
     arm = await database.fetchone(
         "SELECT id, active, status FROM arms WHERE id = %s", (bank_app["arm_id"],)

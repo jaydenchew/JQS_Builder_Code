@@ -197,6 +197,18 @@ There are two stall paths, decided by the type of error.
 
 **Per-arm STALL flow setup**: Each arm should have its own STALL flow defined in Builder (one `flow_template` per arm with `bank_code='STALL'`, plus per-station coordinates recorded under the same `bank_code='STALL'`). If the STALL flow is missing for a given arm, soft stalls degrade gracefully — the arm still cleans up to (0,0) and goes idle, just without auto-closing whatever banking app was open.
 
+### Nightly Maintenance Window & Balance Report (optional, per arm)
+
+Each arm can have a short daily maintenance window (Settings → per arm; times entered in UTC+7 or UTC+8). Purpose: capture the **true end-of-day balance** of every bank account with no money moving.
+
+1. From window start, new PAS withdrawals for this arm are rejected with "System under maintenance, please resend after HH:MM" — no transaction row is written, so PAS can resend the same process_id later.
+2. The in-flight task is allowed to finish; then the worker pauses.
+3. For every bank on the arm that has a **BALANCE flow** (Builder flow with type `BALANCE`: open app → login → navigate to balance page → OCR step with a Balance ROI), the system runs the flow, photographs the balance screen and OCRs the number.
+4. Results go to the `balance_checks` table and are posted as `ARM | PHONE | BANK | ACCOUNT | Balance: N` with the photo into a per-day Slack thread (`📅 YYYY-MM-DD Balance Report`) and/or a Telegram reply chain — credentials separate from stall notifications.
+5. The worker resumes. New tasks are accepted again once the balance run is complete **and** local midnight (configured timezone) has passed — or at window end, whichever comes first. If the run never happened, the gate simply holds until window end.
+
+Banks without a BALANCE flow are skipped silently. Balance flows must use only CLICK / ARM_MOVE / TYPE / SWIPE / PHOTO / OCR_VERIFY steps.
+
 ### Adding a New Bank
 
 1. Install the banking app on all phones

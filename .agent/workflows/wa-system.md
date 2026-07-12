@@ -53,6 +53,6 @@ This is a physical RPA system — mechanical arms tapping on real phones to do b
 | OCR | `app/ocr.py`, `app/screen_checker.py` |
 | Builder UI | `static/recorder.html` |
 | Dashboard | `static/index.html` |
-| Database | `db/schema.sql` (15 tables) |
+| Database | `db/schema.sql` (18 tables) |
 
 > See also: `DOCS_MAP.md` — the doc-ownership / which-doc-to-update map (which file to edit when a given thing changes).

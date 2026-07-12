@@ -587,3 +587,17 @@ The original message `"screen does not match '%s' after %d attempts"` reads as a
 **Unchanged**: the `transactions.superseded_by` column/index, the deduped report filter (`monitor.py`), and the Transactions "Show retries" UI all keep working as-is — only how `superseded_by` gets set has changed.
 
 **Files**: `app/models.py` (`WithdrawalRequest.ref_process_id`), `app/routers/withdrawal.py` (`_link_retry_chain()`).
+
+## DD-035: Maintenance Window Rejects PAS Without Writing a Transaction Row
+
+**What**: During an arm's maintenance window (per-arm config, nightly balance check), `/process-withdrawal` returns `status=False, "System under maintenance, please resend after HH:MM (UTC+N)"` **without inserting a transaction**. This differs from the arm-offline rejection, which does insert a `failed` row.
+
+**Why**: The rejection is temporary and PAS is expected to resend the *same* process after the window. If we recorded a row, the resend would collide with the duplicate-process_id guard (or pollute records with a phantom `failed`). No row = the process_id stays free. The gate is fail-open: any error in the window check lets the withdrawal proceed — a broken maintenance config must never block real money movement.
+
+**Early release**: the gate reopens before `end_time` only when (1) the balance run has completed, (2) it actually produced `balance_checks` rows for this occurrence, and (3) local midnight in the configured timezone has passed. Condition 3 is essential: a run finishing at 23:59 must keep rejecting until 00:00, otherwise new tasks would move money before the day ends and invalidate the photographed end-of-day balance. The report date itself is fixed once at run start (window's start day), so posts landing after midnight still join the correct day's thread.
+
+**Balance runs never touch `transactions`**: the flow runner drives `actions.ACTION_MAP` handlers directly (bypassing `execute_step`'s `transaction_logs` INSERT, whose FK requires a real transaction) with a dummy tx dict (`id=0`), and results go to the separate `balance_checks` table. `transfer_type='BALANCE'` keeps these flows invisible to normal task execution, which only queries SAME/INTER/NULL. Supported step types in balance flows: CLICK, ARM_MOVE, TYPE, SWIPE, PHOTO, OCR_VERIFY (balance capture); CHECK_SCREEN/FIND_AND_* are skipped because their logging is transaction-bound.
+
+**Worker safety**: the runner pauses the worker, waits (≤300s) for the running task to drain, and resumes in a `finally` — a crashed balance flow can never leave the arm paused.
+
+**Files**: `app/maintenance.py`, `app/routers/withdrawal.py` (gate), `app/routers/stations.py` (config API), `db/schema.sql` (`arm_maintenance_configs`, `balance_checks`, `report_threads`).

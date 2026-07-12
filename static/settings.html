@@ -395,6 +395,7 @@
     <script>
     let armsData = [], stationsData = [], phonesData = [], bankAppsData = [], calData = {};
     let notifyByArm = {};
+    let maintByArm = {};
 
     function switchTab(name) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -404,17 +405,20 @@
     }
 
     async function loadAll() {
-        let notifyData;
-        [armsData, stationsData, phonesData, bankAppsData, calData, notifyData] = await Promise.all([
+        let notifyData, maintData;
+        [armsData, stationsData, phonesData, bankAppsData, calData, notifyData, maintData] = await Promise.all([
             API.get('/api/stations/arms'),
             API.get('/api/stations/'),
             API.get('/api/stations/phones'),
             API.get('/api/banks/apps'),
             API.get('/api/calibration/status'),
             API.get('/api/stations/arms-notify'),
+            API.get('/api/stations/arms-maintenance'),
         ]);
         notifyByArm = {};
         (notifyData || []).forEach(c => { notifyByArm[c.arm_id] = c; });
+        maintByArm = {};
+        (Array.isArray(maintData) ? maintData : []).forEach(c => { maintByArm[c.arm_id] = c; });
         renderOverview();
         loadMqttHint();
     }
@@ -589,6 +593,7 @@
                             <div class="overview-field"><label>Max Y</label><input id="a-max-y-${arm.id}" type="number" step="0.1" class="w-xs" value="${arm.max_y ?? 120}"></div>
                         </div>
                         ${renderArmNotify(arm.id)}
+                        ${renderArmMaintenance(arm.id)}
                     </div>
                     <div class="overview-actions" style="margin-top:0;justify-content:flex-end;">
                         <span class="badge ${arm.active ? 'badge-active' : 'badge-inactive'} active-toggle" onclick="toggleArmActive(${arm.id}, ${arm.active})">${arm.active ? 'ON' : 'OFF'}</span>
@@ -695,6 +700,69 @@
         await API.put(`/api/stations/arms/${id}/notify`, _armNotifyBody(id));
         const r = await API.post(`/api/stations/arms/${id}/notify/test`, {});
         toast(r.success ? 'Test sent — check your channel/chat' : (r.error || 'Test failed'), r.success ? 'success' : 'error');
+    }
+
+    /* ── ARM MAINTENANCE (nightly window + balance report) ── */
+    function renderArmMaintenance(id) {
+        const c = maintByArm[id] || {};
+        return `<div class="overview-fields" style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px;">
+            <div class="overview-section-label" style="width:100%;">Maintenance Window &amp; Balance Report</div>
+            <div class="overview-field"><label>Maintenance</label><input id="mt-en-${id}" type="checkbox" ${c.enabled ? 'checked' : ''}></div>
+            <div class="overview-field"><label>Start</label><input id="mt-start-${id}" class="w-xs" value="${c.start_time || '23:55'}" placeholder="23:55"></div>
+            <div class="overview-field"><label>End</label><input id="mt-end-${id}" class="w-xs" value="${c.end_time || '00:05'}" placeholder="00:05"></div>
+            <div class="overview-field"><label>Timezone</label>
+                <select id="mt-tz-${id}" style="padding:4px 6px;">
+                    <option value="7" ${(c.tz_offset ?? 7) == 7 ? 'selected' : ''}>UTC+7</option>
+                    <option value="8" ${c.tz_offset == 8 ? 'selected' : ''}>UTC+8</option>
+                </select>
+            </div>
+            <div class="overview-field"><label>Telegram</label><input id="mt-tg-en-${id}" type="checkbox" ${c.telegram_enabled ? 'checked' : ''}></div>
+            <div class="overview-field"><label>TG Bot Token</label><input id="mt-tg-token-${id}" class="w-md" value="${c.telegram_bot_token || ''}" placeholder="123456:ABC-..."></div>
+            <div class="overview-field"><label>TG Chat ID</label><input id="mt-tg-chat-${id}" class="w-md" value="${c.telegram_chat_id || ''}" placeholder="-1001234567890"></div>
+            <div class="overview-field"><label>Slack</label><input id="mt-sl-en-${id}" type="checkbox" ${c.slack_enabled ? 'checked' : ''}></div>
+            <div class="overview-field"><label>Slack Bot Token</label><input id="mt-sl-token-${id}" class="w-md" value="${c.slack_bot_token || ''}" placeholder="xoxb-..."></div>
+            <div class="overview-field"><label>Slack Channel</label><input id="mt-sl-chan-${id}" class="w-md" value="${c.slack_channel || ''}" placeholder="#balance-report"></div>
+            <button class="btn btn-sm btn-primary" onclick="saveArmMaint(${id})">Save Maintenance</button>
+            <button class="btn btn-sm btn-secondary" onclick="testArmMaint(${id})">Test</button>
+            <button class="btn btn-sm btn-secondary" onclick="runArmMaintNow(${id})" title="Pause this arm, run all BALANCE flows now, then resume">Run Now</button>
+        </div>`;
+    }
+
+    function _armMaintBody(id) {
+        return {
+            enabled: document.getElementById('mt-en-' + id).checked ? 1 : 0,
+            start_time: document.getElementById('mt-start-' + id).value.trim(),
+            end_time: document.getElementById('mt-end-' + id).value.trim(),
+            tz_offset: parseInt(document.getElementById('mt-tz-' + id).value),
+            telegram_enabled: document.getElementById('mt-tg-en-' + id).checked ? 1 : 0,
+            telegram_bot_token: document.getElementById('mt-tg-token-' + id).value.trim(),
+            telegram_chat_id: document.getElementById('mt-tg-chat-' + id).value.trim(),
+            slack_enabled: document.getElementById('mt-sl-en-' + id).checked ? 1 : 0,
+            slack_bot_token: document.getElementById('mt-sl-token-' + id).value.trim(),
+            slack_channel: document.getElementById('mt-sl-chan-' + id).value.trim(),
+        };
+    }
+
+    async function saveArmMaint(id) {
+        const r = await API.put(`/api/stations/arms/${id}/maintenance`, _armMaintBody(id));
+        if (r.success) { toast('Maintenance settings saved'); loadAll(); }
+        else toast(r.error || 'Save failed', 'error');
+    }
+
+    async function testArmMaint(id) {
+        const s = await API.put(`/api/stations/arms/${id}/maintenance`, _armMaintBody(id));
+        if (!s.success) { toast(s.error || 'Save failed', 'error'); return; }
+        const r = await API.post(`/api/stations/arms/${id}/maintenance/test`, {});
+        toast(r.success ? 'Test posted to today\'s report thread' : (r.error || 'Test failed'), r.success ? 'success' : 'error');
+    }
+
+    async function runArmMaintNow(id) {
+        if (!confirm('Run balance flows NOW? The arm will pause, wait for the current task to finish, run all BALANCE flows, then resume.')) return;
+        const s = await API.put(`/api/stations/arms/${id}/maintenance`, _armMaintBody(id));
+        if (!s.success) { toast(s.error || 'Save failed', 'error'); return; }
+        toast('Balance run started — this may take a few minutes...');
+        const r = await API.post(`/api/stations/arms/${id}/maintenance/run`, {});
+        toast(r.success ? `Balance run finished (${r.flows_run} flows)` : (r.error || 'Run failed'), r.success ? 'success' : 'error');
     }
 
     async function scanCameras() {

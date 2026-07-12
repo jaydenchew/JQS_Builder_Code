@@ -37,11 +37,11 @@
 
 | 文档 | 用途 | 该写什么 / 何时更新 |
 |---|---|---|
-| `README.md` | 顶层入口 + 快速上手 + 索引表 | 新增安装前置 / `.env` 键 / 对外暴露端点 / 新文档入索引 / 15 表计数变动 |
+| `README.md` | 顶层入口 + 快速上手 + 索引表 | 新增安装前置 / `.env` 键 / 对外暴露端点 / 新文档入索引 / 表计数变动（当前 18） |
 | `ARCHITECTURE_PLAN.md` | as-built 架构（中文） | 改跨模块契约 / 并发模型 / 执行流水线 / 回调映射 / DB 关系 / 新 action_type |
 | `BUSINESS_CONTEXT.md` | 领域"为什么" + 心智模型 | 改领域模型：新 action_type / PAS 状态码语义 / SAME-INTER / stall 生命周期 / arms 关系图 |
 | `API_SPEC.md` | PAS↔WA 对外契约 | 任何外部可见行为：字段 / 状态码 / 回调时序 / dedup / 银行目录 |
-| `DESIGN_DECISIONS.md` | ADR 决策日志（DD-001~034） | 新决策追加 DD；反转则旧条标 Superseded + 写新条 |
+| `DESIGN_DECISIONS.md` | ADR 决策日志（DD-001~035） | 新决策追加 DD；反转则旧条标 Superseded + 写新条 |
 | `KNOWN_ISSUES.md` | 已知 bug / backlog（带 file:line） | 发现新缺陷 / 修复翻 checkbox / Won't-Fix 定性 |
 | `CHECK_SCREEN_OPS.md` | CHECK_SCREEN 运维手册（中文） | 改 log 字段 / reason 值 / 健康阈值 / trigger 模式 / Builder 控件文案 |
 | `INSTALL.md` | Docker 线装机 runbook | 改装机步骤 / 前置 / `.env` / Builder 配置项 / 校准 / 排障 / seed |
@@ -72,7 +72,7 @@
 |---|---|---|
 | 新增 / 改 `flow_steps.action_type` | `CHANGELOG` · `DESIGN_DECISIONS`(新 DD) · `BUSINESS_CONTEXT`(Action 表) · `ARCHITECTURE_PLAN` · `db/schema.sql`(ENUM) | `API_SPEC` · `CHECK_SCREEN_OPS` |
 | 改 PAS 契约（字段 / 状态码 / 回调 / 重试） | `API_SPEC` · `CHANGELOG` · `BUSINESS_CONTEXT` · `ARCHITECTURE_PLAN` | `DESIGN_DECISIONS` · `README` |
-| 加 / 改 DB 表或列 | `db/schema.sql` · `CHANGELOG`(迁移 SQL) · `ARCHITECTURE_PLAN` | `README`(15 表) · `BUSINESS_CONTEXT` · `wa-system.md` |
+| 加 / 改 DB 表或列 | `db/schema.sql` · `CHANGELOG`(迁移 SQL) · `ARCHITECTURE_PLAN` | `README`(表计数) · `BUSINESS_CONTEXT` · `wa-system.md` |
 | 改算法（CHECK_SCREEN / calibration / OCR / random_pin） | `DESIGN_DECISIONS` · `CHANGELOG` | `CHECK_SCREEN_OPS` · `ARCHITECTURE_PLAN` |
 | 加 / 改 `/api/*` 端点 | `CHANGELOG` | `API_SPEC`(对外 / 报表) · `deploy/README`(需 tunnel) · `README` |
 | 改 smart plug | `SMART_PLUG_SPEC` · `CHANGELOG` | `DESIGN_DECISIONS` · `deploy/README` |

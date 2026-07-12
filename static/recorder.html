@@ -418,6 +418,7 @@
             <option value="">Default</option>
             <option value="SAME">Same Bank</option>
             <option value="INTER">Interbank</option>
+            <option value="BALANCE">Balance</option>
         </select>
         <select id="bank-amtfmt" style="width:95px;padding:4px 6px;font-size:11px;" title="Amount format" onchange="onTemplateFieldChange()">
             <option value="">Amt: Default</option>
@@ -949,9 +950,11 @@ async function createBank() {
     if (!code) return;
     const ttype = document.getElementById('bank-ttype').value || null;
     const amtfmt = document.getElementById('bank-amtfmt').value || null;
-    const suffix = ttype ? ` ${ttype === 'SAME' ? 'Same Bank' : 'Interbank'}` : '';
+    const ttLabels = { SAME: ' Same Bank', INTER: ' Interbank', BALANCE: ' Balance' };
+    const suffix = ttype ? (ttLabels[ttype] || '') : '';
+    const flowKind = ttype === 'BALANCE' ? ' Check Flow' : ' Transfer Flow';
     const r = await API.post('/api/banks/templates', {
-        bank_code: code, arm_id: S.armId, name: code + suffix + ' Transfer Flow', transfer_type: ttype, amount_format: amtfmt,
+        bank_code: code, arm_id: S.armId, name: code + suffix + flowKind, transfer_type: ttype, amount_format: amtfmt,
     });
     if (r.success) {
         await reloadTemplates();
@@ -1761,6 +1764,7 @@ function renderForm(step, isNew) {
                 {id:'pay_to_account_no', label:'Account No', checked: vf.includes('pay_to_account_no')},
                 {id:'amount', label:'Amount', checked: vf.includes('amount')},
                 {id:'pay_to_account_name', label:'Account Name', checked: vf.includes('pay_to_account_name')},
+                {id:'balance', label:'Balance (maintenance)', checked: !!ocrCfg.field_rois?.balance},
             ].map(f => {
                 const fr = ocrCfg.field_rois?.[f.id];
                 const roiStr = fr ? (fr.top_percent + '-' + fr.bottom_percent + '% / ' + fr.left_percent + '-' + fr.right_percent + '%') : '';
@@ -2203,7 +2207,7 @@ function readForm() {
             };
         }
         const fieldRois = {};
-        for (const f of ['pay_to_account_no', 'amount', 'pay_to_account_name', 'receipt_status']) {
+        for (const f of ['pay_to_account_no', 'amount', 'pay_to_account_name', 'balance', 'receipt_status']) {
             const t = parseInt(document.getElementById('sf-froi-' + f + '-top')?.value);
             const b = parseInt(document.getElementById('sf-froi-' + f + '-bottom')?.value);
             const l = parseInt(document.getElementById('sf-froi-' + f + '-left')?.value);

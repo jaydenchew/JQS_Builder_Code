@@ -1,5 +1,25 @@
 # Changelog
 
+## feat(maintenance): nightly per-arm maintenance window + balance report to Slack/Telegram (2026-07-13)
+
+Each arm can now have a daily maintenance window (configured per arm in Settings, times entered in UTC+7 or UTC+8). During the window `/process-withdrawal` rejects new PAS tasks with "System under maintenance, please resend after HH:MM (UTC+N)" — **without writing a transaction row**, so the process_id stays free for PAS to resend. Once the in-flight task drains, the scheduler pauses the worker, runs every active BALANCE flow for that arm's banks, photographs the balance screen, OCRs the balance ROI, stores results in `balance_checks`, posts photo+caption (`ARM | PHONE | BANK | ACCOUNT_NO | Balance: N`) into a per-day Slack thread / Telegram reply chain, then resumes the worker.
+
+1. **`db/schema.sql`** — 3 new tables: `arm_maintenance_configs` (per-arm window + separate Slack/TG credentials), `balance_checks` (arm, bank, result, `balance_text`, `balance_value DECIMAL(15,2)`, screenshot), `report_threads` (one Slack thread ts / TG header message_id per day per channel; creation serialized by an in-process `asyncio.Lock` + `INSERT IGNORE`, so concurrent arms can never post duplicate headers). The report date is **fixed once at run start** (window's start day in the cfg timezone) — a run that outlives the window can't split one night's report across two threads.
+2. **`app/maintenance.py`** (new) — window math in the config's own timezone (supports midnight-spanning windows); `get_active_window()` used by the withdrawal gate (fail-open: any error lets withdrawals through); scheduler loop (20s tick, one run per window occurrence, guarded by `balance_checks` since window start); `run_arm_maintenance()` pauses worker → drains (≤300s) → runs BALANCE flows → reports → always resumes (try/finally); flow runner executes CLICK/ARM_MOVE/TYPE/SWIPE/PHOTO via `actions.ACTION_MAP` with a dummy tx (id=0, **no transaction_logs writes**) and treats OCR_VERIFY as the balance-capture step (`field_rois.balance` ROI → digit OCR via `ocr._ocr_field`); CHECK_SCREEN/FIND_AND_* are skipped — build balance flows without them.
+3. **`app/routers/withdrawal.py`** — maintenance gate after the bank_app lookup, before the arm-offline check. Rejects with StandardResponse only; no DB insert. **Early release**: the gate opens before `end_time` only when the occurrence's balance run has completed (not in progress + `balance_checks` rows since window start) **and local midnight (cfg tz) has passed** — a run finishing at 23:59 must not reopen the gate before the day actually ends, or the photographed end-of-day balance would be invalidated. If the run never happened, the gate stays closed until `end_time`.
+4. **`app/routers/stations.py`** — `GET /api/stations/arms-maintenance`, `PUT /api/stations/arms/{id}/maintenance` (validates HH:MM + tz 7/8), `POST .../maintenance/test` (posts into today's thread), `POST .../maintenance/run` (Run Now: same pause→run→resume path).
+5. **`static/settings.html`** — per-arm "Maintenance Window & Balance Report" card: enable, start/end, UTC+7/+8, separate Slack/TG credentials, Save / Test / Run Now.
+6. **`static/recorder.html`** — flow type dropdown gains **Balance** (`transfer_type='BALANCE'`; normal task execution never selects it); OCR step config gains a **Balance (maintenance)** field with its own Select ROI (`field_rois.balance`).
+7. **`app/main.py`** — scheduler started after workers, stopped before them; `maintenance.close_client()` on shutdown.
+
+### Building a balance flow (per bank, in Builder)
+Select arm → type dropdown **Balance** → create template with the bank's code → record steps (open app → login → navigate to balance page) using CLICK/ARM_MOVE/TYPE/SWIPE only → final OCR_VERIFY step with camera position + **Balance** ROI → `done`. Banks without a BALANCE flow are skipped silently.
+
+### Deploy
+Run the 3 `CREATE TABLE IF NOT EXISTS` statements from `db/schema.sql` (idempotent), overwrite `app/maintenance.py`, `app/main.py`, `app/routers/withdrawal.py`, `app/routers/stations.py`, `static/settings.html`, `static/recorder.html`, restart WA Unified.
+
+---
+
 ## perf(ocr): reorder tesseract methods by hit-frequency (psm6-first) to cut OCR latency ~32% (2026-06-29)
 
 ### Problem

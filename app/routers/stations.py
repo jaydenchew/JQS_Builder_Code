@@ -2,11 +2,12 @@
 import asyncio
 import cv2
 import base64
+import re
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter
-from app import database, notify
+from app import database, notify, maintenance
 from app.worker_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,59 @@ async def test_arm_notify(arm_id: int):
     if failed:
         return {"success": False, "error": "Failed: %s (check token/channel and logs)" % ", ".join(failed)}
     return {"success": True}
+
+
+# === Arm maintenance configs (nightly window + balance report) ===
+
+MAINTENANCE_FIELDS = {"enabled", "start_time", "end_time", "tz_offset",
+                      "slack_enabled", "slack_bot_token", "slack_channel",
+                      "telegram_enabled", "telegram_bot_token", "telegram_chat_id"}
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+@router.get("/arms-maintenance")
+async def list_arm_maintenance():
+    return await database.fetchall("SELECT * FROM arm_maintenance_configs")
+
+
+@router.put("/arms/{arm_id}/maintenance")
+async def update_arm_maintenance(arm_id: int, data: dict):
+    fields = {k: v for k, v in data.items() if k in MAINTENANCE_FIELDS}
+    if not fields:
+        return {"error": "No valid fields"}
+    for key in ("start_time", "end_time"):
+        if key in fields and not _HHMM_RE.match(str(fields[key])):
+            return {"error": "%s must be HH:MM (24h)" % key}
+    if "tz_offset" in fields and int(fields["tz_offset"]) not in (7, 8):
+        return {"error": "tz_offset must be 7 or 8"}
+    existing = await database.fetchone(
+        "SELECT id FROM arm_maintenance_configs WHERE arm_id = %s", (arm_id,))
+    if existing:
+        sets = ", ".join("%s = %%s" % k for k in fields)
+        await database.execute(
+            "UPDATE arm_maintenance_configs SET %s WHERE arm_id = %%s" % sets,
+            (*fields.values(), arm_id))
+    else:
+        cols = ", ".join(["arm_id"] + list(fields.keys()))
+        placeholders = ", ".join(["%s"] * (len(fields) + 1))
+        await database.execute(
+            "INSERT INTO arm_maintenance_configs (%s) VALUES (%s)" % (cols, placeholders),
+            (arm_id, *fields.values()))
+    return {"success": True}
+
+
+@router.post("/arms/{arm_id}/maintenance/test")
+async def test_arm_maintenance(arm_id: int):
+    """Post a test message into today's balance-report thread."""
+    return await maintenance.send_test_report(arm_id)
+
+
+@router.post("/arms/{arm_id}/maintenance/run")
+async def run_arm_maintenance_now(arm_id: int):
+    """Manually trigger the balance run (Run Now button). The arm is paused,
+    drained, run, and resumed exactly like the nightly schedule."""
+    return await maintenance.run_arm_maintenance(arm_id)
 
 
 # === Stations ===

@@ -69,6 +69,7 @@ Content-Type: application/json
 | `Self-transfer rejected: sender and receiver are the same account` | Same bank + same account on both sides |
 | `Bank app not found for given bank_code + account_no` | Source account not registered in WA system |
 | `Assigned arm is offline or inactive` | The machine handling this account is down |
+| `System under maintenance, please resend after HH:MM (UTC+N)` | Arm is inside its nightly maintenance window. **No transaction row is recorded** — resend the same process_id after the stated time |
 
 ### Notes
 

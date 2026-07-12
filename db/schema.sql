@@ -1,8 +1,9 @@
 -- WA Unified Database Schema
 -- Merged from Builder (system_new) + JQS (JQS_Code)
--- 14 tables: arms, stations, phones, bank_apps, transactions, transaction_logs,
---            flow_templates, flow_steps, ui_elements, keymaps, swipe_actions,
---            keyboard_configs, bank_name_mappings, calibrations
+-- 18 tables: arms, arm_notify_configs, arm_maintenance_configs, stations, phones,
+--            bank_apps, transactions, transaction_logs, flow_templates, flow_steps,
+--            ui_elements, keymaps, swipe_actions, keyboard_configs,
+--            bank_name_mappings, calibrations, balance_checks, report_threads
 
 CREATE DATABASE IF NOT EXISTS wa_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE wa_db;
@@ -237,6 +238,50 @@ CREATE TABLE IF NOT EXISTS calibrations (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (station_id) REFERENCES stations(id)
+) ENGINE=InnoDB;
+
+-- arm_maintenance_configs — per-arm nightly maintenance window + balance report credentials
+CREATE TABLE IF NOT EXISTS arm_maintenance_configs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    arm_id INT NOT NULL UNIQUE,
+    enabled TINYINT(1) NOT NULL DEFAULT 0,
+    start_time VARCHAR(5) NOT NULL DEFAULT '23:55' COMMENT 'Window start HH:MM in tz_offset local time',
+    end_time VARCHAR(5) NOT NULL DEFAULT '00:05' COMMENT 'Window end HH:MM in tz_offset local time',
+    tz_offset TINYINT NOT NULL DEFAULT 7 COMMENT 'Timezone the times are entered in: 7=UTC+7, 8=UTC+8',
+    slack_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    slack_bot_token VARCHAR(255) NULL,
+    slack_channel VARCHAR(100) NULL COMMENT 'Balance report channel (separate from stall notifications)',
+    telegram_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    telegram_bot_token VARCHAR(255) NULL,
+    telegram_chat_id VARCHAR(100) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- balance_checks — nightly balance flow results (kept out of transactions on purpose)
+CREATE TABLE IF NOT EXISTS balance_checks (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    arm_id INT NOT NULL,
+    bank_code VARCHAR(20) NOT NULL,
+    result ENUM('ok', 'fail') NOT NULL,
+    balance_text VARCHAR(100) NULL COMMENT 'Raw OCR text of the balance ROI',
+    balance_value DECIMAL(15,2) NULL COMMENT 'Parsed numeric balance, NULL if OCR/parse failed',
+    screenshot_base64 LONGTEXT NULL,
+    message VARCHAR(500) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_arm_date (arm_id, created_at)
+) ENGINE=InnoDB;
+
+-- report_threads — one Slack thread / Telegram header message per day per channel
+CREATE TABLE IF NOT EXISTS report_threads (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    report_date DATE NOT NULL,
+    provider ENUM('slack', 'telegram') NOT NULL,
+    channel_key VARCHAR(100) NOT NULL COMMENT 'Slack channel or Telegram chat_id',
+    thread_ref VARCHAR(64) NOT NULL COMMENT 'Slack message ts / Telegram message_id',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_day_channel (report_date, provider, channel_key)
 ) ENGINE=InnoDB;
 
 -- Seed data is in seed.sql (exported from builder-mysql)
