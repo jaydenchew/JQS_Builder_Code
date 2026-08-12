@@ -32,14 +32,67 @@ logger = logging.getLogger(__name__)
 
 _BACKEND = cv2.CAP_DSHOW
 
+# Auto-exposure settle parameters for fresh (cold-reopen) captures.
+# DSHOW resets AE on open/resolution change; convergence takes ~2-3s cold but
+# ~0.3s if the camera was just streaming. A fixed warmup cannot fit both, so
+# we drop frames until brightness stabilises (bounded both sides).
+SETTLE_MIN_MS    = 400    # never grab earlier: early frames can be identical but pre-convergence
+SETTLE_MAX_MS    = 4000   # never wait longer: take latest frame, don't hang the flow
+SETTLE_WINDOW_MS = 250    # brightness must be stable across this sliding window
+SETTLE_DELTA     = 0.01   # stable = window min/max spread < 1% of max
+
+
+def _settle_and_grab(cap, camera_id):
+    """Drop frames until auto-exposure converges, return the settled frame
+    (None if nothing could be read). Sliding-window spread instead of
+    adjacent-frame diff: during a slow AE ramp adjacent frames differ <1%
+    while the image keeps brightening — only the window range catches it."""
+    t0 = time.monotonic()
+    min_deadline = t0 + SETTLE_MIN_MS / 1000.0
+    max_deadline = t0 + SETTLE_MAX_MS / 1000.0
+    window_s = SETTLE_WINDOW_MS / 1000.0
+    frame = None
+    n_frames = 0
+    first_mean = last_mean = None
+    timed_out = False
+    samples = []                       # (time, mean brightness) within window
+    while True:
+        ok, f = cap.read()
+        now = time.monotonic()
+        if ok and f is not None:
+            frame = f
+            n_frames += 1
+            mean = float(f[::8, ::8].mean())   # 1/8 subsample is enough to track AE
+            if first_mean is None:
+                first_mean = mean
+            last_mean = mean
+            samples.append((now, mean))
+            samples = [s for s in samples if s[0] >= now - window_s]
+        if now >= max_deadline:
+            timed_out = True
+            break                      # degrade: latest frame, never hang
+        if (now >= min_deadline and (now - t0) >= window_s
+                and len(samples) >= 2):
+            vals = [m for _, m in samples]
+            if (max(vals) - min(vals)) / max(max(vals), 1.0) < SETTLE_DELTA:
+                break                  # converged
+    logger.info("Camera %d AE settle: %d frames %.0fms mean %.1f->%.1f%s",
+                camera_id, n_frames, (time.monotonic() - t0) * 1000,
+                first_mean if first_mean is not None else -1,
+                last_mean if last_mean is not None else -1,
+                " (timeout, using latest frame)" if timed_out else "")
+    return frame
+
 
 def _apply_capture_mode(cap, width, height, fourcc):
-    if fourcc:
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc[:4]))
+    # Resolution BEFORE FOURCC: setting FOURCC first gets silently reset to
+    # YUY2 (1.8fps, dark frames) when the resolution changes afterwards.
     if width:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
     if height:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
+    if fourcc:
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc[:4]))
 
 
 class Camera:
@@ -175,15 +228,12 @@ class Camera:
                     return None
                 try:
                     self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    time.sleep(0.3)
-                    for _ in range(max(self.warmup, 3)):
-                        self._camera.read()
-                    ret, frame = self._camera.read()
+                    frame = _settle_and_grab(self._camera, self.camera_id)
                 finally:
                     self._camera.release()
                     self._camera = None
                     Camera._active_instance = None
-        if not ret:
+        if frame is None:
             return None
         self._consecutive_failures = 0
         self._log_frame_shape("capture_fresh", frame)
@@ -216,15 +266,12 @@ class Camera:
                         CAMERA_VISION_FOURCC,
                     )
                     self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    time.sleep(0.3)
-                    for _ in range(max(self.warmup, 3)):
-                        self._camera.read()
-                    ret, frame = self._camera.read()
+                    frame = _settle_and_grab(self._camera, self.camera_id)
                 finally:
                     self._camera.release()
                     self._camera = None
                     Camera._active_instance = None
-        if not ret:
+        if frame is None:
             return None
         self._consecutive_failures = 0
         self._log_frame_shape("capture_fresh_vision", frame)

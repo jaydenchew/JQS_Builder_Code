@@ -1,5 +1,23 @@
 # Changelog
 
+## fix(camera): adaptive AE-settle grab for fresh captures; resolution before FOURCC (2026-08-13)
+
+### Problem
+
+Builder live preview looked fine but photo/test captures were overexposed (white dialogs blown out to a halo). Preview runs on a persistent camera handle whose auto-exposure has already converged; `capture_fresh()` / `capture_fresh_vision()` cold-reopen the camera (DSHOW resets AE, resolution change resets it again) and grabbed after a **fixed** warmup (`sleep 0.3s` + 3 discarded frames). Measured cold-open convergence curve on a bright phone screen: first frames at mean 58 (overexposed), settling to 35.4 only after ~1.1s — the fixed warmup grabbed mid-ramp (~mean 42, +20%).
+
+### What changed (`app/camera.py`)
+
+1. **`_settle_and_grab(cap, camera_id)`** replaces the fixed warmup inside both fresh-capture functions: frames are dropped until mean brightness (1/8-subsampled) is stable within a 250ms sliding window (spread < 1% of max). Bounded both sides — never grabs before 400ms (early frames can be identical but pre-convergence), never waits past 4s (takes the latest frame instead of hanging the flow). Sliding-window spread instead of adjacent-frame diff, because a slow AE ramp moves <1% per frame while still brightening. Hot scenario (camera just streamed) settles in ~0.4s; cold adds up to a few seconds only when AE actually needs it. Each capture logs `Camera N AE settle: X frames Yms mean A->B` for ongoing monitoring.
+2. **`_apply_capture_mode()`** now sets resolution **before** FOURCC — setting FOURCC first gets silently reset to YUY2 (1.8fps, dark frames) when the resolution changes afterwards.
+3. Camera lifecycle untouched: still cold-open → grab → immediate release, no keep-open, no background threads, preview stream unchanged.
+
+### Operational note
+
+After deploying, **re-shoot all CHECK_SCREEN reference images** (SSIM is brightness-sensitive; references captured under the old mid-ramp exposure will start mismatching). FIND_* templates are normalized and do not need re-shooting.
+
+---
+
 ## feat(maintenance): nightly per-arm maintenance window + balance report to Slack/Telegram (2026-07-13)
 
 Each arm can now have a daily maintenance window (configured per arm in Settings, times entered in UTC+7 or UTC+8). During the window `/process-withdrawal` rejects new PAS tasks with "System under maintenance, please resend after HH:MM (UTC+N)" — **without writing a transaction row**, so the process_id stays free for PAS to resend. Once the in-flight task drains, the scheduler pauses the worker, runs every active BALANCE flow for that arm's banks, photographs the balance screen, OCRs the balance ROI, stores results in `balance_checks`, posts photo+caption (`ARM | PHONE | BANK | ACCOUNT_NO | Balance: N`) into a per-day Slack thread / Telegram reply chain, then resumes the worker.
