@@ -145,8 +145,8 @@ async def compare_screen(data: dict):
 
     result = screen_checker.compare_screen(current, reference, threshold, roi)
     logger.info(
-        "Test Compare: bank=%s ref=%s arm=%s ssim=%.4f inliers=%d rot=%.2fdeg scale=%.3f valid=%.2f ms=%.0f reason=%s threshold=%.2f match=%s",
-        bank_code, name, arm_name or "-", result["ssim"], result["inliers"],
+        "Test Compare: bank=%s ref=%s arm=%s ssim=%.4f bad_frac=%.3f inliers=%d rot=%.2fdeg scale=%.3f valid=%.2f ms=%.0f reason=%s threshold=%.2f match=%s",
+        bank_code, name, arm_name or "-", result["ssim"], result["bad_frac"], result["inliers"],
         result["rot_deg"], result["scale"], result["valid_ratio"], result["ms"],
         result["reason"], threshold, result["pass"],
     )

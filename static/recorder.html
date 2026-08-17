@@ -2827,7 +2827,7 @@ async function testOne(i) {
                         break;
                     }
                     const failLabel = trigger === 'on_match' ? 'POPUP DETECTED' : 'NO MATCH';
-                    toast(`${failLabel} (score: ${r.score}, attempt ${attempt}/${retries}, trigger=${trigger})`, 'error');
+                    toast(`${failLabel} (score: ${r.score}, ${r.reason}, bad_frac ${r.bad_frac}, scale ${r.scale}, attempt ${attempt}/${retries}, trigger=${trigger})`, 'error');
                     if (cfg.handler_flow && attempt < retries) {
                         setStatus('Running popup handler...');
                         const hBankCode = cfg.handler_flow.split('__')[0];
@@ -3654,9 +3654,13 @@ async function testCompare() {
     setStatus('Comparing...');
     const r = await API.post('/api/opencv/compare', { bank_code: S.bank, name: ref, threshold, roi, arm_id: getArmId() });
     if (r.error) { toast(r.error, 'error'); setStatus('Ready'); return; }
+    // Score alone does not decide the verdict (bad_frac / inliers / valid_ratio
+    // can each fail it), so always show why — a high score with NO MATCH is
+    // otherwise unreadable.
+    const detail = `${r.reason} | bad_frac ${r.bad_frac} | inliers ${r.inliers} | scale ${r.scale} | valid ${r.valid_ratio}`;
     const msg = r.match
         ? `MATCH — score: ${r.score} (threshold: ${r.threshold})`
-        : `NO MATCH — score: ${r.score} (threshold: ${r.threshold})`;
+        : `NO MATCH — score: ${r.score} (threshold: ${r.threshold}) — ${detail}`;
     toast(msg, r.match ? 'success' : 'error');
     setStatus(msg);
 }

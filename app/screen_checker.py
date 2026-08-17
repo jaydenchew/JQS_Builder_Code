@@ -45,6 +45,11 @@ DEFAULT_SSIM_THRESHOLD = 0.80
 MIN_VALID_RATIO = 0.60
 RATIO_TEST = 0.75
 SCALE_TOLERANCE = (0.85, 1.15)
+# Popup gate on the local SSIM map (lighting-normalized): measured on real
+# pairs, lighting-only mismatch gives bad_frac ~0.001 while popups give
+# 0.065-0.10, so 0.03 splits them with wide margin on both sides.
+POPUP_LOCAL_SSIM = 0.5   # local ssim below this counts as a "broken" pixel
+POPUP_BAD_FRAC = 0.03    # more than 3% broken pixels in ROI => popup_detected
 
 
 def _empty_result(reason: str, elapsed_ms: float, inliers: int = 0,
@@ -53,6 +58,7 @@ def _empty_result(reason: str, elapsed_ms: float, inliers: int = 0,
     return {
         "pass": False,
         "ssim": round(ssim, 4),
+        "bad_frac": 1.0,
         "inliers": int(inliers),
         "rot_deg": round(rot_deg, 2),
         "scale": round(scale, 3),
@@ -201,30 +207,47 @@ def compare_screen(current_frame, reference, threshold: float = DEFAULT_SSIM_THR
     valid_ratio = float((mask_roi > 0).mean()) if mask_roi.size > 0 else 0.0
 
     if mask_roi.sum() > 0:
-        ref_masked = cv2.bitwise_and(ref_roi, ref_roi, mask=mask_roi)
-        aligned_masked = cv2.bitwise_and(aligned_roi, aligned_roi, mask=mask_roi)
-        ssim_score = _ssim(ref_masked, aligned_masked)
+        # Standardize both crops to the same global brightness/contrast before
+        # SSIM: ambient-light / auto-exposure differences between the reference
+        # shot and the runtime shot would otherwise sink the score through
+        # SSIM's luminance and contrast terms even when the structure matches.
+        # Popups still fail: they change local structure, which survives
+        # global standardization.
+        ref_norm = _normalize_lighting(ref_roi, mask_roi)
+        aligned_norm = _normalize_lighting(aligned_roi, mask_roi)
+        ref_masked = cv2.bitwise_and(ref_norm, ref_norm, mask=mask_roi)
+        aligned_masked = cv2.bitwise_and(aligned_norm, aligned_norm, mask=mask_roi)
+        smap = _ssim_map(ref_masked, aligned_masked)
+        ssim_score = float(smap.mean())
+        # Popups are LOCAL structure damage: the mean can stay high because
+        # the untouched surroundings dilute it (normalization amplifies this),
+        # but the fraction of badly-mismatched pixels cannot be diluted.
+        valid = mask_roi > 0
+        bad_frac = float((smap[valid] < POPUP_LOCAL_SSIM).mean()) if valid.any() else 1.0
     else:
         ssim_score = 0.0
+        bad_frac = 1.0
 
     elapsed = (time.perf_counter() - t0) * 1000
 
     inliers_ok = inliers >= MIN_INLIERS
     ssim_ok = ssim_score >= threshold
     valid_ok = valid_ratio >= MIN_VALID_RATIO
+    frac_ok = bad_frac <= POPUP_BAD_FRAC
 
-    if inliers_ok and ssim_ok and valid_ok:
+    if inliers_ok and ssim_ok and valid_ok and frac_ok:
         reason = "match"
     elif not inliers_ok:
         reason = "wrong_screen"
-    elif not ssim_ok:
+    elif not ssim_ok or not frac_ok:
         reason = "popup_detected"
     else:
         reason = "wrong_screen"
 
     return {
-        "pass": bool(inliers_ok and ssim_ok and valid_ok),
+        "pass": bool(inliers_ok and ssim_ok and valid_ok and frac_ok),
         "ssim": round(float(ssim_score), 4),
+        "bad_frac": round(bad_frac, 4),
         "inliers": int(inliers),
         "rot_deg": round(rot_deg, 2),
         "scale": round(scale, 3),
@@ -234,7 +257,24 @@ def compare_screen(current_frame, reference, threshold: float = DEFAULT_SSIM_THR
     }
 
 
-def _ssim(img1, img2):
+def _normalize_lighting(gray, mask):
+    """Masked global standardization to fixed mean 127 / std 40.
+
+    Both images end up on the same brightness scale, so exposure differences
+    (room light on/off, AE variance) cancel out while local structure is
+    preserved. Falls back to the raw image for degenerate crops (too few
+    valid pixels or near-zero variance) to avoid amplifying noise."""
+    vals = gray[mask > 0]
+    if vals.size < 100:
+        return gray
+    std = float(vals.std())
+    if std < 1.0:
+        return gray
+    norm = (gray.astype(np.float32) - float(vals.mean())) / std * 40.0 + 127.0
+    return np.clip(norm, 0, 255).astype(np.uint8)
+
+
+def _ssim_map(img1, img2):
     C1 = (0.01 * 255) ** 2
     C2 = (0.03 * 255) ** 2
 
@@ -253,9 +293,12 @@ def _ssim(img1, img2):
     s2_sq = cv2.GaussianBlur(i2 * i2, k, 1.5) - mu2_sq
     s12 = cv2.GaussianBlur(i1 * i2, k, 1.5) - mu12
 
-    ssim_map = ((2 * mu12 + C1) * (2 * s12 + C2)) / \
-               ((mu1_sq + mu2_sq + C1) * (s1_sq + s2_sq + C2))
-    return float(ssim_map.mean())
+    return ((2 * mu12 + C1) * (2 * s12 + C2)) / \
+           ((mu1_sq + mu2_sq + C1) * (s1_sq + s2_sq + C2))
+
+
+def _ssim(img1, img2):
+    return float(_ssim_map(img1, img2).mean())
 
 
 def parse_check_config(description: str):

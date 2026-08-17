@@ -324,9 +324,9 @@ async def execute_check_screen(step, bank_code, station_id, transaction, passwor
         is_match = result["pass"]
         score = result["ssim"]
         logger.info(
-            "CHECK_SCREEN: attempt %d/%d, ssim=%.4f inliers=%d rot=%.2fdeg valid=%.2f reason=%s threshold=%.2f match=%s",
-            attempt, max_retries, result["ssim"], result["inliers"], result["rot_deg"],
-            result["valid_ratio"], result["reason"], threshold, is_match,
+            "CHECK_SCREEN: attempt %d/%d, ssim=%.4f bad_frac=%.3f inliers=%d rot=%.2fdeg valid=%.2f reason=%s threshold=%.2f match=%s",
+            attempt, max_retries, result["ssim"], result.get("bad_frac", 0.0), result["inliers"],
+            result["rot_deg"], result["valid_ratio"], result["reason"], threshold, is_match,
         )
 
         expected_state_reached = (

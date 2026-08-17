@@ -1,5 +1,23 @@
 # Changelog
 
+## fix(screen_checker): lighting-normalized SSIM + local popup gate (2026-08-13)
+
+### Problem
+
+CHECK_SCREEN failed on matching screens whenever the runtime capture's exposure differed from the reference shot (room light on/off, AE variance): SSIM's luminance/contrast terms sank the score below threshold even though the content inside the ROI was identical. Measured on a real ABA `check_slide_success` pair: same screen, different lighting → ssim 0.7297 vs 0.80 threshold → stall.
+
+### What changed
+
+1. **`app/screen_checker.py` — `_normalize_lighting()`**: before SSIM, both the reference ROI and the aligned runtime ROI are standardized (masked pixels) to fixed mean 127 / std 40. Exposure differences cancel out; local structure survives. Degenerate crops (<100 valid pixels or near-zero variance) fall back to raw. Same real pair after normalization: **0.9725** — passes.
+2. **Popup gate on the local SSIM map**: normalization also inflates scores when a popup covers part of the ROI (synthetic popup: 0.83 — over the 0.80 threshold, would slip through). Popups are *local* structure damage: the mean gets diluted by the untouched surroundings, but the fraction of badly-mismatched pixels can't be. New rule: `frac(local ssim < 0.5) > 3%` ⇒ `popup_detected`. Measured: lighting-only mismatch 0.1%, popups 6.5–10% — wide margin on both sides. Result dict and the actions.py CHECK_SCREEN log line now include `bad_frac`.
+3. Thresholds, ORB alignment, retry logic, on_match/on_mismatch semantics all unchanged.
+
+### Operational note
+
+References no longer need to be re-shot for lighting reasons (supersedes the re-shoot note in the camera AE entry below — still re-shoot if the *content* or camera position changed). Restart WA Unified to pick up.
+
+---
+
 ## fix(camera): adaptive AE-settle grab for fresh captures; resolution before FOURCC (2026-08-13)
 
 ### Problem
