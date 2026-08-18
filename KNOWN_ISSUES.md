@@ -42,6 +42,20 @@
 
 ## Backlog (Real issues, lower priority)
 
+- [ ] **B-2026-08-06-1. Builder TYPE-step test picks credentials ignoring `bank_apps.status` AND account** (field-hit 2026-08-06)
+  - Files: `static/recorder.html` L2568-2571 (`apps.find(a => a.bank_code === S.bank)`), backed by `app/routers/banks.py` L137 (`SELECT * FROM bank_apps WHERE station_id = %s ORDER BY bank_code` — no status filter).
+  - Scenario: a station has TWO bank_apps for the same bank (old phone's row suspended, new phone's row active, different account_no). The Builder's TYPE test fetches all rows and takes the FIRST bank_code match — storage order puts the older row first — so it types the SUSPENDED row's pin (observed: typed 1205 from the suspended 008658930 row instead of 8080 from the active 006187831 row). The REAL PAS path is unaffected (it filters `status='active'` and matches by exact account_no, `app/routers/withdrawal.py` L69-74).
+  - Fix sketch: frontend-only — add `a.status === 'active'` to the `.find()`, and when multiple active rows share the bank, surface account_no in the existing confirm dialog (L2573) so the operator sees whose credentials will be typed. Do NOT filter the backend endpoint — the Settings management table uses it and must keep showing suspended rows.
+
+- [ ] **B-2026-08-06-2. `phones.status` is decorative — disabling a phone blocks NOTHING** (verified 2026-08-06)
+  - Evidence: `phones.status` (`db/schema.sql` L63) is never referenced in any query filter anywhere in `app/` — only the INSERT default (`app/routers/stations.py` L248) and the generic UPDATE. PAS matching (`withdrawal.py` L69-74) joins stations but not phones.
+  - Scenario: operator sets a phone inactive believing it stops dispatch to it; a PAS transaction for that phone's still-active bank_app row is accepted, queued, and executed against the disabled (possibly powered-off) phone. The row-level `bank_apps.status='suspended'` is the only real switch.
+  - Fix sketch: either join `phones p ... AND p.status='active'` into the PAS matching query, or make the UI cascade (disable phone → prompt/auto-suspend its bank_apps), or at minimum label the phone status control as informational.
+
+- [ ] **B-2026-08-06-3. PAS bank_app matching has no ORDER BY — nondeterministic when duplicate active (bank_code, account_no) rows exist across stations**
+  - File: `app/routers/withdrawal.py` L69-74 (`fetchone`, no ORDER BY). `uk_bank_account` is per-station, so the same bank+account CAN legally exist active on two stations; which one receives the job then depends on storage-engine return order (same failure class as the TokenAssist click_noti duplicate, proven nondeterministic there).
+  - Fix sketch: add a deterministic ORDER BY (e.g. `ba.id DESC` = newest wins) or fail loudly on multiple matches.
+
 - [ ] **N2. `asyncio.get_event_loop()` deprecated in Python 3.10+**
   - Files: `app/actions.py`, `app/arm_worker.py`, `app/keyboard_engine.py`, `app/routers/monitor.py` (5 occurrences)
   - Should be `asyncio.get_running_loop()`. Works fine on Python 3.11, but will warn/fail on 3.12+. Fix all 5 at once when upgrading Python.

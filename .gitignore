@@ -65,7 +65,13 @@ tools/
 #installpackage
 JQS_install_package/
 
+# derived project — its own git repo, not tracked by the parent
+JQS_TokenAssist/
+
 # OS
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# incident evidence (contains real account data — never commit)
+/download.jpg
