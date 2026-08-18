@@ -115,6 +115,29 @@ METHOD_NAMES = [
 ]
 
 
+# Amount consensus (spec 2026-08-17, incident tx 10230): the amount OCR must
+# NOT stop at the first read that agrees with `expected`. That confirmation bias
+# let a mis-read 880->80 pass verification and transfer the WRONG amount — on the
+# real frame 5 tesseract methods + 2 easyocr read 880 correctly, but the code
+# cherry-picked the one method that read 80 because it matched the PAS amount.
+# Instead we vote across methods and accept only agreement AMONG the reads.
+# Params validated on 200 real passed frames (field agent 2026-08-17):
+# FAST_N=3 / CAP=12 -> 0% wrong-accept, 0.5% false-stall, avg 4.25 methods.
+# (16.5% of those 200 frames carried a format-valid-but-wrong read the old
+# confirmation-bias logic was silently passing.)
+_AMOUNT_FAST_N = 3      # first N valid reads unanimous -> accept (clean screen)
+_AMOUNT_CAP = 12        # methods to try before deciding by majority (all tesseract)
+
+
+def _amount_token(text):
+    """First currency-shaped token (digits + exactly 2 decimals) in *text*,
+    canonicalized to 'D.DD'. Requiring the '.DD' cents shape rejects the OCR junk
+    ('7', '23', ...) that garbage preprocessings emit, so it never pollutes the
+    vote. Returns None when no amount-shaped token is present."""
+    m = re.findall(r'\d+\.\d{2}', text.replace(',', ''))
+    return ("%.2f" % float(m[0])) if m else None
+
+
 def _ocr_field(cropped_frame, field_name, expected=None):
     """OCR a single cropped field region with targeted engine.
 
@@ -175,6 +198,44 @@ def _ocr_field(cropped_frame, field_name, expected=None):
         best_method = None
         attempts = 0
         bordered_cache = {}
+
+        if field_name == "amount":
+            # Money-critical path: vote across methods, NEVER short-circuit on
+            # `expected` (see _amount_token + the module note above). Return the
+            # agreed amount, or "" when the reads do not agree -> _match_amount
+            # then fails the step and the flow stalls for a human (fail-safe).
+            votes, seq, used = {}, [], 0
+            for name, psm in trial_order:
+                bordered = bordered_cache.get(name)
+                if bordered is None:
+                    bordered = cv2.copyMakeBorder(proc_by_name[name], 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
+                    bordered_cache[name] = bordered
+                used += 1
+                text = pytesseract.image_to_string(bordered,
+                    config="--psm %d -c tessedit_char_whitelist=%s" % (psm, whitelist)).strip()
+                tok = _amount_token(text)
+                if tok is not None:
+                    seq.append(tok)
+                    votes[tok] = votes.get(tok, 0) + 1
+                    # Fast path: first N valid reads unanimous == a clean screen.
+                    if len(seq) == _AMOUNT_FAST_N and len(set(seq)) == 1:
+                        return _done(seq[0], "consensus_fast_%s_psm%d" % (name, psm), "tesseract", used)
+                if used >= _AMOUNT_CAP:
+                    break
+            if votes:
+                total = sum(votes.values())
+                top = max(votes, key=votes.get)
+                counts = sorted(votes.values(), reverse=True)
+                lead = counts[0] - (counts[1] if len(counts) > 1 else 0)
+                # A reading must be a strict majority AND lead the runner-up by
+                # >=2, so a single stray read can never win (and a low-yield ROI
+                # that only ever produces 1 read fails safe rather than trusting
+                # one shot at a money amount).
+                if votes[top] * 2 > total and lead >= 2:
+                    return _done(top, "consensus_majority", "tesseract", used)
+            # No agreement -> ambiguous. Empty text makes _match_amount fail.
+            return _done("", "consensus_ambiguous", "tesseract", used)
+
         for name, psm in trial_order:
             bordered = bordered_cache.get(name)
             if bordered is None:
@@ -348,17 +409,16 @@ def verify_configurable(frame, ocr_config: dict, transaction_values: dict):
         return False
 
     def _match_amount(text, expected):
-        numbers = extract_numbers(text)
-        amt_norm = str(float(expected))
-        if amt_norm.endswith('.0'):
-            amt_norm = amt_norm[:-2]
-        for num in numbers:
-            n = str(float(num)) if '.' in num else num
-            if n.endswith('.0'):
-                n = n[:-2]
-            if n == amt_norm or num == expected:
-                return True
-        return False
+        # EXACT match (spec 2026-08-17): the amount field must contain the
+        # expected amount AND no OTHER amount. `text` is the voted consensus from
+        # _ocr_field (or "" when the reads did not agree -> fails here -> stall).
+        # The old "contains any matching number" logic passed a screen showing
+        # 880.00 as long as SOME read yielded 80.00; requiring the token SET to be
+        # exactly {expected} closes that and also fails safe on a mixed reading.
+        m = re.search(r'\d+(?:\.\d+)?', str(expected).replace(',', ''))
+        exp = ("%.2f" % float(m.group())) if m else None
+        toks = {"%.2f" % float(t) for t in re.findall(r'\d+\.\d{2}', text.replace(',', ''))}
+        return exp is not None and toks == {exp}
 
     def _match_name(text, expected):
         name_lower = expected.lower()

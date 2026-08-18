@@ -1,5 +1,60 @@
 # Changelog
 
+## fix(ocr): amount verification by consensus, not confirmation bias — CRITICAL money-path fix (2026-08-17)
+
+### Problem
+
+A withdrawal of **$80** transferred **$880**. The arm double-tapped the leading
+`8` (touch bounce / charging) so the phone's confirm screen showed `880.00`, and
+the pre-transfer OCR verification — the last line of defence — **passed it as
+`80.00`**. Root cause in `app/ocr.py::_ocr_field`: for numeric fields it was
+given the `expected` value and **returned the first of ~14 preprocessing methods
+whose read agreed with `expected`, then stopped**. On the real incident frame
+(tx 10230) 5 tesseract methods + both easyocr passes read `880.00` correctly;
+the code cherry-picked the ONE method (`direct` psm6) that mis-read `880`→`80`
+purely because it matched the PAS amount. That is confirmation bias, not
+verification — the check was told the answer and stopped at the first read that
+agreed. Field analysis of 200 recent *passed* amount verifications found **33
+(16.5%)** carried a format-valid-but-wrong read the old logic was silently
+passing the same way (all leading-digit drops: `100→00`, `110→10`, `88→8`, …).
+
+### What changed (`app/ocr.py`)
+
+1. **Amount is now read by CONSENSUS, never short-circuited on `expected`.**
+   Methods vote; the loop accepts a value only when the **reads agree with each
+   other**: first `_AMOUNT_FAST_N=3` valid reads unanimous → accept (clean
+   screen, the 91% fast path), else run to `_AMOUNT_CAP=12` and accept only a
+   strict dominant majority (`count×2 > valid` **and** lead ≥ 2); otherwise
+   return empty → the step **fails safe and stalls for a human**. `expected` is
+   never used to stop the read. `_amount_token()` accepts only currency-shaped
+   `\d+\.\d{2}` tokens so garbage preprocessings (`'7'`, `'23'`) can't pollute
+   the vote.
+2. **`_match_amount` is now EXACT-set**: the field's amount tokens must equal
+   exactly `{expected}` — contains-any is gone, and a mixed/empty read fails.
+3. **Account path unchanged** (long unique string, suffix match — separate,
+   lower-risk follow-up). CHECK_SCREEN / thresholds / flow untouched.
+
+### Validation
+
+Field agent, 200 real passed frames across 3 machines × 3 banks (2026-08-17):
+**wrong-accept 0%** (in every parameter combo), false-stall **0.5%** at
+FAST_N=3/CAP=12, fast path fires 91%, avg 4.25 methods (was 1.32). Re-verified
+end-to-end on the real incident frame: consensus reads `880.00` → **STALL**;
+clean `80.00` and legitimate `880.00` both still PASS.
+
+### Operational notes
+
+- **Fix the `MY-03 / WINGBANK` amount ROI** before/with rollout: its OCR yield
+  is ~40% of the other bank/station combos (avg 2.5 valid reads vs 4.5–6.6), and
+  **all 4 false-stalls in the study were on it** — a low-yield ROI now fails safe
+  (stall) instead of getting rescued by confirmation bias. Re-capture/widen that
+  ROI in Builder.
+- Expect a small rise in human-review stalls on genuinely hard frames — that is
+  the intended fail-safe direction for a money check (was fail-open). Restart WA
+  Unified to pick up.
+
+---
+
 ## fix(screen_checker): lighting-normalized SSIM + local popup gate (2026-08-13)
 
 ### Problem
